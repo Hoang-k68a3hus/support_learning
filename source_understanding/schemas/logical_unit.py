@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+from enum import StrEnum
+
+from pydantic import Field, model_validator
+
+from .context import Confidence, Identifier, Label, SchemaModel, StructureSource
+
+
+class LogicalUnitType(StrEnum):
+    TEXT_BLOCK = "TEXT_BLOCK"
+    SECTION = "SECTION"
+    TOPIC_GROUP = "TOPIC_GROUP"
+    QA_PAIR = "QA_PAIR"
+    DIALOGUE_SEGMENT = "DIALOGUE_SEGMENT"
+    PROCEDURE = "PROCEDURE"
+    DEFINITION_BLOCK = "DEFINITION_BLOCK"
+    EXAMPLE_BLOCK = "EXAMPLE_BLOCK"
+    EXERCISE_BLOCK = "EXERCISE_BLOCK"
+    CODE_BLOCK = "CODE_BLOCK"
+    TABLE_BLOCK = "TABLE_BLOCK"
+    LOG_WINDOW = "LOG_WINDOW"
+    KEY_VALUE_GROUP = "KEY_VALUE_GROUP"
+    LIST_GROUP = "LIST_GROUP"
+    SUBDOCUMENT = "SUBDOCUMENT"
+    UNKNOWN_GROUP = "UNKNOWN_GROUP"
+
+
+class LogicalUnit(SchemaModel):
+    id: Identifier
+    type: LogicalUnitType
+    element_ids: list[Identifier] = Field(min_length=1)
+    context_node_ids: list[Identifier] = Field(default_factory=list)
+    label: Label | None = None
+    source: StructureSource = StructureSource.EXPLICIT
+    confidence: Confidence = 1.0
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_unique_refs(self) -> LogicalUnit:
+        if len(self.element_ids) != len(set(self.element_ids)):
+            raise ValueError("logical unit element_ids must be unique")
+        if len(self.context_node_ids) != len(set(self.context_node_ids)):
+            raise ValueError("logical unit context_node_ids must be unique")
+        return self
