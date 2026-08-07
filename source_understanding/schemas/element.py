@@ -4,7 +4,14 @@ from enum import StrEnum
 
 from pydantic import Field, model_validator
 
-from .context import Confidence, Identifier, SchemaModel, StructureSource
+from .context import (
+    Confidence,
+    FiniteFloat,
+    Identifier,
+    JsonObject,
+    SchemaModel,
+    StructureSource,
+)
 
 
 class ElementType(StrEnum):
@@ -37,10 +44,10 @@ class ElementType(StrEnum):
 
 
 class BoundingBox(SchemaModel):
-    x0: float
-    y0: float
-    x1: float
-    y1: float
+    x0: FiniteFloat
+    y0: FiniteFloat
+    x1: FiniteFloat
+    y1: FiniteFloat
 
     @model_validator(mode="after")
     def validate_extents(self) -> BoundingBox:
@@ -76,13 +83,13 @@ class SourceLocation(SchemaModel):
 
 class StyleInfo(SchemaModel):
     font_name: str | None = None
-    font_size: float | None = Field(default=None, gt=0)
+    font_size: FiniteFloat | None = Field(default=None, gt=0)
     bold: bool | None = None
     italic: bool | None = None
     color: str | None = None
     alignment: str | None = None
-    indentation: float | None = None
-    attributes: dict[str, object] = Field(default_factory=dict)
+    indentation: FiniteFloat | None = None
+    attributes: JsonObject = Field(default_factory=dict)
 
 
 class ElementConfidence(SchemaModel):
@@ -97,16 +104,16 @@ class TransformationRecord(SchemaModel):
     operation: str = Field(min_length=1, max_length=128)
     before: str | None = None
     after: str | None = None
-    metadata: dict[str, object] = Field(default_factory=dict)
+    metadata: JsonObject = Field(default_factory=dict)
 
 
 class Provenance(SchemaModel):
-    source: StructureSource = StructureSource.EXPLICIT
+    source: StructureSource
     extractor: str = Field(min_length=1, max_length=256)
     extractor_version: str | None = Field(default=None, max_length=128)
     confidence: Confidence = 1.0
-    transformations: list[TransformationRecord] = Field(default_factory=list)
-    metadata: dict[str, object] = Field(default_factory=dict)
+    transformations: tuple[TransformationRecord, ...] = Field(default_factory=tuple)
+    metadata: JsonObject = Field(default_factory=dict)
 
 
 class RawElement(SchemaModel):
@@ -117,7 +124,7 @@ class RawElement(SchemaModel):
     order: int = Field(ge=0)
     location: SourceLocation | None = None
     style: StyleInfo | None = None
-    attributes: dict[str, object] = Field(default_factory=dict)
+    attributes: JsonObject = Field(default_factory=dict)
 
 
 class Element(SchemaModel):
@@ -128,7 +135,7 @@ class Element(SchemaModel):
     normalized_text: str | None = None
     location: SourceLocation | None = None
     style: StyleInfo | None = None
-    attributes: dict[str, object] = Field(default_factory=dict)
+    attributes: JsonObject = Field(default_factory=dict)
     confidence: ElementConfidence = Field(default_factory=ElementConfidence)
     provenance: Provenance
     exclude_from_retrieval: bool = False

@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from pydantic import Field, model_validator
 
-from .context import Confidence, Identifier, SchemaModel, StructureSource
+from .context import Confidence, Identifier, JsonObject, SchemaModel, StructureSource
 
 
 class RelationType(StrEnum):
@@ -30,9 +30,9 @@ class Relation(SchemaModel):
     type: RelationType
     source_id: Identifier
     target_id: Identifier
-    confidence: Confidence = 1.0
-    source: StructureSource = StructureSource.EXPLICIT
-    metadata: dict[str, object] = Field(default_factory=dict)
+    confidence: Confidence
+    source: StructureSource
+    metadata: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_endpoints(self) -> Relation:

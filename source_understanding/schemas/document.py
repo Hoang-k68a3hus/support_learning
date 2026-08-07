@@ -7,8 +7,10 @@ from pydantic import Field, model_validator
 
 from .context import (
     Confidence,
+    ConfidenceMap,
     ContextNode,
     Identifier,
+    JsonObject,
     SchemaModel,
     StructureMode,
     StructureSource,
@@ -43,15 +45,15 @@ class DocumentMetadata(SchemaModel):
     title: str | None = Field(default=None, max_length=4096)
     language: str | None = Field(default=None, min_length=2, max_length=64)
     source_name: str | None = Field(default=None, max_length=4096)
-    authors: list[str] = Field(default_factory=list)
+    authors: tuple[str, ...] = Field(default_factory=tuple)
     created_at: datetime | None = None
-    attributes: dict[str, object] = Field(default_factory=dict)
+    attributes: JsonObject = Field(default_factory=dict)
 
 
 class DocumentStructure(SchemaModel):
-    mode: StructureMode = StructureMode.FLAT
+    mode: StructureMode = StructureMode.UNKNOWN
     confidence: Confidence = 0.0
-    signals: dict[str, Confidence] = Field(default_factory=dict)
+    signals: ConfidenceMap = Field(default_factory=dict)
 
 
 class DocumentQuality(SchemaModel):
@@ -61,8 +63,8 @@ class DocumentQuality(SchemaModel):
     duplicate_ratio: Confidence | None = None
     garbage_ratio: Confidence | None = None
     overall: Confidence | None = None
-    warnings: list[str] = Field(default_factory=list)
-    metrics: dict[str, float | int | str | bool | None] = Field(default_factory=dict)
+    warnings: tuple[str, ...] = Field(default_factory=tuple)
+    metrics: JsonObject = Field(default_factory=dict)
 
 
 class Asset(SchemaModel):
@@ -70,17 +72,17 @@ class Asset(SchemaModel):
     type: str = Field(min_length=1, max_length=128)
     uri: str | None = Field(default=None, max_length=8192)
     location: SourceLocation | None = None
-    metadata: dict[str, object] = Field(default_factory=dict)
+    metadata: JsonObject = Field(default_factory=dict)
 
 
 class SubDocument(SchemaModel):
     id: Identifier
-    element_ids: list[Identifier] = Field(min_length=1)
+    element_ids: tuple[Identifier, ...] = Field(min_length=1)
     label: str | None = Field(default=None, max_length=2048)
     source_hint: str | None = Field(default=None, max_length=4096)
-    confidence: Confidence = 1.0
-    source: StructureSource = StructureSource.EXPLICIT
-    metadata: dict[str, object] = Field(default_factory=dict)
+    confidence: Confidence
+    source: StructureSource
+    metadata: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_unique_elements(self) -> SubDocument:
@@ -94,31 +96,38 @@ class SemanticAnnotation(SchemaModel):
     target_id: Identifier
     type: SemanticAnnotationType
     value: str = Field(min_length=1, max_length=8192)
-    source: StructureSource = StructureSource.INFERRED
-    confidence: Confidence = 1.0
+    source: StructureSource
+    confidence: Confidence
     model_version: str | None = Field(default=None, max_length=128)
-    metadata: dict[str, object] = Field(default_factory=dict)
+    metadata: JsonObject = Field(default_factory=dict)
 
 
 class CanonicalDocument(SchemaModel):
-    """Loss-minimizing canonical representation of a source.
+    """Loss-minimizing canonical representation of one source.
 
-    Retrieval units intentionally do not live here. They are rebuildable,
-    task-facing projections created from this canonical document.
+    ``document_id`` is the canonical source identity for this layer. Retrieval
+    anchors must use the same value as ``SourceAnchor.source_id``. Retrieval units
+    intentionally do not live here because they are rebuildable task-facing
+    projections created from this canonical document.
     """
 
     schema_version: str = Field(default="1.0", min_length=1, max_length=64)
     document_id: Identifier
     metadata: DocumentMetadata = Field(default_factory=DocumentMetadata)
     structure: DocumentStructure = Field(default_factory=DocumentStructure)
-    elements: list[Element] = Field(default_factory=list)
-    logical_units: list[LogicalUnit] = Field(default_factory=list)
-    context_nodes: list[ContextNode] = Field(default_factory=list)
-    relations: list[Relation] = Field(default_factory=list)
-    semantic_annotations: list[SemanticAnnotation] = Field(default_factory=list)
-    assets: list[Asset] = Field(default_factory=list)
-    subdocuments: list[SubDocument] = Field(default_factory=list)
+    elements: tuple[Element, ...] = Field(default_factory=tuple)
+    logical_units: tuple[LogicalUnit, ...] = Field(default_factory=tuple)
+    context_nodes: tuple[ContextNode, ...] = Field(default_factory=tuple)
+    relations: tuple[Relation, ...] = Field(default_factory=tuple)
+    semantic_annotations: tuple[SemanticAnnotation, ...] = Field(default_factory=tuple)
+    assets: tuple[Asset, ...] = Field(default_factory=tuple)
+    subdocuments: tuple[SubDocument, ...] = Field(default_factory=tuple)
     quality: DocumentQuality = Field(default_factory=DocumentQuality)
+
+    @property
+    def source_id(self) -> str:
+        """Alias exposing the source identity used by retrieval/citation layers."""
+        return self.document_id
 
     @model_validator(mode="after")
     def validate_integrity(self) -> CanonicalDocument:
@@ -127,9 +136,7 @@ class CanonicalDocument(SchemaModel):
         context_ids = self._unique_ids("context_nodes", self.context_nodes)
         asset_ids = self._unique_ids("assets", self.assets)
         subdocument_ids = self._unique_ids("subdocuments", self.subdocuments)
-        annotation_ids = self._unique_ids(
-            "semantic_annotations", self.semantic_annotations
-        )
+        annotation_ids = self._unique_ids("semantic_annotations", self.semantic_annotations)
         relation_ids = self._unique_ids("relations", self.relations)
 
         namespaces = {
@@ -147,9 +154,10 @@ class CanonicalDocument(SchemaModel):
                 collisions = namespaces[left_name] & namespaces[right_name]
                 if collisions:
                     raise ValueError(
-                        f"id collision between {left_name} and {right_name}: "
-                        f"{sorted(collisions)}"
+                        f"id collision between {left_name} and {right_name}: {sorted(collisions)}"
                     )
+
+        self._validate_element_order()
 
         for unit in self.logical_units:
             self._require_subset(
@@ -161,25 +169,32 @@ class CanonicalDocument(SchemaModel):
                 context_ids,
             )
 
+        seen_subdocument_elements: dict[str, str] = {}
         for subdoc in self.subdocuments:
             self._require_subset(
-                f"subdocument {subdoc.id} element_ids",
-                subdoc.element_ids,
-                element_ids,
+                f"subdocument {subdoc.id} element_ids", subdoc.element_ids, element_ids
             )
+            for element_id in subdoc.element_ids:
+                previous = seen_subdocument_elements.get(element_id)
+                if previous is not None:
+                    raise ValueError(
+                        f"element {element_id!r} belongs to multiple subdocuments: "
+                        f"{previous!r} and {subdoc.id!r}"
+                    )
+                seen_subdocument_elements[element_id] = subdoc.id
 
-        all_relation_targets = element_ids | logical_ids | context_ids | subdocument_ids
+        relation_targets = element_ids | logical_ids | context_ids | subdocument_ids
         for relation in self.relations:
-            if relation.source_id not in all_relation_targets:
+            if relation.source_id not in relation_targets:
                 raise ValueError(
                     f"relation {relation.id} has unknown source_id {relation.source_id!r}"
                 )
-            if relation.target_id not in all_relation_targets:
+            if relation.target_id not in relation_targets:
                 raise ValueError(
                     f"relation {relation.id} has unknown target_id {relation.target_id!r}"
                 )
 
-        annotation_targets = all_relation_targets | asset_ids
+        annotation_targets = relation_targets | asset_ids
         for annotation in self.semantic_annotations:
             if annotation.target_id not in annotation_targets:
                 raise ValueError(
@@ -191,17 +206,24 @@ class CanonicalDocument(SchemaModel):
         return self
 
     @staticmethod
-    def _unique_ids(name: str, items: list[object]) -> set[str]:
+    def _unique_ids(name: str, items: tuple[object, ...]) -> set[str]:
         ids = [getattr(item, "id") for item in items]
         if len(ids) != len(set(ids)):
             raise ValueError(f"{name} contains duplicate ids")
         return set(ids)
 
     @staticmethod
-    def _require_subset(name: str, refs: list[str], valid: set[str]) -> None:
+    def _require_subset(name: str, refs: tuple[str, ...], valid: set[str]) -> None:
         missing = set(refs) - valid
         if missing:
             raise ValueError(f"{name} contains unknown ids: {sorted(missing)}")
+
+    def _validate_element_order(self) -> None:
+        orders = [element.order for element in self.elements]
+        if len(orders) != len(set(orders)):
+            raise ValueError("elements must have unique order values")
+        if orders != sorted(orders):
+            raise ValueError("elements must be stored in ascending order")
 
     def _validate_context_tree(self, context_ids: set[str]) -> None:
         parents: dict[str, str | None] = {}

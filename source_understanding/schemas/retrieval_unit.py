@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
-from .context import Confidence, ContextNodeRef, Identifier, SchemaModel
+from .context import Confidence, ContextNodeRef, Identifier, JsonObject, SchemaModel
 from .element import BoundingBox
 
 
@@ -56,44 +56,93 @@ class SourceAnchor(SchemaModel):
             raise ValueError("line_end must be >= line_start")
         return self
 
+    def identity_key(self) -> tuple[object, ...]:
+        bbox_key = None
+        if self.bbox is not None:
+            bbox_key = (self.bbox.x0, self.bbox.y0, self.bbox.x1, self.bbox.y1)
+        return (
+            self.source_id,
+            self.element_id,
+            self.page,
+            bbox_key,
+            self.start_char,
+            self.end_char,
+            self.line_start,
+            self.line_end,
+        )
+
 
 class RetrievalUnit(SchemaModel):
+    """Task-facing projection that remains fully traceable to one source."""
+
     id: Identifier
     document_id: Identifier
     subdocument_id: Identifier | None = None
-    logical_unit_ids: list[Identifier] = Field(default_factory=list)
-    element_ids: list[Identifier] = Field(min_length=1)
+    logical_unit_ids: tuple[Identifier, ...] = Field(default_factory=tuple)
+    element_ids: tuple[Identifier, ...] = Field(min_length=1)
     retrieval_text: str = Field(min_length=1)
     display_text: str = Field(min_length=1)
-    context_path: list[ContextNodeRef] = Field(default_factory=list)
-    semantic_annotations: list[AnnotationRef] = Field(default_factory=list)
-    source_anchors: list[SourceAnchor] = Field(default_factory=list)
+    context_path: tuple[ContextNodeRef, ...] = Field(default_factory=tuple)
+    semantic_annotations: tuple[AnnotationRef, ...] = Field(default_factory=tuple)
+    source_anchors: tuple[SourceAnchor, ...] = Field(min_length=1)
     unit_type: RetrievalUnitType = RetrievalUnitType.TEXT
-    token_count: int = Field(ge=0)
+    token_count: int = Field(ge=1)
     quality: Confidence = 1.0
     version: str = Field(min_length=1, max_length=128)
-    metadata: dict[str, object] = Field(default_factory=dict)
+    metadata: JsonObject = Field(default_factory=dict)
+
+    @property
+    def source_id(self) -> str:
+        """Alias matching SourceAnchor/source-scope terminology."""
+        return self.document_id
+
+    @field_validator("retrieval_text", "display_text", "version")
+    @classmethod
+    def validate_non_blank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("value must contain non-whitespace characters")
+        return value
 
     @model_validator(mode="after")
-    def validate_unique_refs(self) -> RetrievalUnit:
+    def validate_refs_and_anchors(self) -> RetrievalUnit:
         for name, values in (
             ("logical_unit_ids", self.logical_unit_ids),
             ("element_ids", self.element_ids),
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"{name} must be unique")
-        anchor_keys = [
-            (
-                a.source_id,
-                a.element_id,
-                a.page,
-                a.start_char,
-                a.end_char,
-                a.line_start,
-                a.line_end,
-            )
-            for a in self.source_anchors
-        ]
+
+        context_ids = [ref.id for ref in self.context_path]
+        if len(context_ids) != len(set(context_ids)):
+            raise ValueError("context_path ids must be unique")
+
+        annotation_ids = [ref.id for ref in self.semantic_annotations]
+        if len(annotation_ids) != len(set(annotation_ids)):
+            raise ValueError("semantic annotation ids must be unique")
+
+        anchor_keys = [anchor.identity_key() for anchor in self.source_anchors]
         if len(anchor_keys) != len(set(anchor_keys)):
             raise ValueError("source_anchors must be unique")
+
+        element_ids = set(self.element_ids)
+        covered_elements: set[str] = set()
+        for anchor in self.source_anchors:
+            if anchor.source_id != self.document_id:
+                raise ValueError(
+                    f"source anchor {anchor.element_id!r} uses source_id "
+                    f"{anchor.source_id!r}, expected {self.document_id!r}"
+                )
+            if anchor.element_id not in element_ids:
+                raise ValueError(
+                    f"source anchor references element {anchor.element_id!r} "
+                    "outside retrieval unit element_ids"
+                )
+            covered_elements.add(anchor.element_id)
+
+        missing_anchors = element_ids - covered_elements
+        if missing_anchors:
+            raise ValueError(
+                "every retrieval element must have at least one source anchor; "
+                f"missing: {sorted(missing_anchors)}"
+            )
         return self

@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from pydantic import Field, model_validator
 
-from .context import Confidence, Identifier, Label, SchemaModel, StructureSource
+from .context import Confidence, Identifier, JsonObject, Label, SchemaModel, StructureSource
 
 
 class LogicalUnitType(StrEnum):
@@ -29,12 +29,12 @@ class LogicalUnitType(StrEnum):
 class LogicalUnit(SchemaModel):
     id: Identifier
     type: LogicalUnitType
-    element_ids: list[Identifier] = Field(min_length=1)
-    context_node_ids: list[Identifier] = Field(default_factory=list)
+    element_ids: tuple[Identifier, ...] = Field(min_length=1)
+    context_node_ids: tuple[Identifier, ...] = Field(default_factory=tuple)
     label: Label | None = None
-    source: StructureSource = StructureSource.EXPLICIT
-    confidence: Confidence = 1.0
-    metadata: dict[str, object] = Field(default_factory=dict)
+    source: StructureSource
+    confidence: Confidence
+    metadata: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_unique_refs(self) -> LogicalUnit:
