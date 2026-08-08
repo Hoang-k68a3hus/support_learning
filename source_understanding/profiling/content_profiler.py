@@ -65,6 +65,17 @@ _ELEMENT_CATEGORY: dict[ElementType, ContentCategory] = {
 }
 
 
+def content_category_for_type(element_type: ElementType) -> ContentCategory:
+    """Return the stable coarse routing category for a canonical element type."""
+
+    try:
+        return _ELEMENT_CATEGORY[element_type]
+    except KeyError as exc:  # pragma: no cover - protects future enum expansion.
+        raise ContentProfilingError(
+            f"element type {element_type.value!r} has no registered content category"
+        ) from exc
+
+
 class ContentProfileSignals(SchemaModel):
     """Directly observed counts/ratios; no lexical or semantic inference."""
 
@@ -122,7 +133,7 @@ class ContentProfiler:
         self._validate_elements(snapshot)
 
         type_counts: Counter[ElementType] = Counter(element.type for element in snapshot)
-        categories = tuple(self._category_for_type(element.type) for element in snapshot)
+        categories = tuple(content_category_for_type(element.type) for element in snapshot)
         category_counts: Counter[ContentCategory] = Counter(categories)
         element_count = len(snapshot)
 
@@ -193,12 +204,9 @@ class ContentProfiler:
 
     @staticmethod
     def _category_for_type(element_type: ElementType) -> ContentCategory:
-        try:
-            return _ELEMENT_CATEGORY[element_type]
-        except KeyError as exc:  # pragma: no cover - protects future enum expansion.
-            raise ContentProfilingError(
-                f"element type {element_type.value!r} has no registered content category"
-            ) from exc
+        """Compatibility shim for callers using the older private helper."""
+
+        return content_category_for_type(element_type)
 
     @staticmethod
     def _dominant_category(
