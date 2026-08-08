@@ -14,7 +14,10 @@ from .heuristic import (
 from .provider import (
     SEMANTIC_PROVIDER_PROTOCOL_VERSION,
     SemanticCandidate,
+    SemanticCapability,
+    SemanticOntologyLabel,
     SemanticProvider,
+    SemanticProviderCapabilities,
     SemanticRequest,
     SemanticTargetKind,
 )
@@ -30,8 +33,11 @@ __all__ = [
     "SemanticAnnotationResult",
     "SemanticAnnotator",
     "SemanticCandidate",
+    "SemanticCapability",
     "SemanticCoverageReport",
+    "SemanticOntologyLabel",
     "SemanticProvider",
+    "SemanticProviderCapabilities",
     "SemanticRequest",
     "SemanticTargetKind",
     "evaluate_semantic_coverage",
