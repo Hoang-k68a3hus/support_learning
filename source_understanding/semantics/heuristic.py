@@ -16,7 +16,7 @@ from .provider import (
 )
 
 
-HEURISTIC_SEMANTIC_PROVIDER_VERSION = "1"
+HEURISTIC_SEMANTIC_PROVIDER_VERSION = "2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,16 +140,18 @@ class HeuristicSemanticProvider:
                     continue
                 marker, payload = match
                 value = payload if payload else text
+                limited_value, limit_metadata = self._limit(value)
                 output.append(
                     SemanticCandidate(
                         target_id=request.target_id,
                         type=rule.annotation_type,
-                        value=self._limit(value),
+                        value=limited_value,
                         confidence=rule.confidence,
                         source=StructureSource.INFERRED,
                         metadata={
                             "heuristic": "leading_semantic_marker",
                             "marker": marker,
+                            **limit_metadata,
                         },
                     )
                 )
@@ -161,14 +163,18 @@ class HeuristicSemanticProvider:
             and request.unit_label is not None
             and request.unit_label.strip()
         ):
+            limited_value, limit_metadata = self._limit(request.unit_label.strip())
             output.append(
                 SemanticCandidate(
                     target_id=request.target_id,
                     type=SemanticAnnotationType.TOPIC,
-                    value=self._limit(request.unit_label.strip()),
+                    value=limited_value,
                     confidence=0.90,
                     source=StructureSource.DERIVED,
-                    metadata={"heuristic": "topic_group_label"},
+                    metadata={
+                        "heuristic": "topic_group_label",
+                        **limit_metadata,
+                    },
                 )
             )
 
@@ -188,8 +194,19 @@ class HeuristicSemanticProvider:
             return marker, payload
         return None
 
-    def _limit(self, value: str) -> str:
-        value = re.sub(r"[ \t]+", " ", value.strip())
-        if len(value) <= self._max_value_chars:
-            return value
-        return value[: self._max_value_chars].rstrip()
+    def _limit(self, value: str) -> tuple[str, dict[str, object]]:
+        original = value.strip()
+        compacted = re.sub(r"[ \t]+", " ", original)
+        metadata: dict[str, object] = {}
+        if compacted != original:
+            metadata["value_whitespace_compacted"] = True
+        if len(compacted) <= self._max_value_chars:
+            return compacted, metadata
+        metadata.update(
+            {
+                "value_truncated": True,
+                "original_char_count": len(compacted),
+                "max_value_chars": self._max_value_chars,
+            }
+        )
+        return compacted[: self._max_value_chars].rstrip(), metadata
