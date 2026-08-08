@@ -11,6 +11,7 @@ from source_understanding.structure.grouping import GroupingPolicy, GroupingResu
 from source_understanding.structure.integrity import (
     IntegrityConsolidationError,
     IntegrityGroupConsolidator,
+    unresolved_integrity_boundary_ids,
 )
 
 
@@ -32,14 +33,16 @@ def element(element_id: str, order: int, element_type: ElementType) -> Element:
     )
 
 
-def boundaries(elements, classes=None):
+def boundaries(elements, classes=None, reasons=None):
     classes = classes or [BoundaryClass.NONE] * max(0, len(elements) - 1)
+    reasons = reasons or [()] * max(0, len(elements) - 1)
     decisions = tuple(
         SimpleNamespace(
             id=f"b{index}",
             left_element_id=elements[index].id,
             right_element_id=elements[index + 1].id,
             classification=classification,
+            reasons=reasons[index],
         )
         for index, classification in enumerate(classes)
     )
@@ -169,6 +172,32 @@ class IntegrityConsolidationTests(unittest.TestCase):
                 boundaries(elements, [BoundaryClass.HARD]),
                 grouping(elements, units=(crossing,)),
             )
+
+    def test_quality_helper_treats_same_unit_integrity_warning_as_resolved(self):
+        elements = (
+            element("r1", 0, ElementType.TABLE_ROW),
+            element("r2", 1, ElementType.TABLE_ROW),
+        )
+        boundary_set = boundaries(
+            elements,
+            [BoundaryClass.UNKNOWN],
+            [("CONTENT_INTEGRITY_UNRESOLVED",)],
+        )
+        unit = LogicalUnit(
+            id="table",
+            type=LogicalUnitType.TABLE_BLOCK,
+            element_ids=("r1", "r2"),
+            source=StructureSource.DERIVED,
+            confidence=0.9,
+        )
+        resolved = unresolved_integrity_boundary_ids(
+            boundary_set, grouping(elements, units=(unit,))
+        )
+        unresolved = unresolved_integrity_boundary_ids(
+            boundary_set, grouping(elements, ungrouped=("r1", "r2"))
+        )
+        self.assertEqual(resolved, ())
+        self.assertEqual(unresolved, ("b0",))
 
     def test_result_is_deterministic(self):
         elements = (
