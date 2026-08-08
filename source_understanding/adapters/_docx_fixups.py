@@ -5,7 +5,7 @@ from xml.etree import ElementTree as ET
 from source_understanding.source_attributes import SOURCE_ANCHOR_ATTRIBUTE
 
 from .base import AdapterDiagnostic, AdapterError
-from ._docx_common import M, NS, W, Emitter, local_name
+from ._docx_common import NS, W, Emitter, local_name
 
 
 class DocxFixupMixin:
@@ -37,10 +37,7 @@ class DocxFixupMixin:
         if math_nodes and emitter.elements:
             last = emitter.elements[-1]
             attrs = dict(last.attributes)
-            math_texts = [
-                "".join(node.itertext()).strip()
-                for node in math_nodes
-            ]
+            math_texts = ["".join(node.itertext()).strip() for node in math_nodes]
             math_texts = [value for value in math_texts if value]
             attrs["omml_count"] = len(math_nodes)
             if math_texts:
@@ -65,7 +62,7 @@ class DocxFixupMixin:
             )
 
     def _node_text(self, node: ET.Element) -> str:
-        """Collect paragraph text without duplicating nested-table descendants."""
+        """Collect row/cell text without duplicating nested-table descendants."""
 
         chunks: list[str] = []
 
@@ -82,6 +79,21 @@ class DocxFixupMixin:
                 walk(child)
 
         walk(node)
+        return "\n".join(chunks)
+
+    def _flatten_note_text(self, node: ET.Element) -> str:
+        """Preserve all paragraph text when a note/comment is intentionally flattened.
+
+        Unlike row/cell summaries, flattened notes must include text inside nested
+        tables because no first-class nested blocks are emitted for note zones.
+        Structural loss remains explicit via the diagnostic emitted by `_read_notes`.
+        """
+
+        chunks: list[str] = []
+        for paragraph in node.findall(".//w:p", NS):
+            value = self._paragraph_text(paragraph)
+            if value.strip():
+                chunks.append(value)
         return "\n".join(chunks)
 
     def _read_notes(
@@ -137,7 +149,7 @@ class DocxFixupMixin:
                 if date:
                     attrs["date"] = date
             emitter.emit(
-                text=self._node_text(node),
+                text=self._flatten_note_text(node),
                 type_hint="FOOTNOTE",
                 part=part,
                 attributes=attrs,
