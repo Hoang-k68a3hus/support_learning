@@ -44,6 +44,10 @@ from source_understanding.pipeline_support import (
 from source_understanding.structure.boundary import BoundaryScorer, BoundarySet
 from source_understanding.structure.grouping import GroupingResult, LogicalGroupBuilder
 from source_understanding.structure.hierarchy import HierarchyBuilder, HierarchyResult
+from source_understanding.structure.integrity import (
+    IntegrityConsolidationReport,
+    IntegrityGroupConsolidator,
+)
 from source_understanding.structure.integration import ContextIntegrationResult, ContextIntegrator
 from source_understanding.structure.quality import (
     StructureQualityEstimator,
@@ -86,6 +90,7 @@ class SourceUnderstandingResult(SchemaModel):
     integration_result: ContextIntegrationResult
     relation_result: RelationBuildResult
     quality_report: StructureQualityReport
+    integrity_report: IntegrityConsolidationReport
     region_result: ContentRegionSegmentationResult | None = None
     normalization_result: ElementNormalizationResult | None = None
     structural_document: CanonicalDocument
@@ -146,6 +151,7 @@ class SourceUnderstandingPipeline:
         boundary_scorer: BoundaryScorer | None = None,
         group_builder: LogicalGroupBuilder | None = None,
         hierarchy_builder: HierarchyBuilder | None = None,
+        integrity_consolidator: IntegrityGroupConsolidator | None = None,
         context_integrator: ContextIntegrator | None = None,
         relation_builder: StructuralRelationBuilder | None = None,
         quality_estimator: StructureQualityEstimator | None = None,
@@ -164,6 +170,11 @@ class SourceUnderstandingPipeline:
         self._group_builder = group_builder if group_builder is not None else LogicalGroupBuilder()
         self._hierarchy_builder = (
             hierarchy_builder if hierarchy_builder is not None else HierarchyBuilder()
+        )
+        self._integrity_consolidator = (
+            integrity_consolidator
+            if integrity_consolidator is not None
+            else IntegrityGroupConsolidator()
         )
         self._context_integrator = (
             context_integrator if context_integrator is not None else ContextIntegrator()
@@ -284,6 +295,14 @@ class SourceUnderstandingPipeline:
             "logical grouping",
             lambda: self._group_builder.build(element_snapshot, signal_set, boundary_set),
         )
+        grouping_result, integrity_report = run_stage(
+            "integrity consolidation",
+            lambda: self._integrity_consolidator.consolidate(
+                element_snapshot,
+                boundary_set,
+                grouping_result,
+            ),
+        )
         hierarchy_result = run_stage(
             "hierarchy understanding",
             lambda: self._hierarchy_builder.build(element_snapshot, signal_set, boundary_set),
@@ -339,6 +358,7 @@ class SourceUnderstandingPipeline:
             integration_result,
             relation_result,
             quality_report,
+            integrity_report,
             region_result,
         )
         processing_with_manifest = processing_with_pipeline_manifest(
@@ -353,6 +373,7 @@ class SourceUnderstandingPipeline:
             integration_result=integration_result,
             relation_result=relation_result,
             quality_report=quality_report,
+            integrity_report=integrity_report,
             region_result=region_result,
             region_source=region_source,
             region_count=len(region_snapshot),
@@ -411,6 +432,7 @@ class SourceUnderstandingPipeline:
             integration_result=integration_result,
             relation_result=relation_result,
             quality_report=quality_report,
+            integrity_report=integrity_report,
             region_result=region_result,
             normalization_result=normalization_result,
             structural_document=structural_document,
