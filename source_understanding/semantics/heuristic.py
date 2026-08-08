@@ -7,7 +7,13 @@ from dataclasses import dataclass
 from source_understanding.schemas.context import StructureSource
 from source_understanding.schemas.document import SemanticAnnotationType
 
-from .provider import SemanticCandidate, SemanticRequest, SemanticTargetKind
+from .provider import (
+    SemanticCandidate,
+    SemanticCapability,
+    SemanticProviderCapabilities,
+    SemanticRequest,
+    SemanticTargetKind,
+)
 
 
 HEURISTIC_SEMANTIC_PROVIDER_VERSION = "1"
@@ -93,6 +99,21 @@ class HeuristicSemanticProvider:
 
     name = "heuristic-semantic"
     version = HEURISTIC_SEMANTIC_PROVIDER_VERSION
+    capabilities = SemanticProviderCapabilities(
+        capabilities=(
+            SemanticCapability(
+                name="explicit-semantic-roles",
+                target_kinds=(SemanticTargetKind.ELEMENT,),
+                annotation_types=tuple(rule.annotation_type for rule in _DEFAULT_RULES),
+            ),
+            SemanticCapability(
+                name="topic-group-label",
+                target_kinds=(SemanticTargetKind.LOGICAL_UNIT,),
+                annotation_types=(SemanticAnnotationType.TOPIC,),
+            ),
+        ),
+        deterministic=True,
+    )
 
     def __init__(self, *, max_value_chars: int = 1024) -> None:
         if max_value_chars < 32 or max_value_chars > 8192:
