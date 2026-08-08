@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import TypeVar
 
@@ -8,6 +9,7 @@ from source_understanding.profiling.content_profiler import ContentProfile
 from source_understanding.profiling.regions import ContentRegionSegmentationResult
 from source_understanding.relations.builder import RelationBuildResult
 from source_understanding.schemas.document import CanonicalDocument, ProcessingManifest
+from source_understanding.source_attributes import SOURCE_ATTRIBUTE_CONTRACT_VERSION
 from source_understanding.structure.boundary import BoundarySet
 from source_understanding.structure.grouping import GroupingResult
 from source_understanding.structure.hierarchy import HierarchyResult
@@ -77,6 +79,7 @@ def processing_with_pipeline_manifest(
     configuration["source_understanding_pipeline"] = {
         "pipeline_version": pipeline_version,
         "policy": pipeline_policy.model_dump(mode="json"),
+        "source_attribute_contract_version": SOURCE_ATTRIBUTE_CONTRACT_VERSION,
         "content_profiler_version": content_profile.version,
         "content_regions": {
             "source": region_source,
@@ -89,7 +92,7 @@ def processing_with_pipeline_manifest(
             ),
             "routing_version": (
                 getattr(region_router, "version", None)
-                if region_result is not None
+                if region_count > 0
                 else None
             ),
         },
@@ -194,11 +197,29 @@ def validate_semantic_boundary(
         )
 
 
+def validate_processing_manifest(processing: ProcessingManifest) -> None:
+    processed_at = processing.processed_at
+    if processed_at.tzinfo is None or processed_at.utcoffset() is None:
+        raise SourceUnderstandingPipelineError(
+            "processing.processed_at must be timezone-aware"
+        )
+
+
 def validate_source_identity(document_id: str, content_hash: str) -> None:
-    if not isinstance(document_id, str) or not document_id.strip():
-        raise SourceUnderstandingPipelineError("document_id must be a non-blank string")
-    if not isinstance(content_hash, str) or not content_hash.strip():
-        raise SourceUnderstandingPipelineError("content_hash must be a non-blank string")
+    if (
+        not isinstance(document_id, str)
+        or not document_id
+        or document_id.strip() != document_id
+    ):
+        raise SourceUnderstandingPipelineError(
+            "document_id must be a trimmed non-blank string"
+        )
+    if not isinstance(content_hash, str) or not re.fullmatch(
+        r"sha256:[0-9a-f]{64}", content_hash
+    ):
+        raise SourceUnderstandingPipelineError(
+            "content_hash must be canonical lowercase sha256:<64 hex>"
+        )
 
 
 def diagnostic_message(exc: Exception) -> str:
