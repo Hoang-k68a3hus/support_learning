@@ -318,6 +318,7 @@ class SourceUnderstandingPipeline:
             "policy": self._policy.model_dump(mode="json"),
             "content_profiler_version": content_profile.version,
             "structure_signal_version": signal_set.version,
+            "structure_signal_policy": signal_set.policy.model_dump(mode="json"),
             "boundary_version": boundary_set.version,
             "boundary_policy": boundary_set.policy.model_dump(mode="json"),
             "grouping_version": grouping_result.version,
