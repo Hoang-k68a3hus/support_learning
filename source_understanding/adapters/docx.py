@@ -26,11 +26,12 @@ from ._docx_common import (
     half_points, int_attr, local_name, on_off, stable_group_id,
 )
 from ._docx_package import DocxPackageMixin
+from ._docx_fixups import DocxFixupMixin
 from ._docx_extract import DocxExtractMixin
 from ._docx_text import DocxTextMixin
 
 
-class DocxAdapter(DocxPackageMixin, DocxExtractMixin, DocxTextMixin):
+class DocxAdapter(DocxPackageMixin, DocxFixupMixin, DocxExtractMixin, DocxTextMixin):
     """Source-near OOXML adapter for Word documents.
 
     DOCX is reflowable, therefore this adapter intentionally emits no page or
