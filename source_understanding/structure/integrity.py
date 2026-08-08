@@ -11,6 +11,13 @@ from pydantic import Field, model_validator
 from source_understanding.schemas.context import Confidence, JsonObject, SchemaModel, StructureSource
 from source_understanding.schemas.element import Element, ElementType
 from source_understanding.schemas.logical_unit import LogicalUnit, LogicalUnitType
+from source_understanding.source_attributes import (
+    INTEGRITY_GROUP_ID_ATTRIBUTE,
+    INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE,
+    SourceAttributeError,
+    source_integrity_group_id,
+    source_integrity_parent_group_id,
+)
 
 from .grouping import GroupingResult
 
@@ -18,10 +25,8 @@ if TYPE_CHECKING:
     from .boundary import BoundarySet
 
 
-INTEGRITY_CONSOLIDATION_VERSION = "1"
-INTEGRITY_CONSOLIDATION_POLICY_VERSION = "1"
-
-
+INTEGRITY_CONSOLIDATION_VERSION = "2"
+INTEGRITY_CONSOLIDATION_POLICY_VERSION = "2"
 class IntegrityConsolidationError(ValueError):
     """Existing grouping cannot be consolidated without changing trusted membership."""
 
@@ -32,6 +37,16 @@ class _Family:
     element_types: frozenset[ElementType]
     unit_type: LogicalUnitType
     container_types: frozenset[ElementType] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
+class _IntegritySpan:
+    family: _Family
+    member_ids: tuple[str, ...]
+    boundary_ids: tuple[str, ...]
+    boundary_classes: tuple[str, ...]
+    native_group_id: str | None = None
+    native_parent_group_id: str | None = None
 
 
 _FAMILIES = (
@@ -58,12 +73,28 @@ _TYPE_TO_FAMILY = {
 }
 
 
+def native_integrity_group_id(element: Element) -> str | None:
+    try:
+        return source_integrity_group_id(element)
+    except SourceAttributeError as exc:
+        raise IntegrityConsolidationError(str(exc)) from exc
+
+
+def native_integrity_parent_group_id(element: Element) -> str | None:
+    try:
+        return source_integrity_parent_group_id(element)
+    except SourceAttributeError as exc:
+        raise IntegrityConsolidationError(str(exc)) from exc
+
+
 class IntegrityConsolidationPolicy(SchemaModel):
     version: str = INTEGRITY_CONSOLIDATION_POLICY_VERSION
     confidence: Confidence = 0.92
     merge_across_soft_boundaries: bool = True
     merge_across_unknown_boundaries: bool = True
     split_on_repeated_container: bool = True
+    prefer_native_group_identity: bool = True
+    require_native_parent_present: bool = True
 
 
 class IntegrityConsolidationReport(SchemaModel):
@@ -73,6 +104,8 @@ class IntegrityConsolidationReport(SchemaModel):
     consolidated_unit_ids: tuple[str, ...] = Field(default_factory=tuple)
     family_counts: JsonObject = Field(default_factory=dict)
     replaced_unit_ids: tuple[str, ...] = Field(default_factory=tuple)
+    native_group_count: int = Field(default=0, ge=0)
+    nested_native_group_count: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def validate_ids(self) -> "IntegrityConsolidationReport":
@@ -87,15 +120,16 @@ def unresolved_integrity_boundary_ids(
     boundary_set: "BoundarySet",
     grouping_result: GroupingResult,
 ) -> tuple[str, ...]:
-    """Return integrity-warning boundaries not resolved by one LogicalUnit.
+    """Return integrity-warning boundaries not resolved by structural ownership.
 
-    Boundary scoring intentionally marks uncertain same-family adjacency before
-    grouping. Once grouping/consolidation places both adjacent elements in the
-    same LogicalUnit, that warning is structurally resolved and must not continue
-    to depress document-quality diagnostics.
+    A warning is resolved when both sides are in one LogicalUnit *or* both sides
+    belong to distinct source-native integrity groups.  In the latter case the
+    source has explicitly told us there is a block boundary; merging is not the
+    resolution, preserving the distinct blocks is.
     """
 
     owners: dict[str, str] = {}
+    unit_by_id = {unit.id: unit for unit in grouping_result.logical_units}
     for unit in grouping_result.logical_units:
         for element_id in unit.element_ids:
             previous = owners.get(element_id)
@@ -115,8 +149,22 @@ def unresolved_integrity_boundary_ids(
             continue
         left_owner = owners.get(boundary.left_element_id)
         right_owner = owners.get(boundary.right_element_id)
-        if left_owner is None or left_owner != right_owner:
-            unresolved.append(boundary.id)
+        if left_owner is not None and left_owner == right_owner:
+            continue
+        left_group = (
+            unit_by_id[left_owner].metadata.get(INTEGRITY_GROUP_ID_ATTRIBUTE)
+            if left_owner in unit_by_id
+            else None
+        )
+        right_group = (
+            unit_by_id[right_owner].metadata.get(INTEGRITY_GROUP_ID_ATTRIBUTE)
+            if right_owner in unit_by_id
+            else None
+        )
+        if isinstance(left_group, str) and isinstance(right_group, str):
+            # Distinct native groups are an explicit resolution of the adjacency.
+            continue
+        unresolved.append(boundary.id)
     return tuple(unresolved)
 
 
@@ -153,9 +201,11 @@ class IntegrityGroupConsolidator:
         replaced: list[str] = []
         created: list[LogicalUnit] = []
         family_counts: Counter[str] = Counter()
+        native_count = 0
+        nested_count = 0
 
-        for family, member_ids, boundary_ids, boundary_classes in spans:
-            member_set = set(member_ids)
+        for span in spans:
+            member_set = set(span.member_ids)
             overlapping = [
                 unit for unit in existing if member_set.intersection(unit.element_ids)
             ]
@@ -163,23 +213,20 @@ class IntegrityGroupConsolidator:
                 outside = set(unit.element_ids) - member_set
                 if outside:
                     raise IntegrityConsolidationError(
-                        f"logical unit {unit.id!r} crosses {family.name!r} integrity span"
+                        f"logical unit {unit.id!r} crosses {span.family.name!r} integrity span"
                     )
             if overlapping:
                 replaced.extend(unit.id for unit in overlapping)
                 existing = [unit for unit in existing if unit not in overlapping]
 
             created.append(
-                self._make_unit(
-                    family,
-                    member_ids,
-                    by_id,
-                    overlapping,
-                    boundary_ids,
-                    boundary_classes,
-                )
+                self._make_unit(span, by_id, overlapping)
             )
-            family_counts[family.name] += 1
+            family_counts[span.family.name] += 1
+            if span.native_group_id is not None:
+                native_count += 1
+            if span.native_parent_group_id is not None:
+                nested_count += 1
 
         units = [*existing, *created]
         units.sort(key=lambda unit: order[unit.element_ids[0]])
@@ -201,6 +248,8 @@ class IntegrityGroupConsolidator:
             consolidated_unit_ids=tuple(unit.id for unit in created),
             family_counts=dict(sorted(family_counts.items())),
             replaced_unit_ids=tuple(dict.fromkeys(replaced)),
+            native_group_count=native_count,
+            nested_native_group_count=nested_count,
         )
         return consolidated, report
 
@@ -208,22 +257,161 @@ class IntegrityGroupConsolidator:
         self,
         elements: tuple[Element, ...],
         boundary_set: "BoundarySet",
-    ) -> tuple[tuple[_Family, tuple[str, ...], tuple[str, ...], tuple[str, ...]], ...]:
-        spans = []
-        index = 0
-        while index < len(elements):
-            family = _TYPE_TO_FAMILY.get(elements[index].type)
+    ) -> tuple[_IntegritySpan, ...]:
+        native_spans, keyed_ids = self._native_spans(elements, boundary_set)
+        heuristic_spans = self._heuristic_spans(elements, boundary_set, keyed_ids)
+        position = {element.id: index for index, element in enumerate(elements)}
+        return tuple(
+            sorted(
+                (*native_spans, *heuristic_spans),
+                key=lambda span: position[span.member_ids[0]],
+            )
+        )
+
+    def _native_spans(
+        self,
+        elements: tuple[Element, ...],
+        boundary_set: "BoundarySet",
+    ) -> tuple[tuple[_IntegritySpan, ...], set[str]]:
+        if not self._policy.prefer_native_group_identity:
+            return (), set()
+        position = {element.id: index for index, element in enumerate(elements)}
+        groups: dict[str, list[Element]] = {}
+        families: dict[str, _Family] = {}
+        parents: dict[str, str | None] = {}
+        keyed_ids: set[str] = set()
+        for element in elements:
+            family = _TYPE_TO_FAMILY.get(element.type)
             if family is None:
-                index += 1
                 continue
-            members = [elements[index].id]
+            group_id = native_integrity_group_id(element)
+            if group_id is None:
+                continue
+            parent_id = native_integrity_parent_group_id(element)
+            previous_family = families.get(group_id)
+            if previous_family is not None and previous_family != family:
+                raise IntegrityConsolidationError(
+                    f"native integrity group {group_id!r} mixes incompatible families"
+                )
+            previous_parent = parents.get(group_id)
+            if group_id in parents and previous_parent != parent_id:
+                raise IntegrityConsolidationError(
+                    f"native integrity group {group_id!r} carries inconsistent parent ids"
+                )
+            families[group_id] = family
+            parents[group_id] = parent_id
+            groups.setdefault(group_id, []).append(element)
+            keyed_ids.add(element.id)
+
+        if self._policy.require_native_parent_present:
+            missing = sorted(
+                {parent for parent in parents.values() if parent is not None and parent not in groups}
+            )
+            if missing:
+                raise IntegrityConsolidationError(
+                    f"native integrity parent groups are missing: {missing}"
+                )
+
+        for group_id in groups:
+            seen: set[str] = set()
+            current: str | None = group_id
+            while current is not None:
+                if current in seen:
+                    raise IntegrityConsolidationError(
+                        f"native integrity parent hierarchy contains cycle at {current!r}"
+                    )
+                seen.add(current)
+                current = parents.get(current)
+
+        def is_descendant(candidate_group: str, ancestor_group: str) -> bool:
+            seen: set[str] = set()
+            current: str | None = candidate_group
+            while current is not None:
+                if current in seen:  # cycle already validated; defensive only.
+                    return False
+                seen.add(current)
+                current = parents.get(current)
+                if current == ancestor_group:
+                    return True
+            return False
+
+        # Non-contiguous membership is only valid for a source-native container
+        # surrounding nested descendant groups (for example an outer table around
+        # a nested table).  Never use a repeated group id to jump over unrelated
+        # source content.
+        element_group = {
+            element.id: native_integrity_group_id(element)
+            for element in elements
+        }
+        for group_id, members in groups.items():
+            member_positions = sorted(position[element.id] for element in members)
+            for left_pos, right_pos in zip(member_positions, member_positions[1:]):
+                if right_pos <= left_pos + 1:
+                    continue
+                for candidate in elements[left_pos + 1 : right_pos]:
+                    candidate_group = element_group.get(candidate.id)
+                    if (
+                        candidate_group is None
+                        or candidate_group not in groups
+                        or not is_descendant(candidate_group, group_id)
+                    ):
+                        raise IntegrityConsolidationError(
+                            f"native integrity group {group_id!r} crosses unrelated "
+                            f"element {candidate.id!r}"
+                        )
+
+        spans: list[_IntegritySpan] = []
+        for group_id, members in groups.items():
+            members.sort(key=lambda element: position[element.id])
             boundary_ids: list[str] = []
             boundary_classes: list[str] = []
-            seen_container = elements[index].type in family.container_types
+            for left, right in zip(members, members[1:]):
+                left_pos = position[left.id]
+                right_pos = position[right.id]
+                if right_pos == left_pos + 1:
+                    boundary = boundary_set.boundaries[left_pos]
+                    value = getattr(boundary.classification, "value", str(boundary.classification))
+                    if value == "HARD":
+                        raise IntegrityConsolidationError(
+                            f"native integrity group {group_id!r} crosses a HARD boundary "
+                            f"{boundary.id!r}"
+                        )
+                    boundary_ids.append(boundary.id)
+                    boundary_classes.append(value)
+            spans.append(
+                _IntegritySpan(
+                    family=families[group_id],
+                    member_ids=tuple(element.id for element in members),
+                    boundary_ids=tuple(boundary_ids),
+                    boundary_classes=tuple(boundary_classes),
+                    native_group_id=group_id,
+                    native_parent_group_id=parents[group_id],
+                )
+            )
+        return tuple(spans), keyed_ids
+
+    def _heuristic_spans(
+        self,
+        elements: tuple[Element, ...],
+        boundary_set: "BoundarySet",
+        keyed_ids: set[str],
+    ) -> tuple[_IntegritySpan, ...]:
+        spans: list[_IntegritySpan] = []
+        index = 0
+        while index < len(elements):
+            element = elements[index]
+            family = _TYPE_TO_FAMILY.get(element.type)
+            if family is None or element.id in keyed_ids:
+                index += 1
+                continue
+            members = [element.id]
+            boundary_ids: list[str] = []
+            boundary_classes: list[str] = []
+            seen_container = element.type in family.container_types
             cursor = index + 1
             while cursor < len(elements):
                 candidate = elements[cursor]
-                if candidate.type not in family.element_types:
+                if candidate.id in keyed_ids or candidate.type not in family.element_types:
                     break
                 boundary = boundary_set.boundaries[cursor - 1]
                 if not self._can_cross(boundary.classification):
@@ -243,11 +431,11 @@ class IntegrityGroupConsolidator:
                 )
                 cursor += 1
             spans.append(
-                (
-                    family,
-                    tuple(members),
-                    tuple(boundary_ids),
-                    tuple(boundary_classes),
+                _IntegritySpan(
+                    family=family,
+                    member_ids=tuple(members),
+                    boundary_ids=tuple(boundary_ids),
+                    boundary_classes=tuple(boundary_classes),
                 )
             )
             index = cursor
@@ -265,39 +453,46 @@ class IntegrityGroupConsolidator:
 
     def _make_unit(
         self,
-        family: _Family,
-        member_ids: tuple[str, ...],
+        span: _IntegritySpan,
         by_id: dict[str, Element],
         replaced_units: list[LogicalUnit],
-        boundary_ids: tuple[str, ...],
-        boundary_classes: tuple[str, ...],
     ) -> LogicalUnit:
         confidences = [self._policy.confidence]
         confidences.extend(unit.confidence for unit in replaced_units)
-        for element_id in member_ids:
+        for element_id in span.member_ids:
             element = by_id[element_id]
             if element.confidence.type is not None:
                 confidences.append(element.confidence.type)
             elif element.provenance.confidence is not None:
                 confidences.append(element.provenance.confidence)
-        digest = hashlib.sha256(
-            "|".join((family.name, family.unit_type.value, *member_ids)).encode("utf-8")
-        ).hexdigest()[:20]
+        identity_parts = [span.family.name, span.family.unit_type.value, *span.member_ids]
+        if span.native_group_id is not None:
+            identity_parts.extend(("native", span.native_group_id))
+        digest = hashlib.sha256("|".join(identity_parts).encode("utf-8")).hexdigest()[:20]
+        metadata: dict[str, object] = {
+            "grouping_rule": (
+                "source_native_integrity_group"
+                if span.native_group_id is not None
+                else "contiguous_integrity_family"
+            ),
+            "integrity_family": span.family.name,
+            "replaced_unit_ids": [unit.id for unit in replaced_units],
+            "boundary_ids": list(span.boundary_ids),
+            "boundary_classes": list(span.boundary_classes),
+            "token_target_used": False,
+            "confidence_policy": "uncalibrated_baseline_capped_by_upstream",
+        }
+        if span.native_group_id is not None:
+            metadata[INTEGRITY_GROUP_ID_ATTRIBUTE] = span.native_group_id
+        if span.native_parent_group_id is not None:
+            metadata[INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE] = span.native_parent_group_id
         return LogicalUnit(
             id=f"lu_{digest}",
-            type=family.unit_type,
-            element_ids=member_ids,
+            type=span.family.unit_type,
+            element_ids=span.member_ids,
             source=StructureSource.DERIVED,
             confidence=min(confidences),
-            metadata={
-                "grouping_rule": "contiguous_integrity_family",
-                "integrity_family": family.name,
-                "replaced_unit_ids": [unit.id for unit in replaced_units],
-                "boundary_ids": list(boundary_ids),
-                "boundary_classes": list(boundary_classes),
-                "token_target_used": False,
-                "confidence_policy": "uncalibrated_baseline_capped_by_upstream",
-            },
+            metadata=metadata,
         )
 
     @staticmethod
