@@ -4,21 +4,20 @@
 > **Tên tài liệu:** Web Application & Platform System Design  
 > **Vai trò:** Thiết kế chuyên sâu phần Web của đồ án AI Study Assistant 2.0  
 > **Định hướng:** Web-first learning platform, AI-powered  
-> **Mục tiêu:** Biến các subsystem AI, RAG, Learning Analytics và Personalization thành một sản phẩm Web hoàn chỉnh, có kiến trúc rõ ràng, trải nghiệm học tập liền mạch, realtime, an toàn, có thể kiểm thử và triển khai.
+> **Mục tiêu:** Biến Source Understanding, RAG, learning-content generation và Learning Analytics thành một sản phẩm Web hoàn chỉnh, realtime, an toàn, có thể kiểm thử và triển khai.  
+> **Scope:** Không có personalization UX, Recommendation Engine, Student Model, mastery/forgetting profile, automatic next-action hoặc adaptive study-plan generation.
 >
-> **Quan hệ với các tài liệu hiện có:**
+> **Quan hệ với các tài liệu:**
 >
-> - `AI_Study_Assistant_2.0_Full_Graduation_Project_Idea.md` — source of truth cho phạm vi sản phẩm, domain học tập, backend tổng thể, database và feature.
-> - `AI_Study_Assistant_2.0_FULL_AI_SYSTEM_DESIGN.md` — source of truth cho AI pipeline, RAG, generation, student model, recommendation và planner.
-> - `UNIVERSAL_SOURCE_UNDERSTANDING_RAG_PARSER_DESIGN.md` — source of truth cho source representation, `Element → LogicalUnit → RetrievalUnit → Evidence → Citation`, `SourceAnchor` và source scope.
->
-> Tài liệu này **không thiết kế lại AI**. Nó thiết kế cách Web Application tổ chức, hiển thị, điều khiển và kết nối các capability đã có thành một learning platform hoàn chỉnh.
+> - `AI_Study_Assistant_2.0_Full_Graduation_Project_Idea.md` — source of truth cho product scope.
+> - `AI_Study_Assistant_2.0_FULL_AI_SYSTEM_DESIGN.md` — source of truth cho AI/source/RAG/generation pipeline.
+> - `UNIVERSAL_SOURCE_UNDERSTANDING_RAG_PARSER_DESIGN.md` — source of truth cho `Element → LogicalUnit → RetrievalUnit → Evidence → Citation`, source identity và provenance.
 
 ---
 
 # 1. Tư tưởng thiết kế cốt lõi
 
-AI Study Assistant 2.0 không nên được xây như:
+Web không nên chỉ là:
 
 ```text
 Login
@@ -27,23 +26,24 @@ Login
 → Logout
 ```
 
-và cũng không nên tổ chức giao diện theo implementation detail:
+và cũng không nên tổ chức UI theo implementation details:
 
 ```text
 Embedding
 Vector DB
 Reranker
-Mastery Engine
 ```
 
-Web phải được xây quanh **learning workflow của người dùng**:
+Web phải bám vào learning workflow:
 
 ```text
 ORGANIZE
    ↓
-LEARN
+READ / ASK
    ↓
 PRACTICE
+   ↓
+TRACK
    ↓
 REFLECT
    ↓
@@ -59,52 +59,41 @@ Learning Sources
       ↓
 Learning Workspace
       ↓
-Read / Ask / Note / Practice
+Reader / AI Tutor / Notes / Practice
       ↓
 Learning Events
       ↓
-Progress & Mastery
+Learning Analytics
       ↓
-Personalized Recommendation
-      ↓
-Study Plan
+User-managed Study Plan
       ↓
 Next Learning Session
 ```
 
-Triết lý:
-
-> **AI tạo intelligence; Web biến intelligence thành hành động học tập.**
+Người dùng chủ động quyết định hành động học tiếp theo; Web không hiển thị recommendation cards hoặc AI-ranked next actions.
 
 ---
 
-# 2. Vị trí của Web trong toàn hệ thống
-
-Toàn hệ thống được nhìn theo ba lớp lớn:
+# 2. Vị trí Web trong toàn hệ thống
 
 ```text
 ┌─────────────────────────────────────────────┐
 │              PRODUCT EXPERIENCE             │
-│                                             │
-│ Next.js Web Application                     │
+│ Next.js                                     │
 │ Workspace / Reader / Tutor / Quiz / Planner │
 └────────────────────┬────────────────────────┘
-                     │
                      ▼
 ┌─────────────────────────────────────────────┐
 │             APPLICATION PLATFORM            │
-│                                             │
 │ Spring Boot                                 │
 │ Auth / Business / Learning / Analytics      │
-│ Documents / Planner / Admin                 │
+│ Documents / Planner / Admin / Realtime      │
 └────────────────────┬────────────────────────┘
-                     │
                      ▼
 ┌─────────────────────────────────────────────┐
 │               AI INTELLIGENCE               │
-│                                             │
 │ Source Understanding / Retrieval / RAG      │
-│ Generation / Student Model / Recommendation │
+│ Grounded Generation / Evaluation            │
 └─────────────────────────────────────────────┘
 ```
 
@@ -116,39 +105,36 @@ Browser
 Spring Boot
   ↓
 FastAPI AI Service
-  ↓
-AI components
 ```
 
-Spring Boot vẫn là application boundary chính.
+Spring Boot là application/security boundary.
 
 ---
 
 # 3. Mục tiêu riêng của Web System
 
-Web System phải chứng minh được năng lực ở năm nhóm.
-
-## 3.1. Product Engineering
+## Product Engineering
 
 - Information architecture.
-- Complex learning workspace.
-- Multi-source interaction.
-- Document reading experience.
+- Multi-source learning workspace.
+- Rich document reader.
+- Grounded AI Tutor.
 - Practice experience.
-- Planner.
-- Analytics.
-- Personalization UX.
+- Study-session lifecycle.
+- Learning Analytics.
+- Manual planner/calendar.
+- Admin/debug experience.
 
-## 3.2. Frontend Engineering
+## Frontend Engineering
 
 - Next.js + TypeScript.
 - Routing.
-- Server/client component boundaries.
+- Server/client boundaries.
 - Server state.
 - Local UI state.
 - Forms.
 - Streaming.
-- Realtime updates.
+- SSE/realtime updates.
 - File upload.
 - Rich document interaction.
 - Data visualization.
@@ -156,12 +142,11 @@ Web System phải chứng minh được năng lực ở năm nhóm.
 - Accessibility.
 - Responsive design.
 
-## 3.3. Backend Web Engineering
+## Backend Web Engineering
 
 - Spring Boot modular backend.
 - REST API.
-- Authentication.
-- Authorization.
+- Authentication / authorization.
 - Transactions.
 - Async jobs.
 - Event handling.
@@ -170,18 +155,7 @@ Web System phải chứng minh được năng lực ở năm nhóm.
 - Analytics aggregation.
 - Object storage integration.
 
-## 3.4. Distributed System Concerns
-
-- Background processing.
-- Idempotency.
-- Retry.
-- SSE.
-- Job progress.
-- Eventual consistency.
-- Failure recovery.
-- Observability.
-
-## 3.5. Production Quality
+## Production Quality
 
 - Security.
 - Testing.
@@ -193,24 +167,20 @@ Web System phải chứng minh được năng lực ở năm nhóm.
 
 ---
 
-# 4. Web System không chịu trách nhiệm cho những gì?
+# 4. Web không chịu trách nhiệm cho những gì?
 
-Để tránh boundary bị lẫn:
-
-Web **không**:
+Web không:
 
 ```text
-parse document structure
+parse source structure
 generate embeddings
 rerank evidence
-calculate groundedness
 invent citations
-calculate mastery bằng UI
-decide recommendation bằng prompt
-schedule plan bằng frontend heuristic
+calculate source provenance
+infer user mastery
+rank recommended actions
+auto-generate personalized plan
 ```
-
-Những việc trên thuộc AI/Application layer.
 
 Web chịu trách nhiệm:
 
@@ -219,9 +189,10 @@ collect user intent
 maintain interaction state
 send valid requests
 render structured outputs
-show provenance
+show provenance/citation
 capture learning interaction
-offer actions
+render analytics
+offer explicit user-controlled actions
 handle loading/failure
 ```
 
@@ -229,15 +200,9 @@ handle loading/failure
 
 # 5. Product Model — Learning Workspace
 
-Bản gốc đã có document library, learning tools, planner và source-scoped RAG.
-
-Để Web có một product boundary rõ ràng, đề xuất thêm:
-
 ```text
 LearningWorkspace
 ```
-
-Đây là **Web/Product extension**, không thay thế `source_id`.
 
 Ví dụ:
 
@@ -248,7 +213,7 @@ IELTS Preparation
 Software Engineering Course
 ```
 
-Một workspace gom:
+Workspace gom:
 
 ```text
 Sources
@@ -257,66 +222,40 @@ Notes
 Highlights
 Quizzes
 Flashcards
-Topics
 Study Sessions
 Study Plan
 Analytics
 ```
 
-Nhưng mỗi source vẫn giữ identity riêng:
+Nhưng source identity không bị merge:
 
 ```text
-Workspace
- ├── Source A
- ├── Source B
- └── Source C
+Workspace W1
+ ├── Source S1
+ ├── Source S2
+ └── Source S3
 ```
 
-Không:
+Invariant:
 
 ```text
-Workspace
-→ merge all sources into one fake document
+Workspace membership != Source identity
 ```
 
 ---
 
-# 6. Workspace và source identity
+# 6. Source Scope
 
-Universal Source Understanding coi `source_id` là first-class boundary.
-
-Web phải giữ invariant:
-
-```text
-Workspace membership
-≠
-Source identity
-```
-
-Ví dụ:
-
-```text
-Workspace W1
- ├ Source S1
- ├ Source S2
- └ Source S3
-```
-
-RAG query:
+RAG request có explicit source scope:
 
 ```text
 workspace_id = W1
-
 selected_source_ids = [S1, S3]
 ```
 
-Retrieval phải chạy trên:
+Retrieval chỉ dùng các source được authorize và được chọn.
 
-```text
-S1 + S3
-```
-
-không tự động dùng S2.
+Không tự động kéo mọi source trong workspace vào context.
 
 ---
 
@@ -329,46 +268,38 @@ STUDENT
 ADMIN
 ```
 
-## STUDENT
+## Student
 
-Có thể:
-
-- quản lý workspace;
-- quản lý source;
-- đọc tài liệu;
+- quản lý workspace/source;
+- đọc source;
 - hỏi AI;
 - xem citation;
-- tạo note/highlight/bookmark;
-- tạo và làm quiz;
-- học flashcard;
-- chạy study session;
-- xem analytics;
-- nhận recommendation;
-- quản lý planner.
+- note/highlight/bookmark;
+- summary;
+- quiz;
+- flashcard;
+- study session;
+- analytics;
+- manual study planner.
 
-## ADMIN
+## Admin
 
-Có thể:
-
-- quản lý user;
-- theo dõi document jobs;
-- theo dõi system health;
-- theo dõi AI usage;
-- kiểm tra failed jobs;
-- xem storage;
-- xem operational analytics.
+- user management;
+- document jobs;
+- storage;
+- AI usage;
+- system health;
+- errors;
+- retrieval/source debug.
 
 ---
 
 # 8. Information Architecture
 
-Navigation đề xuất:
-
 ```text
 AI Study Assistant
 │
 ├── Home
-│
 ├── Workspaces
 │   ├── Overview
 │   ├── Sources
@@ -376,76 +307,49 @@ AI Study Assistant
 │   ├── Practice
 │   ├── Notes
 │   └── Progress
-│
 ├── Library
-│
 ├── Practice
 │   ├── Quizzes
 │   └── Flashcards
-│
 ├── Planner
-│
 ├── Analytics
-│
 ├── Notifications
-│
 ├── Settings
-│
 └── Admin
 ```
 
-Nguyên tắc:
-
-```text
-navigation theo user goal
-```
-
-không theo backend module.
+Navigation theo user goal, không theo backend module.
 
 ---
 
 # 9. Route Architecture
 
-Ví dụ route tree:
-
 ```text
 /
 ├── login
 ├── register
-│
 └── app
     ├── home
-    │
     ├── workspaces
-    │   ├── [workspaceId]
-    │   │   ├── overview
-    │   │   ├── sources
-    │   │   ├── learn
-    │   │   ├── practice
-    │   │   ├── notes
-    │   │   └── progress
-    │
+    │   └── [workspaceId]
+    │       ├── overview
+    │       ├── sources
+    │       ├── learn
+    │       ├── practice
+    │       ├── notes
+    │       └── progress
     ├── library
-    │
-    ├── documents
-    │   └── [documentId]
-    │
-    ├── quizzes
-    │   └── [quizId]
-    │
+    ├── documents/[documentId]
+    ├── quizzes/[quizId]
     ├── flashcards
-    │
     ├── planner
     ├── analytics
     ├── notifications
     ├── settings
-    │
     └── admin
 ```
 
-Các state có ý nghĩa navigation nên tồn tại trong URL.
-
-Ví dụ:
+Navigation state có ý nghĩa nên nằm trong URL khi phù hợp:
 
 ```text
 /documents/{id}?page=87&tab=notes
@@ -453,17 +357,15 @@ Ví dụ:
 
 ---
 
-# 10. Global Home — Learning Command Center
+# 10. Global Home
 
-Home không chỉ là dashboard thống kê.
-
-Nó phải trả lời bốn câu:
+Home trả lời:
 
 ```text
 1. Tôi đang học gì?
-2. Tôi nên làm gì hôm nay?
-3. Tôi đang yếu ở đâu?
-4. Tôi có gì sắp đến hạn?
+2. Tôi có task nào hôm nay?
+3. Tiến độ gần đây thế nào?
+4. Tôi vừa làm gì gần nhất?
 ```
 
 Layout:
@@ -472,28 +374,27 @@ Layout:
 ┌────────────────────────────────────────────┐
 │ Continue Learning                          │
 ├────────────────────────────────────────────┤
-│ Today's Plan          │ Review Due         │
+│ Today's Tasks         │ Recent Sources     │
 ├───────────────────────┼────────────────────┤
-│ Weak Topics           │ Weekly Progress    │
+│ Quiz Performance      │ Weekly Progress    │
 ├───────────────────────┴────────────────────┤
-│ Personalized Recommendations               │
+│ Recent Activity                            │
 └────────────────────────────────────────────┘
 ```
+
+Không có Personalized Recommendations.
 
 ---
 
 # 11. Continue Learning
 
-User phải có thể quay lại đúng nơi đang học.
-
-State tối thiểu:
+Persist state tối thiểu:
 
 ```text
 workspace_id
 resource_id
 resource_type
-document_page optional
-active_topic optional
+last_location optional
 last_activity_type
 last_interacted_at
 ```
@@ -502,46 +403,26 @@ Ví dụ:
 
 ```text
 Continue Database Systems
-
-LEFT JOIN
 Database Systems.pdf · page 87
-
-Last studied yesterday
-
+Last opened yesterday
 [Continue]
 ```
+
+Đây là continuation state, không phải recommendation.
 
 ---
 
 # 12. Workspace Overview
 
-Workspace Overview:
-
 ```text
 Database Final Exam
 
-Deadline:
-12 days
-
-Progress:
-68%
-
-Sources:
-7
-
-Topics:
-24
-
-Today:
-3 tasks
-
-Weak:
-LEFT JOIN
-Transactions
-
-Recent:
-Database Systems.pdf
-SQL Lecture 5.pptx
+Deadline: 12 days
+Sources: 7
+Study time this week: 4h 20m
+Recent quiz: 7/10
+Tasks today: 3
+Recent source: Database Systems.pdf
 ```
 
 Actions:
@@ -551,14 +432,13 @@ Continue Learning
 Start Study Session
 Add Source
 Practice
+View Analytics
 View Plan
 ```
 
 ---
 
 # 13. Library
-
-Library là nơi quản lý source toàn hệ thống.
 
 Views:
 
@@ -580,21 +460,13 @@ tag
 created_at
 ```
 
-Search:
-
-```text
-title
-filename
-tag
-```
-
-Semantic content search là feature khác, không trộn với metadata library search.
+Product metadata search và semantic knowledge search là hai feature/API khác nhau.
 
 ---
 
-# 14. Document status model
+# 14. Document Status
 
-Giữ các trạng thái gốc:
+Canonical application states:
 
 ```text
 UPLOADED
@@ -604,155 +476,78 @@ READY
 FAILED
 ```
 
-Web có thể render chi tiết processing stage:
+UI có thể hiển thị stage nếu backend report thực:
 
 ```text
 UPLOADING
 PARSING
 STRUCTURING
-ENRICHING
 INDEXING
 READY
 ```
 
-Nhưng cần phân biệt:
-
-- `DocumentStatus` là application state.
-- `ProcessingStage` là progress detail.
-
-Không tạo các status UI làm source truth mới nếu backend không lưu chúng.
+Không fake progress.
 
 ---
 
 # 15. Upload UX
 
-Upload phải hỗ trợ:
-
 ```text
-drag & drop
-file picker
-multiple files
-```
-
-Flow:
-
-```text
-Select
-  ↓
-Local validation
-  ↓
+Select / Drag-drop
+      ↓
+Local UX validation
+      ↓
 Upload
-  ↓
+      ↓
 Backend validation
-  ↓
+      ↓
 Stored
-  ↓
+      ↓
 Background processing
-  ↓
+      ↓
 READY / FAILED
 ```
 
-Frontend local validation chỉ để UX.
-
-Backend vẫn phải validate lại.
+Backend luôn validate lại file type/size/security.
 
 ---
 
-# 16. File Upload Progress
+# 16. Upload Progress vs Processing Progress
 
-Phân biệt hai loại progress:
-
-## Upload Progress
+Tách:
 
 ```text
-Browser → Backend/Object Storage
+Browser → Storage/API upload progress
 ```
 
-## Processing Progress
+và:
 
 ```text
-Parser → Structure → Index
+Parser → Structure → Index processing state
 ```
 
-UI:
-
-```text
-Database Systems.pdf
-
-Upload        100% ✓
-Processing     72%
-```
-
-Không giả progress nếu worker không report được stage thực.
+UI không suy đoán processing percentage nếu worker không report.
 
 ---
 
-# 17. Realtime Processing Architecture
+# 17. Realtime Processing
 
-Đề xuất:
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant FE as Next.js
-    participant BE as Spring Boot
-    participant Q as Queue
-    participant W as AI Worker
-    participant E as Event Stream
-
-    User->>FE: Upload
-    FE->>BE: POST /documents
-    BE->>Q: enqueue job
-    BE-->>FE: 202 + documentId
-
-    FE->>E: subscribe
-
-    Q->>W: process
-    W-->>BE: progress/status
-    BE-->>E: document event
-    E-->>FE: progress update
-
-    W-->>BE: READY
-    BE-->>E: READY
-    E-->>FE: update UI
-```
-
----
-
-# 18. SSE trước WebSocket
-
-MVP ưu tiên Server-Sent Events cho các luồng server → client:
+MVP ưu tiên SSE cho:
 
 ```text
-document progress
-AI token streaming
-long generation status
+document status
+AI answer streaming
+long-generation status
 notifications
 ```
 
-Lý do:
-
-- đơn giản;
-- HTTP-friendly;
-- tự reconnect;
-- phù hợp luồng một chiều.
-
-WebSocket chỉ cần nếu sau này có:
-
-```text
-collaboration
-presence
-shared editing
-live classroom
-```
+WebSocket chỉ cần sau này nếu có collaborative editing/presence.
 
 ---
 
-# 19. Learning Workspace — màn hình trung tâm
+# 18. Learning Workspace — màn hình trung tâm
 
-Đây nên là màn hình mạnh nhất của sản phẩm.
-
-Desktop layout:
+Desktop:
 
 ```text
 ┌───────────────────────────────────────────────────────────┐
@@ -763,25 +558,18 @@ Desktop layout:
 │ Book.pdf   │                          │ Question          │
 │ Slide.pptx │                          │ Answer            │
 │ Notes.docx │                          │ Citations         │
-│            │                          │                   │
 ├────────────┴──────────────────────────┴───────────────────┤
-│ Notes | Summary | Quiz | Flashcards | Concepts | History │
+│ Notes | Summary | Quiz | Flashcards | History            │
 └───────────────────────────────────────────────────────────┘
 ```
 
-Mục tiêu:
-
-```text
-không bắt user chuyển 5 trang cho một learning flow
-```
+Mục tiêu: read/ask/practice mà không phải chuyển qua nhiều page rời rạc.
 
 ---
 
-# 20. Reader Abstraction
+# 19. LearningReader
 
-Frontend có một `LearningReader`.
-
-Renderer theo source type:
+Frontend abstraction:
 
 ```text
 PDFRenderer
@@ -789,8 +577,6 @@ DocxRenderer
 PptxRenderer
 TextRenderer
 ```
-
-Reader không chịu trách nhiệm hiểu source.
 
 Reader nhận:
 
@@ -801,28 +587,24 @@ anchors
 annotations
 ```
 
-và render.
+Reader không tự hiểu/infer source structure.
 
 ---
 
-# 21. Reader State
+# 20. Reader State
 
-Reader UI state:
+UI-local:
 
 ```text
-current_location
 zoom
-scroll_position
-selected_text
-selection_anchor
-active_highlight_id
-active_citation_id
-side_panel
+scroll position
+selected text
+active citation
+active highlight
+side panel
 ```
 
-Không đưa toàn bộ state này vào database.
-
-Chỉ persist state có ích cho continuation:
+Persist chỉ state hữu ích cho continuation:
 
 ```text
 last_location
@@ -831,51 +613,35 @@ last_opened_at
 
 ---
 
-# 22. SourceLocation và SourceAnchor
+# 21. SourceLocation / SourceAnchor
 
-Web phải hỗ trợ location optional.
+Location optional theo source capability.
 
-Nguồn có thể có:
+Có thể có:
 
 ```text
 page + bbox
+char range
+line range
+source-only fallback
 ```
 
-hoặc:
+Frontend không giả định mọi citation đều có page.
+
+Fallback:
 
 ```text
-start_char + end_char
-```
-
-hoặc location hạn chế hơn.
-
-Do đó frontend không được giả định:
-
-```text
-mọi citation đều có page
-```
-
-Renderer phải có progressive capability:
-
-```text
-bbox available
-→ precise highlight
-
-page available
-→ jump page
-
-char range available
-→ select text
-
-only element/source available
-→ open source context
+bbox → precise highlight
+page → jump page
+char range → select text
+source-only → open source context
 ```
 
 ---
 
-# 23. Citation Navigation
+# 22. Citation Navigation
 
-Citation chain của hệ thống:
+Citation chain:
 
 ```text
 Answer Claim
@@ -884,99 +650,69 @@ Evidence
  ↓
 RetrievalUnit
  ↓
-Element
+LogicalUnit / Element
  ↓
 SourceAnchor
  ↓
 Original Source
 ```
 
-Frontend nhận citation đã resolve.
-
-Không để frontend tính:
+Click citation:
 
 ```text
-chunk 15 = page 87
+resolve source
+→ open correct reader
+→ navigate anchor
+→ temporary highlight if supported
 ```
 
-UI action:
-
-```text
-click citation
- ↓
-open correct source
- ↓
-navigate SourceAnchor
- ↓
-temporary source highlight
-```
+Frontend không tính `chunk 15 = page 87`.
 
 ---
 
-# 24. Citation UI
+# 23. Citation UI
 
 Ví dụ:
 
 ```text
-LEFT JOIN giữ tất cả các hàng của bảng bên trái. [1]
+LEFT JOIN giữ tất cả hàng từ bảng bên trái. [1]
 ```
 
-Click `[1]`:
+Citation preview:
 
 ```text
 Database Systems.pdf
-Page 87
+Page 87 (nếu có)
+"...LEFT JOIN returns..."
+[Open source]
 ```
 
-Hover/preview:
-
-```text
-┌────────────────────────────────┐
-│ Database Systems.pdf           │
-│                                │
-│ "...LEFT JOIN returns..."      │
-│                                │
-│ [Open source]                  │
-└────────────────────────────────┘
-```
-
-Nếu source không có page, không hiển thị page giả.
+Nếu page không tồn tại trong provenance, không render page giả.
 
 ---
 
-# 25. Source Selection UI
-
-Universal Source Understanding yêu cầu source scope rõ ràng.
-
-AI Tutor:
+# 24. Source Selection UI
 
 ```text
 Sources
-
 ☑ Database Systems.pdf
 ☑ Lecture 5.pptx
 ☐ My Notes.docx
 ```
 
-Request:
+Request phải gửi:
 
 ```text
 selected_source_ids
 ```
 
-phải được gửi xuống backend.
-
-Không:
-
-```text
-select sources chỉ ở frontend decoration
-```
+Backend verify ownership trước AI request.
 
 ---
 
-# 26. Contextual Selection Actions
+# 25. Selection Actions
 
-Khi user select text:
+Khi select text:
 
 ```text
 [Ask AI]
@@ -987,23 +723,13 @@ Khi user select text:
 [Practice]
 ```
 
-Selection request phải mang anchor nếu có:
+Request giữ source anchor nếu available.
 
-```json
-{
-  "source_id": "...",
-  "source_anchor": {},
-  "selected_text": "..."
-}
-```
-
-`selected_text` không được coi là provenance thay cho anchor.
+`selected_text` không thay SourceAnchor làm provenance.
 
 ---
 
-# 27. AI Tutor
-
-AI Tutor là UI của RAG Engine.
+# 26. AI Tutor
 
 Modes có thể gồm:
 
@@ -1015,13 +741,11 @@ SUMMARIZE_SELECTION
 PRACTICE_SELECTION
 ```
 
-Nhưng backend contract nên dựa trên intent/request schema, không tạo endpoint cho mọi nút UI nếu logic giống nhau.
+Backend contract nên dựa trên intent schema, không tạo endpoint riêng cho từng button nếu cùng pipeline.
 
 ---
 
-# 28. RAG Interaction State
-
-Frontend state:
+# 27. RAG Interaction State
 
 ```text
 IDLE
@@ -1033,60 +757,30 @@ INSUFFICIENT_CONTEXT
 FAILED
 ```
 
-Có thể render:
-
-```text
-Searching selected sources...
-```
-
-sau đó:
-
-```text
-Generating answer...
-```
-
-Nhưng chỉ hiển thị stage nếu backend thực sự emit stage đó.
+Chỉ render stage backend thật sự emit.
 
 ---
 
-# 29. AI Answer Streaming
-
-Luồng đề xuất:
+# 28. AI Answer Streaming
 
 ```text
 Question
-  ↓
-Backend accepts request
-  ↓
-AI retrieval
-  ↓
-Generation starts
-  ↓
-Token/event stream
-  ↓
-Frontend incremental rendering
-  ↓
-Final metadata + citations
+→ request accepted
+→ retrieval
+→ generation stream
+→ final answer metadata
+→ citations finalized
 ```
 
-Quan trọng:
+Invariant:
 
 ```text
-partial text ≠ final validated answer metadata
-```
-
-Frontend phải chờ final event để khóa:
-
-```text
-citations
-confidence
-trace id
-status
+partial text != final validated citation metadata
 ```
 
 ---
 
-# 30. Streaming Event Contract
+# 29. Streaming Event Contract
 
 Ví dụ:
 
@@ -1098,22 +792,13 @@ rag.completed
 rag.failed
 ```
 
-`rag.completed` có thể chứa:
+`rag.completed` chứa structured final response.
 
-```json
-{
-  "message_id": "...",
-  "confidence": "HIGH",
-  "citations": [],
-  "retrieval_trace_id": "..."
-}
-```
-
-Không cố decode citation từ text stream.
+Không parse citation từ free-text token stream.
 
 ---
 
-# 31. Insufficient Context UX
+# 30. Insufficient Context UX
 
 Nếu AI trả:
 
@@ -1121,7 +806,7 @@ Nếu AI trả:
 INSUFFICIENT_CONTEXT
 ```
 
-Web phải thể hiện rõ:
+UI hiển thị:
 
 ```text
 Không tìm thấy đủ bằng chứng trong các nguồn đang chọn.
@@ -1134,13 +819,11 @@ Actions:
 [Rephrase question]
 ```
 
-Không biến abstention thành generic error.
+Không biến abstention thành generic system error.
 
 ---
 
-# 32. Conversation Model
-
-Conversation thuộc user và có thể gắn workspace.
+# 31. Conversation
 
 ```text
 Workspace
@@ -1150,20 +833,20 @@ Workspace
 
 User có thể:
 
-```text
-new conversation
-rename
-archive/delete
-search history
-```
+- create;
+- rename;
+- archive/delete;
+- search history.
 
-RAG source scope của mỗi message phải được lưu hoặc trace được.
+Mỗi AI message phải trace được source scope.
 
 ---
 
-# 33. Conversation Memory UX
+# 32. Conversation Memory UX
 
-AI System dùng:
+Frontend hiển thị history nhưng không khiến user hiểu rằng mọi workspace cùng dùng một context.
+
+AI có thể dùng:
 
 ```text
 recent messages
@@ -1171,21 +854,11 @@ conversation summary
 relevant historical turns
 ```
 
-Frontend không cần biết implementation chi tiết.
-
-Nhưng UI phải:
-
-- hiển thị conversation history;
-- cho user tạo thread mới;
-- không khiến user tưởng mọi chat ở mọi workspace đều chung context.
+nhưng RAG source scope vẫn explicit.
 
 ---
 
-# 34. Notes
-
-Note là first-class application entity.
-
-Đề xuất:
+# 33. Notes
 
 ```text
 Note
@@ -1200,89 +873,43 @@ Note
 - updated_at
 ```
 
-Có thể map topic sau.
-
----
-
-# 35. Note Editor
-
-MVP:
-
-```text
-rich text hoặc markdown-compatible editor
-```
-
-Features:
-
-```text
-headings
-lists
-bold/italic
-code
-links
-```
-
 Không cần xây Notion clone.
 
 AI actions optional:
 
 ```text
 summarize note
-generate quiz from note
-generate flashcards from note
+generate quiz
+generate flashcards
 ```
-
-nhưng vẫn phải đi qua source/evidence policy phù hợp.
 
 ---
 
-# 36. Highlight
+# 34. Highlight / Bookmark
 
-Model giữ ý tưởng gốc:
+Highlight:
 
 ```text
-source/document id
-SourceAnchor
+source_id
+source_anchor
 selected_text snapshot
 color
 note optional
 ```
 
-`selected_text` là snapshot phục vụ display/search.
-
-Anchor mới là navigation reference.
-
----
-
-# 37. Bookmark
-
-Bookmark có thể trỏ tới:
-
-```text
-source location
-quiz
-flashcard
-topic
-```
-
-Nên sử dụng generic resource reference ở application layer:
+Bookmark dùng generic resource reference:
 
 ```text
 resource_type
 resource_id
-```
-
-và optional:
-
-```text
-source_anchor
+source_anchor optional
 ```
 
 ---
 
-# 38. Summary Experience
+# 35. Summary Experience
 
-User có thể tạo:
+Modes:
 
 ```text
 QUICK
@@ -1290,37 +917,28 @@ STANDARD
 DETAILED
 ```
 
-Web phải thể hiện:
+UI thể hiện:
 
 ```text
-generation status
 source scope
+generation status
 created_at
 source references
 ```
 
-Long summary có thể là background job.
-
-Không giữ HTTP request mở vô hạn nếu generation dài.
+Long summary dùng background job.
 
 ---
 
-# 39. Quiz Generation UX
-
-Flow:
+# 36. Quiz Generation UX
 
 ```text
 Select source/topic
- ↓
-Configure
- ↓
-Generate
- ↓
-Validate on server
- ↓
-Ready
- ↓
-Attempt
+→ configure
+→ generate
+→ server validation
+→ ready
+→ attempt
 ```
 
 Config:
@@ -1330,113 +948,75 @@ question_count
 difficulty
 question_types
 source scope
-topic scope
+topic scope optional
 ```
 
 ---
 
-# 40. Quiz Attempt UI
+# 37. Quiz Attempt / Submission
 
-Question page:
+Frontend quản lý draft answer state.
+
+Server là source of truth cho grading.
+
+Submit flow:
 
 ```text
-Question 4 / 10
-
-Which statement is correct?
-
-○ A
-○ B
-● C
-○ D
-
-[Previous]                [Next]
+answers
+→ validate
+→ grade
+→ persist attempt
+→ emit learning event
+→ refresh analytics
+→ show result/review
 ```
 
-Frontend có thể lưu draft answers locally/server-side tùy policy.
-
-Final grading là server truth.
+Không trigger Recommendation Engine sau submit.
 
 ---
 
-# 41. Quiz Submission
+# 38. Quiz Review
 
-Sequence:
-
-```mermaid
-sequenceDiagram
-    actor U as Student
-    participant FE as Next.js
-    participant BE as Spring Boot
-    participant DB as PostgreSQL
-    participant L as Learning Analytics
-
-    U->>FE: Submit quiz
-    FE->>BE: POST submit
-    BE->>DB: Save attempts
-    BE->>BE: Grade
-    BE->>L: Create learning evidence
-    L->>DB: Update derived learning state
-    BE-->>FE: Result
-    FE-->>U: Score + review
-```
-
----
-
-# 42. Quiz Review
-
-Mỗi question:
+Mỗi câu có:
 
 ```text
 Your answer
 Correct answer
 Explanation
 Difficulty
-Topic
+Topic optional
 Source citation
 ```
 
-Click source:
-
-```text
-Reader → SourceAnchor
-```
-
-Đây là điểm nối Learning Content với Source Understanding.
+Click citation quay về SourceAnchor.
 
 ---
 
-# 43. Flashcard Experience
+# 39. Flashcard Experience
 
 Views:
 
 ```text
-Due
 New
-Difficult
 All
 By Topic
 By Workspace
+Due (nếu có scheduler)
 ```
 
 Review:
 
 ```text
 Front
- ↓
-Reveal
- ↓
-Again / Hard / Good / Easy
+→ Reveal
+→ Again / Hard / Good / Easy
 ```
 
-Backend quyết định schedule.
-
-Frontend chỉ submit rating.
+Nếu có spaced-repetition scheduler, backend quyết định `next_review_at`; đây chỉ là resource scheduler, không phải global recommendation system.
 
 ---
 
-# 44. Study Session
-
-Study Session nên là một feature trung tâm của Web thay vì chỉ một row analytics.
+# 40. Study Session
 
 Start:
 
@@ -1444,42 +1024,25 @@ Start:
 Goal
 Duration
 Workspace
-Optional sources/topics
+Optional source/topic
 ```
 
-Ví dụ:
+StudySession là explicit user action.
+
+Focus mode giảm navigation noise và cung cấp:
 
 ```text
-Goal:
-Review SQL JOIN
-
-Duration:
-45 minutes
+Reader
+Ask AI
+Notes
+Flashcards
+Quiz
+End session
 ```
 
 ---
 
-# 45. Focus Mode
-
-Trong Study Session:
-
-```text
-┌───────────────────────────────────────────────┐
-│ SQL JOIN                     31:42 remaining │
-├───────────────────────────────────────────────┤
-│                                               │
-│               Learning Content                │
-│                                               │
-├───────────────────────────────────────────────┤
-│ Note | Ask AI | Flashcards | Quiz | End      │
-└───────────────────────────────────────────────┘
-```
-
-Giảm navigation noise.
-
----
-
-# 46. Study Time không được tính ngây thơ
+# 41. Study Time
 
 Không:
 
@@ -1487,26 +1050,20 @@ Không:
 study_time = tab_open_time
 ```
 
-Cần kết hợp:
+Kết hợp:
 
 ```text
-session start
+start
 pause/resume
-visibility state
-activity heartbeat
+visibility
+heartbeat
 manual end
 inactivity rule
 ```
 
-Mục tiêu:
-
-```text
-không tính 8 giờ nếu user bỏ tab mở qua đêm
-```
-
 ---
 
-# 47. StudySession State Machine
+# 42. StudySession State Machine
 
 ```mermaid
 stateDiagram-v2
@@ -1520,45 +1077,35 @@ stateDiagram-v2
     PAUSED --> ABANDONED
 ```
 
-`ABANDONED` nên được xử lý rõ nếu browser đóng hoặc heartbeat mất lâu.
-
 ---
 
-# 48. Study Session Summary
+# 43. Study Session Summary
 
-Kết thúc:
+Ví dụ:
 
 ```text
 Study Complete
-
 Active study time: 43 min
-
 Documents viewed: 2
 Questions asked: 4
 Flashcards reviewed: 12
 Quiz score: 8/10
-
-Topics practiced:
-INNER JOIN
-LEFT JOIN
-
-Next:
-Review LEFT JOIN tomorrow
 ```
 
-Không claim mastery thay đổi nếu student model chưa update xong.
-
-Nếu update async:
+Sau đó user có thể:
 
 ```text
-Updating learning profile...
+[Create follow-up task]
+[Back to workspace]
 ```
+
+Hệ thống không tự sinh “next recommended action”.
 
 ---
 
-# 49. Learning Event Capture
+# 44. Learning Events
 
-Bản gốc có:
+Semantic events ví dụ:
 
 ```text
 DOCUMENT_OPEN
@@ -1575,39 +1122,17 @@ HIGHLIGHT_CREATE
 PLAN_TASK_COMPLETE
 ```
 
-Web là nguồn phát sinh nhiều interaction event.
-
-Nhưng không nên:
-
-```text
-frontend gửi mọi mousemove/click thành LearningEvent
-```
-
-LearningEvent phải semantic.
+Không gửi mọi UI click/mousemove thành LearningEvent.
 
 ---
 
-# 50. Client Event vs Learning Evidence
-
-Phân biệt:
-
-```text
-UI Telemetry
-```
-
-và:
-
-```text
-Learning Event
-```
-
-Ví dụ:
+# 45. UI Telemetry vs Learning Event
 
 ```text
 button_clicked
 ```
 
-không nhất thiết là learning event.
+có thể là telemetry.
 
 ```text
 QUIZ_SUBMIT
@@ -1615,13 +1140,122 @@ QUIZ_SUBMIT
 
 là learning event.
 
-Student Model không được trực tiếp học từ raw frontend telemetry.
+Analytics dùng semantic application data, không dựa trực tiếp vào raw click stream.
 
 ---
 
-# 51. Planner
+# 46. Learning Analytics IA
 
-Planner Views:
+```text
+OVERVIEW
+CONSISTENCY
+PERFORMANCE
+TOPICS
+ACTIVITY
+```
+
+Analytics mô tả/chẩn đoán; không tạo prescriptive recommendations.
+
+---
+
+# 47. Overview Analytics
+
+Cards:
+
+```text
+Study time
+Quiz accuracy
+Current streak
+Sessions this week
+Tasks completed
+Recent activity
+```
+
+Không có personalized next-action card.
+
+---
+
+# 48. Consistency Analytics
+
+```text
+study time trend
+daily heatmap
+session count
+streak
+weekly goal
+```
+
+Không kết luận “học hiệu quả” chỉ từ duration.
+
+---
+
+# 49. Performance Analytics
+
+```text
+quiz score trend
+accuracy
+accuracy by difficulty
+response time
+flashcard review stats
+```
+
+Mỗi metric cần tooltip/definition rõ.
+
+---
+
+# 50. Topic Performance
+
+Thay vì Student Model/mastery, UI hiển thị dữ liệu quan sát trực tiếp:
+
+```text
+LEFT JOIN
+Attempts: 10
+Correct: 4
+Accuracy: 40%
+Last practiced: 5 days ago
+Recent quiz: 2/6
+```
+
+Nếu số sample ít, phải hiển thị số attempts; không gọi accuracy là “mastery” hoặc “confidence”.
+
+---
+
+# 51. Learning Timeline
+
+Có thể tổng hợp:
+
+```text
+study sessions
+document reads
+chat questions
+quiz attempts
+flashcard reviews
+completed tasks
+notes/highlights
+```
+
+Timeline là history, không phải recommendation feed.
+
+---
+
+# 52. Mindmap / Concept Graph
+
+Input từ AI/source layer:
+
+```text
+document structure
+validated topic hierarchy/relations optional
+```
+
+Frontend render graph để navigation/exploration.
+
+Không cần full Knowledge Graph backend cho MVP.
+
+---
+
+# 53. Manual Planner
+
+Views:
 
 ```text
 Today
@@ -1633,29 +1267,32 @@ Plan Overview
 Task:
 
 ```text
-topic
-activity
-resource
+title
+topic optional
+resource optional
 scheduled_at
-estimated_minutes
+estimated_minutes optional
 status
 ```
 
+User chủ động create/edit/reschedule.
+
 ---
 
-# 52. Planner Interaction
+# 54. Planner Interaction
 
 Actions:
 
 ```text
+create
+start
 complete
 skip
 reschedule
 open resource
-start task
 ```
 
-Task status theo thiết kế gốc:
+Status:
 
 ```text
 TODO
@@ -1664,19 +1301,18 @@ COMPLETED
 SKIPPED
 ```
 
-Có thể thêm reschedule history ở application layer nhưng không phá state machine gốc.
+Không có:
+
+```text
+automatic priority ranking
+AI-created personalized tasks
+adaptive replanning
+silent schedule rewrite
+```
 
 ---
 
-# 53. Drag & Drop Calendar
-
-Drag/drop:
-
-```text
-Monday 19:00
-→
-Wednesday 20:00
-```
+# 55. Drag & Drop Calendar
 
 Frontend:
 
@@ -1688,7 +1324,7 @@ Backend:
 
 ```text
 validate ownership
-validate plan constraints
+validate state
 persist
 ```
 
@@ -1701,360 +1337,37 @@ show contextual error
 
 ---
 
-# 54. Adaptive Planner UX
+# 56. Notifications
 
-AI design cho phép replanning.
-
-Web phải làm replanning minh bạch.
-
-Không:
-
-```text
-system silently rewrites entire week
-```
-
-Đúng:
-
-```text
-You missed 2 tasks.
-
-Suggested adjustment:
-- Move LEFT JOIN review to Wednesday
-- Shift Normalization quiz to Friday
-
-[Apply changes]
-[Keep current plan]
-```
-
----
-
-# 55. Recommendation UX
-
-Recommendation phải actionable và explainable.
-
-Card:
-
-```text
-Review LEFT JOIN
-
-Priority: High
-Estimated: 20 min
-
-Why:
-- mastery thấp
-- recent errors cao
-- review due
-
-[Start]
-[Schedule]
-[Dismiss]
-```
-
-Reason codes do system logic tạo.
-
-LLM chỉ có thể diễn đạt.
-
----
-
-# 56. Recommendation Lifecycle
-
-Đề xuất state:
-
-```text
-ACTIVE
-COMPLETED
-DISMISSED
-EXPIRED
-```
-
-Nếu domain hiện tại chỉ lưu recommendation record, state có thể được thêm ở Web/Application extension khi implement.
-
-Không xóa recommendation cũ để mất analytics/history nếu không cần.
-
----
-
-# 57. Analytics Information Architecture
-
-Analytics nên chia thành:
-
-```text
-OVERVIEW
-CONSISTENCY
-PERFORMANCE
-KNOWLEDGE
-ACTIVITY
-```
-
----
-
-# 58. Overview Analytics
-
-Cards:
-
-```text
-Study time
-Weekly goal
-Quiz accuracy
-Current streak
-Reviews due
-Weak topics
-```
-
-Dashboard phải ưu tiên actionable information hơn số liệu trang trí.
-
----
-
-# 59. Consistency Analytics
-
-Ví dụ:
-
-```text
-study time trend
-daily heatmap
-session count
-streak
-weekly goal
-```
-
-Không suy diễn “học hiệu quả” chỉ từ duration.
-
----
-
-# 60. Performance Analytics
-
-Ví dụ:
-
-```text
-quiz score trend
-accuracy
-accuracy by difficulty
-response time
-flashcard recall
-```
-
-Cần giải thích metric rõ trong UI.
-
----
-
-# 61. Knowledge Analytics
-
-Dùng student model:
-
-```text
-Topic
-mastery
-confidence
-forgetting_risk
-last_practiced
-evidence_count
-```
-
-Quan trọng:
-
-```text
-mastery ≠ confidence
-```
-
-UI không được render cả hai như một giá trị duy nhất.
-
----
-
-# 62. Topic Detail
-
-Ví dụ:
-
-```text
-LEFT JOIN
-
-Mastery          42%
-Confidence       78%
-Forgetting risk  31%
-
-Recent quiz      2/6
-Last practiced   5 days ago
-
-Sources:
-3
-
-Recommendations:
-2
-```
-
-Nếu confidence thấp:
-
-```text
-Not enough evidence
-```
-
-thay vì trình bày mastery như fact chắc chắn.
-
----
-
-# 63. Learning Timeline
-
-Timeline có thể tổng hợp:
-
-```text
-study sessions
-document study
-chat questions
-quiz attempts
-flashcard reviews
-completed tasks
-notes/highlights
-```
-
-Example:
-
-```text
-Today
-
-19:12  Completed SQL Quiz — 7/10
-18:54  Asked AI — LEFT JOIN vs INNER JOIN
-18:41  Studied Database Systems — 16 min
-18:32  Reviewed 12 flashcards
-```
-
----
-
-# 64. Mindmap / Concept Graph
-
-AI System output graph từ:
-
-```text
-document structure
-topic hierarchy
-topic relations
-```
-
-Frontend có thể render bằng graph UI.
-
-MVP:
-
-```text
-view + navigation
-```
-
-P1:
-
-```text
-interactive filtering
-mastery overlay
-source linking
-```
-
-Không cần full Knowledge Graph backend cho MVP.
-
----
-
-# 65. Global Search
-
-Phân biệt hai search mode.
-
-## Product Search
-
-Tìm:
-
-```text
-workspace
-document title
-note
-conversation
-quiz
-flashcard
-```
-
-## Knowledge Search
-
-Tìm semantic content trong selected sources.
-
-Không trộn cả hai API chỉ vì cùng gọi là “search”.
-
----
-
-# 66. Command Palette
-
-P1 Web UX:
-
-```text
-Ctrl / Cmd + K
-```
-
-Có thể:
-
-```text
-Open workspace
-Search document
-Create note
-Start study session
-Go to planner
-```
-
-Đây là UX enhancement, không phải core MVP requirement.
-
----
-
-# 67. Notifications
-
-Các loại phù hợp:
+Phù hợp:
 
 ```text
 DOCUMENT_READY
 DOCUMENT_FAILED
-REVIEW_DUE
 TASK_DUE
 TASK_MISSED
-PLAN_UPDATED
+FLASHCARD_REVIEW_DUE optional
 SYSTEM
 ```
 
-Không tạo notification cho mọi event.
+Notification được tạo từ explicit state/deadline, không từ Recommendation Engine.
 
 ---
 
-# 68. Notification Center
-
-Notification:
+# 57. Notification Preferences
 
 ```text
-LEFT JOIN review is due.
-
-Last practiced 5 days ago.
-
-[Review now]
-[Schedule]
-```
-
-Action phải dẫn trực tiếp tới workflow tương ứng.
-
----
-
-# 69. Notification Preference
-
-User có thể cấu hình:
-
-```text
-review reminder
-study task reminder
 document processing
+study task reminder
+flashcard review reminder optional
 system notice
 ```
 
-P1 có thể thêm channel:
-
-```text
-in-app
-email
-web push
-```
-
-MVP chỉ cần in-app nếu scope hạn chế.
+MVP chỉ cần in-app.
 
 ---
 
-# 70. Admin Dashboard
-
-Admin không nên chỉ CRUD user.
+# 58. Admin Dashboard
 
 Views:
 
@@ -2068,55 +1381,11 @@ System Health
 Errors
 ```
 
----
-
-# 71. Processing Job UI
-
-Ví dụ:
-
-```text
-Job              Stage        Status
-DOC-821          EMBEDDING    RUNNING
-DOC-822          OCR          FAILED
-DOC-823          INDEXING     RUNNING
-```
-
-Actions:
-
-```text
-inspect
-retry
-open document
-```
-
-Retry phải gọi backend job API, không tự tạo duplicate job ở frontend.
+Admin không cần access raw private content nếu không có lý do operational rõ.
 
 ---
 
-# 72. AI Operational Dashboard
-
-Có thể hiển thị:
-
-```text
-RAG requests
-LLM token usage
-embedding requests
-average latency
-failed requests
-processing success rate
-```
-
-Từ observability data của AI System.
-
-Không expose prompt/raw private content không cần thiết cho admin.
-
----
-
-# 73. Internal Retrieval Debug UI
-
-Universal Source Understanding đã đề xuất debug UI.
-
-Đây là feature rất giá trị cho đồ án.
+# 59. Retrieval Debug UI
 
 Input:
 
@@ -2132,17 +1401,15 @@ Top-K RetrievalUnits
 retrieval scores
 rerank scores
 selected evidence
-citations
 answer
+citations
 ```
 
-Chỉ admin/debug role.
+Đây là feature rất có giá trị khi demo/defense.
 
 ---
 
-# 74. Source Understanding Debug UI
-
-Có thể hiển thị:
+# 60. Source Understanding Debug UI
 
 ```text
 Original Source
@@ -2150,6 +1417,8 @@ Original Source
 Elements
     ↓
 LogicalUnits
+    ↓
+Context / Relations
     ↓
 RetrievalUnits
     ↓
@@ -2161,25 +1430,21 @@ Mục tiêu:
 ```text
 traceability
 evaluation
-defense demo
+debugging
 ```
 
-Không đưa cho student bình thường.
+Chỉ dành cho admin/debug role.
 
 ---
 
-# 75. Frontend Architecture
+# 61. Frontend Architecture
 
-Đề xuất feature-first:
+Feature-first:
 
 ```text
 frontend/
-├── app/
-│   ├── (auth)/
-│   ├── (app)/
-│   └── api/ optional
-│
-├── features/
+├── src/app/
+├── src/features/
 │   ├── auth/
 │   ├── workspace/
 │   ├── library/
@@ -2194,161 +1459,91 @@ frontend/
 │   ├── analytics/
 │   ├── notifications/
 │   └── admin/
-│
-├── components/
-│   ├── ui/
-│   ├── layout/
-│   └── common/
-│
-├── lib/
-│   ├── api/
-│   ├── auth/
-│   ├── query/
-│   ├── streaming/
-│   ├── validation/
-│   └── utils/
-│
-├── hooks/
-├── types/
-└── styles/
+├── src/components/
+├── src/lib/
+├── src/hooks/
+├── src/types/
+└── src/styles/
 ```
+
+Không có `recommendation/` hoặc `personalization/` feature.
 
 ---
 
-# 76. Feature Boundary
+# 62. Feature Boundary
 
-Ví dụ `features/quiz/`:
+Domain component ở đúng feature.
+
+Ví dụ:
 
 ```text
-quiz/
+features/quiz/
 ├── api/
 ├── components/
 ├── hooks/
 ├── schemas/
-├── types/
-└── utils/
+└── types/
 ```
 
-Không để:
-
-```text
-components/
-```
-
-thành một thư mục hàng trăm component không biết thuộc domain nào.
+Primitive reusable mới để trong `components/ui`.
 
 ---
 
-# 77. Shared UI Components
+# 63. Server State
 
-`components/ui` chỉ chứa primitive reusable:
-
-```text
-Button
-Dialog
-Tabs
-Card
-Input
-Select
-Popover
-Tooltip
-Progress
-Skeleton
-```
-
-Domain component:
+Server state:
 
 ```text
-MasteryCard
-QuizQuestion
-CitationPreview
-DocumentStatusCard
-```
-
-phải nằm trong feature phù hợp.
-
----
-
-# 78. Server State
-
-Server state gồm:
-
-```text
-documents
 workspaces
+documents
 conversations
 quiz attempts
 flashcard reviews
 study plans
 analytics
-recommendations
 notifications
 ```
 
-Đặc tính:
-
-```text
-remote
-async
-cacheable
-stale
-```
-
-Nên quản lý bằng server-state/query layer.
-
-Không copy tất cả response vào global client store.
+Không copy toàn bộ response vào giant client store.
 
 ---
 
-# 79. Client State
-
-Client state:
+# 64. Client State
 
 ```text
 sidebar
 modal
 active tab
 reader zoom
-temporary selection
+selection
 draft input
 panel sizes
 ```
 
-Có thể dùng local state hoặc store nhỏ.
-
-Không dùng một giant global store cho toàn application.
+Local/store nhỏ là đủ.
 
 ---
 
-# 80. URL State
+# 65. URL State
 
 State có ý nghĩa navigation/share:
 
 ```text
-document id
+workspace
+document
 page/location
 tab
 filter
 search query
-workspace
 ```
 
 nên nằm trong route/query parameter khi phù hợp.
 
-Lợi ích:
-
-```text
-refresh safe
-back/forward
-deep link
-bookmark
-```
-
 ---
 
-# 81. Form Validation
+# 66. Form Validation
 
-Validation hai tầng:
+Hai tầng:
 
 ```text
 Client validation
@@ -2356,25 +1551,11 @@ Client validation
 Server validation
 ```
 
-Client:
-
-```text
-fast feedback
-```
-
-Server:
-
-```text
-source of truth
-security
-business constraints
-```
-
-Không coi client validation là security.
+Server vẫn là security/business source of truth.
 
 ---
 
-# 82. Optimistic UI
+# 67. Optimistic UI
 
 Phù hợp:
 
@@ -2382,26 +1563,22 @@ Phù hợp:
 favorite
 rename
 mark task complete
-dismiss recommendation
-move calendar task
+calendar move
 ```
 
-Không phù hợp khi server quyết định kết quả quan trọng:
+Không phù hợp:
 
 ```text
 quiz final score
 AI answer
 document READY
-mastery calculation
 ```
 
 ---
 
-# 83. Loading UX
+# 68. Loading / Error UX
 
-Không chỉ dùng full-page spinner.
-
-Patterns:
+Loading patterns:
 
 ```text
 skeleton
@@ -2409,30 +1586,15 @@ inline progress
 button pending
 streaming text
 background toast
-stale-while-refresh
 ```
 
-Ví dụ:
+Error types:
 
 ```text
-Dashboard data cũ vẫn hiển thị
-+
-small refreshing indicator
-```
-
-tốt hơn blank screen.
-
----
-
-# 84. Error UX
-
-Phân loại:
-
-```text
-validation error
-permission error
+validation
+permission
 not found
-network error
+network
 processing failure
 AI unavailable
 insufficient context
@@ -2440,17 +1602,11 @@ conflict
 rate limited
 ```
 
-Không map mọi lỗi thành:
-
-```text
-Something went wrong
-```
+Không map tất cả thành “Something went wrong”.
 
 ---
 
-# 85. API Error Contract
-
-Backend nên trả structured error:
+# 69. API Error Contract
 
 ```json
 {
@@ -2461,17 +1617,11 @@ Backend nên trả structured error:
 }
 ```
 
-Frontend map `code` → UX.
-
-Không parse business logic từ message string.
+Frontend map code → UX; không parse business state từ free-text message.
 
 ---
 
-# 86. Backend Web Architecture
-
-Spring Boot vẫn là application backend chính.
-
-Module đề xuất:
+# 70. Backend Web Architecture
 
 ```text
 com.studyassistant
@@ -2486,71 +1636,38 @@ com.studyassistant
 ├── flashcard
 ├── learning
 ├── analytics
-├── recommendation
 ├── planner
 ├── notification
 ├── admin
-├── integration
-│   └── ai
-├── common
+├── integration/ai
 └── infrastructure
 ```
 
-`workspace` là extension Web/Product được đề xuất trong tài liệu này.
+Không có recommendation module.
 
 ---
 
-# 87. Không cần BFF riêng ở MVP
-
-Kiến trúc gốc:
-
-```text
-Next.js
-  ↓
-Spring Boot
-  ↓
-FastAPI
-```
-
-là đủ.
-
-Không thêm một Node BFF khác nếu không có nhu cầu thực.
-
-Next.js server capabilities có thể dùng cho rendering/frontend concerns, nhưng business API source of truth vẫn là Spring Boot.
-
----
-
-# 88. API Base
-
-Giữ:
+# 71. API Base
 
 ```text
 /api/v1
 ```
 
-API phải resource-oriented.
-
-Không tạo endpoint theo component UI.
-
-Sai:
-
-```text
-POST /dashboard-left-card
-```
+Resource-oriented.
 
 Đúng:
 
 ```text
 GET /analytics/overview
-GET /recommendations
 GET /study-tasks
+GET /documents
 ```
+
+Không tạo endpoint theo tên card/component UI.
 
 ---
 
-# 89. Workspace API — Web extension
-
-Đề xuất:
+# 72. Workspace API
 
 ```text
 POST   /workspaces
@@ -2561,65 +1678,42 @@ DELETE /workspaces/{id}
 
 POST   /workspaces/{id}/sources
 DELETE /workspaces/{id}/sources/{sourceId}
-
 GET    /workspaces/{id}/overview
 ```
 
-Add/remove source chỉ thay membership.
-
-Không delete source gốc trừ endpoint document/source delete riêng.
-
 ---
 
-# 90. Reader State API — Web extension
-
-Đề xuất:
+# 73. Reader State API
 
 ```text
-GET  /documents/{id}/reading-state
-PUT  /documents/{id}/reading-state
+GET /documents/{id}/reading-state
+PUT /documents/{id}/reading-state
 ```
 
-Lưu:
+Persist:
 
 ```text
 last_location
 last_opened_at
 ```
 
-Không cần save scroll event liên tục.
-
-Client có thể debounce/throttle.
+Không save scroll event liên tục.
 
 ---
 
-# 91. Notes / Highlights / Bookmarks API
-
-Đề xuất:
+# 74. Notes / Highlights / Bookmarks API
 
 ```text
-POST   /notes
-GET    /notes
-GET    /notes/{id}
-PATCH  /notes/{id}
-DELETE /notes/{id}
-
-POST   /highlights
-GET    /highlights
-DELETE /highlights/{id}
-
-POST   /bookmarks
-GET    /bookmarks
-DELETE /bookmarks/{id}
+POST/GET/PATCH/DELETE /notes
+POST/GET/DELETE       /highlights
+POST/GET/DELETE       /bookmarks
 ```
 
-Ownership validation bắt buộc.
+Object-level ownership validation bắt buộc.
 
 ---
 
-# 92. Study Session API
-
-Đề xuất:
+# 75. Study Session API
 
 ```text
 POST /study-sessions
@@ -2630,27 +1724,53 @@ POST /study-sessions/{id}/complete
 GET  /study-sessions/{id}
 ```
 
-Heartbeat nếu dùng:
+Heartbeat nếu cần:
 
 ```text
 POST /study-sessions/{id}/heartbeat
 ```
 
-Heartbeat không được tạo LearningEvent mạnh mỗi lần gọi.
+---
+
+# 76. Analytics API
+
+```text
+GET /analytics/overview
+GET /analytics/study-time
+GET /analytics/quiz-performance
+GET /analytics/topic-performance
+GET /analytics/activity
+```
+
+Không có mastery/recommendation endpoint.
 
 ---
 
-# 93. Event Stream API
+# 77. Planner API
 
-Ví dụ:
+```text
+POST   /study-plans
+GET    /study-plans
+GET    /study-plans/{id}
+PATCH  /study-plans/{id}
+DELETE /study-plans/{id}
+
+POST   /study-plans/{id}/tasks
+PATCH  /study-tasks/{id}
+DELETE /study-tasks/{id}
+```
+
+Planner API là CRUD/state API, không gọi AI để rank/generate plan.
+
+---
+
+# 78. Event Stream API
 
 ```text
 GET /events/stream
 ```
 
-Có thể filter theo authenticated user.
-
-Server emit:
+Events:
 
 ```text
 document.status
@@ -2658,414 +1778,118 @@ generation.status
 notification.created
 ```
 
-RAG stream có thể dùng endpoint riêng để lifecycle đơn giản hơn.
+RAG stream có endpoint/lifecycle riêng nếu thuận tiện.
 
 ---
 
-# 94. Pagination
+# 79. Pagination / Filtering
 
-List API phải hỗ trợ pagination.
-
-Ví dụ:
+Dataset lớn phải filter server-side.
 
 ```text
-?page=0
-&size=20
-&sort=createdAt,desc
+GET /documents?workspaceId=...&status=READY&type=PDF&page=0&size=20
 ```
 
-Hoặc cursor nếu cần sau.
-
-MVP không cần over-engineer cursor cho mọi resource.
+Không tải toàn bộ rồi filter trong browser.
 
 ---
 
-# 95. Filtering
+# 80. Idempotency / Background Jobs
 
-Filter phải nằm server-side cho dataset lớn.
-
-Ví dụ:
-
-```text
-GET /documents?workspaceId=...&status=READY&type=PDF
-```
-
-Không tải 10.000 documents rồi filter trong browser.
-
----
-
-# 96. Idempotency
-
-Những request dễ duplicate nên hỗ trợ idempotency.
-
-Ví dụ:
-
-```text
-document upload finalization
-long AI generation
-retry processing
-quiz generation
-```
-
-Có thể dùng:
-
-```text
-Idempotency-Key
-```
-
-hoặc application job identity.
-
----
-
-# 97. Background Job Boundary
-
-Không chạy các task dài trong request bình thường:
+Cần quan tâm cho:
 
 ```text
 document processing
-long summary
-large quiz generation
-reindex
-mindmap generation
+reprocessing
+long generation
+quiz generation
 ```
 
-Pattern:
+Long task pattern:
 
 ```text
 POST
- ↓
-create job
- ↓
-202 Accepted
- ↓
-background
- ↓
-status/event
+→ 202 Accepted
+→ background job
+→ status/event
 ```
 
 ---
 
-# 98. Job Model
+# 81. Event-driven Integration
 
-Đề xuất generic operational model:
-
-```text
-Job
-- id
-- type
-- resource_id
-- status
-- stage
-- progress optional
-- error_code optional
-- attempts
-- created_at
-- started_at
-- completed_at
-```
-
-Không bắt buộc mọi AI internal subtask trở thành public job record.
-
----
-
-# 99. Event-Driven Integration
-
-Khi trạng thái thay đổi:
+Ví dụ events:
 
 ```text
-QuizSubmitted
 DocumentReady
+QuizSubmitted
 FlashcardReviewed
 StudyTaskCompleted
 ```
 
-backend có thể trigger:
+Có thể trigger:
 
 ```text
-learning event
 analytics update
-recommendation refresh
 notification
+operational event
 ```
 
-MVP có thể xử lý synchronously nơi rẻ và queue phần nặng.
-
-Không cần event bus phức tạp ngay.
+Không trigger recommendation refresh.
 
 ---
 
-# 100. Transactional Consistency
-
-Ví dụ quiz submit:
-
-Phải tránh:
-
-```text
-score saved
-nhưng question attempts mất
-```
-
-Core transactional write:
-
-```text
-QuizAttempt
-QuestionAttempts
-Completion state
-```
-
-nên atomically consistent.
-
-Derived data:
-
-```text
-mastery
-recommendation
-```
-
-có thể eventual nếu thiết kế rõ.
-
----
-
-# 101. Outbox Pattern — P1
-
-Nếu cần đảm bảo event không mất giữa DB commit và queue publish:
-
-```text
-DB transaction
- ├ business state
- └ outbox event
-
-worker
- ↓
-publish
-```
-
-P1, không bắt buộc ngay nếu MVP chưa có infrastructure tương ứng.
-
----
-
-# 102. Database Web Extensions
-
-Ngoài schema gốc, Web-first product có thể cần:
+# 82. Database Web Extensions
 
 ```text
 workspaces
 workspace_sources
-
 notes
 highlights
 bookmarks
-
 document_reading_states
-
 study_sessions
-
+study_plans
+study_tasks
 notifications
 notification_preferences
-
 jobs optional
 ```
 
-Các bảng này là extension của tài liệu Web.
+Không có recommendation tables hoặc personalization profile.
 
 ---
 
-# 103. Workspace Schema
+# 83. Cache Strategy
+
+Redis:
 
 ```text
-workspaces
-- id
-- user_id
-- name
-- description
-- goal
-- deadline
-- created_at
-- updated_at
-```
-
-Membership:
-
-```text
-workspace_sources
-- workspace_id
-- source_id
-- added_at
-```
-
-Unique:
-
-```text
-(workspace_id, source_id)
-```
-
----
-
-# 104. Reading State Schema
-
-```text
-document_reading_states
-- user_id
-- document_id
-- location_json
-- last_opened_at
-- updated_at
-```
-
-`location_json` phải theo renderer/source capability.
-
-Không hard-code chỉ:
-
-```text
-page_number
-```
-
----
-
-# 105. Highlight Schema
-
-Khuyến nghị thay offset-only bằng anchor-aware model:
-
-```text
-highlights
-- id
-- user_id
-- source_id
-- source_anchor_json
-- selected_text
-- color
-- note_id optional
-- created_at
-```
-
-Nếu source adapter chỉ hỗ trợ page/offset thì anchor chứa đúng dữ liệu đó.
-
----
-
-# 106. SourceAnchor không bị Web mutate
-
-Frontend có thể gửi anchor nhận từ reader/parser.
-
-Không được:
-
-```text
-frontend tự thay page/bbox
-để citation trông hợp lý
-```
-
-Source fact phải được preserve.
-
----
-
-# 107. File Storage
-
-Giữ MinIO/object storage.
-
-Browser không cần biết object key nội bộ.
-
-Download/view:
-
-```text
-authenticated endpoint
-```
-
-hoặc:
-
-```text
-short-lived signed URL
-```
-
-tùy implementation.
-
-Không expose permanent public bucket cho tài liệu private.
-
----
-
-# 108. Cache Strategy cho Web
-
-Redis có thể cache:
-
-```text
+session
+rate limit
 dashboard aggregates
 analytics summaries
-rate limit
-session metadata
 temporary job state
 ```
 
-Không cache dữ liệu user mà thiếu namespace/ownership.
-
-Cache key phải chứa relevant scope.
-
----
-
-# 109. Frontend Cache
-
-Server-state cache phù hợp cho:
+Frontend server-state cache:
 
 ```text
-workspace list
+workspaces
 documents
 analytics
-recommendations
+study tasks
 ```
 
-Invalidation cần theo mutation.
-
-Ví dụ:
-
-```text
-complete task
-→ invalidate today's tasks
-→ invalidate workspace overview
-```
-
-Không refetch toàn application.
+Cache key luôn giữ user/source scope.
 
 ---
 
-# 110. Authentication
+# 84. Authentication / Authorization
 
-Giữ:
+Backend là real security boundary.
 
-```text
-register
-login
-refresh
-logout
-forgot password
-reset password
-```
-
-Recommended security behavior:
-
-```text
-short-lived access
-refresh session
-rotation/revoke
-```
-
-Cơ chế browser storage phải chọn theo security model thực tế.
-
-Không coi localStorage là default an toàn cho refresh token.
-
----
-
-# 111. Authorization
-
-Frontend authorization:
-
-```text
-hide/disable UI
-```
-
-Backend authorization:
-
-```text
-real security boundary
-```
-
-Mọi resource:
+Mọi resource phải validate object-level access:
 
 ```text
 document
@@ -3076,53 +1900,33 @@ plan
 conversation
 ```
 
-phải validate object-level access.
+Frontend hide/disable chỉ là UX.
 
 ---
 
-# 112. Cross-user isolation
+# 85. Cross-user Isolation
 
-Critical invariant:
+Invariant:
 
 ```text
-User A
-cannot retrieve/read
-User B sources
+User A cannot retrieve/read User B sources
 ```
 
-Security phải xuyên suốt:
+Enforce xuyên suốt:
 
 ```text
 Browser
 ↓
 Spring ownership validation
 ↓
-AI request user/source scope
+AI request source scope
 ↓
 Vector DB filter
 ```
 
-Không chỉ filter ở UI.
-
 ---
 
-# 113. Source Scope Integrity
-
-Backend không nên tin trực tiếp rằng mọi `source_id` frontend gửi đều thuộc user.
-
-Phải verify:
-
-```text
-requested source ids
-⊆
-authorized source ids
-```
-
-sau đó mới gọi AI.
-
----
-
-# 114. Upload Security
+# 86. Upload Security
 
 Backend:
 
@@ -3131,23 +1935,17 @@ size limit
 MIME validation
 extension validation
 safe filename
-object key generated by system
+system-generated object key
 no execution
 ```
 
-Optional:
-
-```text
-malware scan
-```
-
-Frontend validation chỉ để feedback sớm.
+Optional malware scan.
 
 ---
 
-# 115. XSS
+# 87. XSS / Untrusted Content
 
-Đặc biệt quan trọng vì hệ thống render:
+Hệ thống render:
 
 ```text
 document text
@@ -3156,66 +1954,46 @@ notes
 markdown
 ```
 
-Không render untrusted HTML trực tiếp.
+Không render raw untrusted HTML.
 
-Nếu Markdown:
-
-```text
-sanitize
-```
-
-Nếu rich text:
-
-```text
-schema-controlled rendering
-```
+Markdown/rich text phải sanitize/schema-control.
 
 ---
 
-# 116. Prompt Injection và Web
+# 88. Prompt Injection
 
-Web không được biến nội dung source thành instruction.
-
-Ví dụ tài liệu chứa:
+Source text không được trigger instruction/tool action.
 
 ```text
 Ignore previous instructions...
 ```
 
-Frontend chỉ render nó như content.
+chỉ là document content.
 
-Tool/action invocation không được trigger tự động từ source text.
+Frontend không tự execute tool/action từ source text.
 
 ---
 
-# 117. CSRF / CORS / Cookies
+# 89. CSRF / CORS / Token Security
 
-Cấu hình phụ thuộc cách auth triển khai.
-
-Nếu dùng cookie-based credentials:
+Nếu cookie-based auth:
 
 ```text
-SameSite
 Secure
 HttpOnly
+SameSite
 CSRF strategy
 ```
 
-phải được thiết kế rõ.
+CORS dùng explicit allowed origins.
 
-CORS:
-
-```text
-explicit allowed origins
-```
-
-không `*` tùy tiện với credentials.
+Không coi localStorage là mặc định an toàn cho refresh token.
 
 ---
 
-# 118. Rate Limiting
+# 90. Rate Limiting
 
-Nên có riêng cho:
+Policy riêng cho:
 
 ```text
 login
@@ -3225,39 +2003,24 @@ generation
 password reset
 ```
 
-AI endpoints đắt hơn CRUD nên có policy riêng.
+AI endpoints đắt hơn CRUD.
 
 ---
 
-# 119. AI Integration Contract
-
-Spring Boot gọi FastAPI qua internal contract.
-
-Web không phụ thuộc trực tiếp AI implementation.
-
-Ví dụ:
+# 91. AI Integration Contract
 
 ```text
 Web Request
-  ↓
-Application Command
-  ↓
-AI Client Interface
-  ↓
-FastAPI
+→ Spring Application Command
+→ AI Client Interface
+→ FastAPI
 ```
 
-Nếu đổi model/provider:
-
-```text
-frontend không đổi
-```
+Frontend không phụ thuộc trực tiếp model/provider.
 
 ---
 
-# 120. RAG Request từ Web tới Application
-
-Application request có thể chứa:
+# 92. RAG Request Contract
 
 ```json
 {
@@ -3269,21 +2032,19 @@ Application request có thể chứa:
 }
 ```
 
-Backend resolve:
+Spring resolve:
 
 ```text
 user_id
 permissions
-source scope
+authorized source scope
 ```
 
 trước khi gọi AI.
 
 ---
 
-# 121. RAG Response cho Web
-
-Web cần structured response:
+# 93. RAG Response Contract
 
 ```json
 {
@@ -3303,148 +2064,55 @@ Web cần structured response:
 }
 ```
 
-`source_anchor` phải resolve từ system provenance.
+Citation metadata từ provenance system, không từ frontend guess.
 
 ---
 
-# 122. Citation Capability Contract
+# 94. Learning Analytics Contract
 
-Không phải renderer nào cũng hỗ trợ giống nhau.
-
-Web nên normalize capability:
+Frontend đọc structured aggregates:
 
 ```text
-OPEN_SOURCE
-NAVIGATE_PAGE
-NAVIGATE_RANGE
-HIGHLIGHT_BBOX
-HIGHLIGHT_TEXT
+study_time
+session_count
+quiz_attempts
+quiz_accuracy
+topic_attempts
+topic_accuracy
+activity timeline
+completed_tasks
 ```
 
-Source adapter/reader quyết định capability.
-
-UI graceful fallback.
+Frontend không tự infer mastery, forgetting risk hoặc recommended actions.
 
 ---
 
-# 123. Learning Intelligence Contract
+# 95. Planner Contract
 
-Frontend chỉ đọc:
-
-```text
-mastery
-confidence
-forgetting risk
-recommendations
-reason codes
-```
-
-Không tự tính mastery bằng JavaScript từ quiz score.
-
-Nếu cần offline preview, phải ghi rõ preview, không phải authoritative state.
-
----
-
-# 124. Recommendation Contract
-
-Response:
-
-```json
-{
-  "id": "...",
-  "type": "REVIEW",
-  "topic_id": "...",
-  "priority": 0.91,
-  "reason_codes": [
-    "LOW_MASTERY",
-    "RECENT_ERRORS",
-    "REVIEW_DUE"
-  ],
-  "recommended_resource": {},
-  "estimated_minutes": 20
-}
-```
-
-Frontend map reason code thành localized label.
-
----
-
-# 125. Planner Contract
-
-Planner trả structured tasks.
-
-Không trả một đoạn prose duy nhất.
-
-Ví dụ:
+Structured user-managed tasks:
 
 ```json
 {
   "plan_id": "...",
-  "days": [
+  "tasks": [
     {
-      "date": "2026-08-10",
-      "tasks": [
-        {
-          "id": "...",
-          "topic_id": "...",
-          "activity": "REVIEW",
-          "estimated_minutes": 30
-        }
-      ]
+      "id": "...",
+      "title": "Review LEFT JOIN",
+      "scheduled_at": "2026-08-10T19:00:00+07:00",
+      "estimated_minutes": 30,
+      "status": "TODO"
     }
   ]
 }
 ```
 
-Web render calendar/list.
+Không có AI priority/reason codes.
 
 ---
 
-# 126. Realtime Notification Contract
+# 96. Responsive Design
 
-SSE event nên nhỏ:
-
-```json
-{
-  "event_id": "...",
-  "type": "DOCUMENT_READY",
-  "resource_id": "...",
-  "occurred_at": "..."
-}
-```
-
-Frontend nhận event rồi fetch canonical resource state nếu cần.
-
-Không nhét toàn document object vào event.
-
----
-
-# 127. Reconnect và Event Loss
-
-SSE reconnect có thể xảy ra.
-
-P1 nên hỗ trợ:
-
-```text
-event id
-Last-Event-ID
-```
-
-hoặc sau reconnect:
-
-```text
-refetch current server state
-```
-
-System không được phụ thuộc duy nhất vào client nhận đủ mọi event.
-
----
-
-# 128. Responsive Design
-
-Desktop là primary cho document-heavy learning.
-
-Breakpoints phải chuyển layout theo task.
+Desktop primary cho document-heavy workflow.
 
 Desktop:
 
@@ -3455,190 +2123,83 @@ source panel + reader + tutor
 Tablet:
 
 ```text
-reader + collapsible panels
+reader + collapsible panel
 ```
 
 Mobile:
 
 ```text
-single primary content
-bottom sheet/tabs
+single primary content + tabs/bottom sheet
 ```
 
-Không scale ba cột xuống 375px.
+Không scale ba cột xuống màn hình nhỏ.
 
 ---
 
-# 129. Accessibility
+# 97. Accessibility
 
-MVP nên có:
+MVP:
 
-```text
-keyboard navigation
-visible focus
-semantic labels
-form errors
-accessible dialogs
-screen-reader text
-contrast
-```
+- keyboard navigation;
+- visible focus;
+- semantic labels;
+- accessible forms/errors;
+- dialogs;
+- contrast;
+- screen-reader text.
 
-Quiz và flashcards đặc biệt nên dùng keyboard tốt.
-
-Citation không được chỉ phụ thuộc hover.
+Citation phải usable không phụ thuộc hover.
 
 ---
 
-# 130. Keyboard UX
-
-Useful shortcuts:
-
-```text
-Ctrl/Cmd + K  command search
-Esc           close panel/dialog
-Arrow keys    flashcard navigation
-Space/Enter   reveal card
-```
-
-Không bắt buộc nhiều shortcut trong MVP.
-
----
-
-# 131. PWA — P1
-
-Web-first project có thể mở rộng PWA.
-
-Offline phù hợp:
-
-```text
-notes
-cached plan
-downloaded flashcards
-recent static content
-```
-
-Không hứa offline RAG nếu model/service không local.
-
----
-
-# 132. Offline Consistency
-
-Nếu PWA thêm offline mutation:
-
-```text
-note edit
-task complete
-flashcard review
-```
-
-phải giải quyết sync/conflict.
-
-Do scope tăng mạnh, nên để P1/P2.
-
-MVP có thể chỉ cache read-only shell/data.
-
----
-
-# 133. Performance Principle
-
-Không optimize một metric duy nhất.
+# 98. Performance
 
 Phân nhóm:
 
 ```text
-initial page load
+initial load
 navigation
 API latency
-document rendering
-AI time-to-first-token
-chart rendering
+reader rendering
+AI TTFT
+generation completion
 upload
 background processing
+charts
 ```
 
-AI latency không được tính như frontend render latency.
+Không load PDF/graph/editor engines trên mọi page.
 
 ---
 
-# 134. Frontend Performance
+# 99. Reader Performance
 
-Các hướng:
-
-```text
-route-level code splitting
-lazy load heavy reader
-lazy load graph/chart
-virtualize long lists nếu cần
-avoid giant global state
-image optimization
-debounced search
-```
-
-Không load PDF engine, graph engine và editor vào mọi page.
-
----
-
-# 135. Dashboard Performance
-
-Dashboard có nhiều aggregate.
-
-Không chạy 20 query nặng mỗi reload.
-
-Có thể:
-
-```text
-analytics aggregate
-cache
-parallel fetch
-```
-
-và expose endpoint overview.
-
----
-
-# 136. Document Reader Performance
-
-PDF/source lớn:
+Source lớn:
 
 ```text
 render visible pages
 prefetch nearby pages
-avoid render all pages
+cleanup overlays
+lazy load heavy renderer
 ```
 
-Highlight/citation overlays phải cleanup khi page unmount.
+Không render toàn PDF khi mở.
 
 ---
 
-# 137. Chat Performance UX
+# 100. Observability
 
-Các metric có ý nghĩa:
-
-```text
-request accepted latency
-retrieval latency
-time to first token
-generation completion
-citation finalization
-```
-
-UI có thể cảm nhận nhanh dù total generation dài nếu stream tốt.
-
----
-
-# 138. Observability
-
-Mỗi Web/API request nên trace:
+Web/API request:
 
 ```text
 request_id
-user_id or redacted identity
 route
 status
 latency
+user id/redacted identity
 ```
 
-AI interaction thêm:
+AI:
 
 ```text
 trace_id
@@ -3647,115 +2208,88 @@ retrieval_trace_id
 model metadata
 ```
 
-Không log secret/token.
+Không log secret/token/private source content tùy tiện.
 
 ---
 
-# 139. Correlation ID
-
-Flow:
+# 101. Correlation ID
 
 ```text
-Browser request
- ↓
-Spring request_id
- ↓
-FastAPI trace
- ↓
-Worker/job
+Browser
+→ Spring request_id
+→ FastAPI trace_id
+→ worker/job id
 ```
 
-IDs nên được correlate.
-
-Điều này rất hữu ích khi demo/debug.
+Correlation giúp demo/debug production flow.
 
 ---
 
-# 140. Frontend Error Monitoring
-
-Capture:
+# 102. Web Metrics
 
 ```text
-uncaught errors
-failed route loads
-API error rates
-stream disconnects
-reader failures
-```
-
-Không gửi raw private document content vào monitoring mặc định.
-
----
-
-# 141. Web Metrics
-
-Đánh giá Web System:
-
-```text
-page load/navigation latency
+page/navigation latency
 API p95
-upload success rate
-document READY rate
-stream reconnect rate
+upload success
+READY rate
+stream disconnect/reconnect
 error rate
-task completion rate
-usability rating
+quiz completion
+planner task completion
+citation navigation success
 ```
 
-AI quality metrics vẫn thuộc AI evaluation riêng.
+AI quality metrics tách riêng.
 
 ---
 
-# 142. Frontend Unit Tests
+# 103. Frontend Unit Tests
 
-Ưu tiên business UI behavior:
+Ưu tiên business UX behavior:
 
 ```text
 citation opens correct source
-quiz answer selection
-recommendation action routing
+quiz selection/submission
 planner drag rollback
 document status rendering
+insufficient-context UX
 ```
 
-Không cần snapshot-test mọi primitive.
+Không cần snapshot mọi primitive.
 
 ---
 
-# 143. Backend Unit Tests
-
-Test:
+# 104. Backend Unit Tests
 
 ```text
 ownership
-study session state transitions
-planner task transitions
 workspace membership
-document status transitions
-recommendation actions
+study-session transitions
+planner task transitions
+document states
+quiz grading
+analytics aggregation
 ```
+
+Không có recommendation-action tests.
 
 ---
 
-# 144. Integration Tests
-
-Ví dụ:
+# 105. Integration Tests
 
 ```text
 Spring + PostgreSQL
 Spring + MinIO
 Spring + Redis
-Spring ↔ AI contract
+Spring ↔ FastAPI contract
 SSE events
 ```
 
-AI model thật có thể mock/stub cho Web integration test.
+AI model thật có thể stub cho Web integration tests.
 
 ---
 
-# 145. E2E Tests
-
-Critical journey:
+# 106. E2E Critical Journey
 
 ```text
 Register/Login
@@ -3767,69 +2301,58 @@ Register/Login
 → Open citation
 → Generate quiz
 → Submit
-→ View result
-→ See recommendation
-→ Schedule task
+→ View analytics
+→ Create/reschedule study task
+→ Resume learning
 ```
 
-Đây là E2E quan trọng nhất.
+Không có recommendation step.
 
 ---
 
-# 146. E2E Failure Flow
+# 107. Failure E2E
 
-Phải test:
+Test:
 
 ```text
-upload invalid
+invalid upload
 processing FAILED
 AI insufficient context
 AI timeout
 unauthorized source
 network reconnect
-quiz double submit
+quiz double-submit
+planner conflict
 ```
-
-Không chỉ happy path.
 
 ---
 
-# 147. Security Tests
-
-Test:
+# 108. Security Tests
 
 ```text
 User A cannot access User B document
 User A cannot use User B source in RAG scope
 User cannot edit another user's plan
-signed URL expires
 invalid upload rejected
-XSS content sanitized
+XSS sanitized
 rate limit works
 ```
 
 ---
 
-# 148. Usability Evaluation
+# 109. Usability Evaluation
 
-Vì đây là đồ án Web, nên user testing có trọng lượng.
-
-Có thể mời:
-
-```text
-10–20 students
-```
-
-Task-based test:
+Task-based evaluation với sinh viên:
 
 ```text
 upload material
-find a source
-ask a question
+find source
+ask question
 open citation
-create quiz
-review weak topic
-schedule a task
+generate quiz
+view analytics
+create/reschedule task
+resume source
 ```
 
 Measure:
@@ -3838,65 +2361,42 @@ Measure:
 task completion
 time on task
 error count
-Likert usefulness
+usefulness
 citation trust
 navigation clarity
 ```
 
 ---
 
-# 149. Web-specific KPI
-
-Ví dụ:
+# 110. UX Invariants
 
 ```text
-Task completion rate
-Citation navigation success
-Upload completion rate
-Resume-learning success
-Quiz flow completion
-Planner task completion
-Average API latency
-Frontend error rate
-```
-
-Không cần đặt số mục tiêu giả trước benchmark.
-
----
-
-# 150. UX Invariants
-
-Các invariants quan trọng:
-
-```text
-user luôn biết workspace/source đang dùng
-citation luôn quay được về source nếu anchor resolvable
+user luôn biết workspace/source scope
+citation quay được về source nếu anchor resolvable
 processing state không bị giả
-AI abstention không bị render thành error
-mastery và confidence không bị trộn
-recommendation luôn có action
-planner thay đổi không được âm thầm
+AI abstention không bị render thành generic error
+analytics chỉ trình bày metric được tính thật
+planner chỉ thay đổi từ explicit user action/system state rule
 ```
 
 ---
 
-# 151. Data Integrity Invariants
+# 111. Data Integrity Invariants
 
 ```text
-workspace source membership valid
-no cross-user reference
-note source anchor references authorized source
-highlight anchor references existing source
-quiz attempt belongs to quiz/user
+workspace membership valid
+no cross-user references
+note/highlight anchors reference authorized source
+quiz attempt belongs to user/quiz
 learning event resource reference valid
-study task belongs to user plan
+study task belongs to user's plan
 ```
 
 ---
 
-# 152. Anti-pattern 1 — Web chỉ là dashboard CRUD
+# 112. Anti-pattern — Web chỉ là CRUD dashboard
 
-Sai:
+Không dừng ở:
 
 ```text
 CRUD Documents
@@ -3904,85 +2404,61 @@ Chat
 Charts
 ```
 
-Đúng:
+Phải có integrated workflow:
 
 ```text
-integrated learning workflow
-```
-
-Đặc biệt phải có:
-
-```text
-citation navigation
-learning session
-practice loop
-recommendation action
-planner continuation
+Reader
+Citation
+Practice
+Study Session
+Analytics
+Planner
 ```
 
 ---
 
-# 153. Anti-pattern 2 — Frontend biết quá nhiều AI
+# 113. Anti-pattern — Frontend biết quá nhiều AI
 
-Sai:
+Frontend không biết/điều khiển trực tiếp:
 
 ```text
-frontend tự biết top_k
 embedding model
+top_k
 rerank threshold
 chunk format
 ```
 
-Đúng:
-
-```text
-frontend gửi learning intent/source scope
-backend/AI quyết định pipeline
-```
-
-Debug admin là ngoại lệ.
+Admin debug UI là ngoại lệ có chủ đích.
 
 ---
 
-# 154. Anti-pattern 3 — Citation bằng string
+# 114. Anti-pattern — Fake Citation
 
-Không chỉ:
+Không chỉ render string:
 
 ```text
-"Page 87"
+Page 87
 ```
 
-Citation cần structured provenance.
-
-Web render từ:
+Citation cần:
 
 ```text
 source_id
 SourceAnchor
-preview
+preview metadata
 ```
 
 ---
 
-# 155. Anti-pattern 4 — Fake realtime
+# 115. Anti-pattern — Fake Realtime
 
-Không fake progress bằng timer nếu backend không biết progress.
+Không dùng timer giả 73% nếu backend chỉ biết `PROCESSING`.
 
-Nếu chỉ biết stage:
-
-```text
-Processing...
-```
-
-tốt hơn fake:
-
-```text
-73%
-```
+Correctness quan trọng hơn animation đẹp.
 
 ---
 
-# 156. Anti-pattern 5 — Over-engineering
+# 116. Anti-pattern — Over-engineering
 
 Không cần ngay:
 
@@ -3990,109 +2466,64 @@ Không cần ngay:
 microfrontend
 GraphQL federation
 Kafka cluster
-CRDT editor
+CRDT
 multi-region
 full offline sync
 ```
 
-Nếu MVP chưa cần.
-
-Correctness và learning workflow quan trọng hơn.
-
 ---
 
-# 157. Repository Structure tổng thể
-
-Giữ monorepo/project layout:
+# 117. Repository Structure
 
 ```text
 support_learning/
 ├── frontend/
 ├── backend/
 ├── ai-service/
+├── source_understanding/
 ├── infra/
 ├── docs/
 ├── scripts/
 └── docker-compose.yml
 ```
 
-Web docs:
-
-```text
-docs/
-└── web/
-    ├── architecture/
-    ├── api/
-    ├── ux/
-    ├── security/
-    └── testing/
-```
-
 ---
 
-# 158. Frontend Repository Detail
-
-```text
-frontend/
-├── src/
-│   ├── app/
-│   ├── features/
-│   ├── components/
-│   ├── lib/
-│   ├── hooks/
-│   ├── types/
-│   └── styles/
-│
-├── public/
-├── tests/
-├── package.json
-└── Dockerfile
-```
-
-Không bắt buộc structure chính xác trước khi inspect code thật.
-
----
-
-# 159. Backend Repository Detail
+# 118. Backend Repository Detail
 
 ```text
 backend/
-├── src/main/java/.../
-│   ├── auth/
-│   ├── user/
-│   ├── workspace/
-│   ├── document/
-│   ├── conversation/
-│   ├── note/
-│   ├── quiz/
-│   ├── flashcard/
-│   ├── learning/
-│   ├── analytics/
-│   ├── recommendation/
-│   ├── planner/
-│   ├── notification/
-│   ├── admin/
-│   └── infrastructure/
-│
-├── src/test/
-├── pom.xml / build.gradle
-└── Dockerfile
+└── src/main/java/.../
+    ├── auth/
+    ├── user/
+    ├── workspace/
+    ├── document/
+    ├── conversation/
+    ├── note/
+    ├── quiz/
+    ├── flashcard/
+    ├── learning/
+    ├── analytics/
+    ├── planner/
+    ├── notification/
+    ├── admin/
+    └── infrastructure/
 ```
+
+Không có recommendation package.
 
 ---
 
-# 160. Deployment Architecture
+# 119. Deployment Architecture
 
 ```mermaid
 flowchart TB
     B[Browser]
-
-    N[Nginx / Reverse Proxy]
+    N[Nginx]
     FE[Next.js]
     BE[Spring Boot]
     AI[FastAPI]
-    W[AI Worker]
-
+    W[Worker]
     PG[(PostgreSQL)]
     RD[(Redis)]
     FS[(MinIO)]
@@ -4101,268 +2532,120 @@ flowchart TB
     B --> N
     N --> FE
     N --> BE
-
     FE --> BE
-
     BE --> PG
     BE --> RD
     BE --> FS
     BE --> AI
-
     RD --> W
     W --> FS
     W --> V
-
     AI --> V
 ```
 
 ---
 
-# 161. Reverse Proxy
+# 120. Graceful Degradation
 
-Responsibilities:
-
-```text
-TLS termination
-routing
-request size limits
-compression where appropriate
-security headers
-```
-
-Ví dụ:
-
-```text
-/       → Next.js
-/api/   → Spring Boot
-```
-
-Internal FastAPI không cần expose public trực tiếp.
-
----
-
-# 162. Health Checks
-
-Services:
-
-```text
-frontend
-backend
-AI service
-PostgreSQL
-Redis
-MinIO
-Qdrant
-worker
-```
-
-Admin/system monitoring có thể phân biệt:
-
-```text
-UP
-DEGRADED
-DOWN
-```
-
----
-
-# 163. Graceful Degradation
-
-Nếu AI service down:
-
-Web vẫn có thể:
+Nếu AI down, Web vẫn cho phép:
 
 ```text
 login
-open existing document
+open existing source
 view notes
-view saved quiz
-view planner
+view saved quizzes
+view analytics
+manage planner
 ```
 
-AI actions:
-
-```text
-temporarily unavailable
-```
-
-Không biến cả application thành unusable.
+AI actions hiển thị temporarily unavailable.
 
 ---
 
-# 164. Failure Isolation
+# 121. Versioning
 
-Nếu semantic enrichment fail nhưng source đã retrieval-ready:
-
-Web không nên hiện cả document là FAILED nếu backend/AI state cho phép RAG base hoạt động.
-
-UI phải phản ánh application capability thực.
-
----
-
-# 165. Versioning
-
-Web/API cần track:
+Track:
 
 ```text
-api_version
 frontend release
 backend release
+api version
+source schema/parser version
+retrieval version
+prompt/model version
 ```
 
-AI-side versioning vẫn theo AI design:
-
-```text
-parser
-retrieval
-prompt
-model
-mastery
-recommendation
-```
-
-Debug trace có thể hiển thị version cho admin.
+Không có personalization/recommendation version.
 
 ---
 
-# 166. Migration Strategy
-
-Database changes phải migration-based.
-
-Không:
-
-```text
-auto recreate production DB
-```
-
-Các Web extension như:
-
-```text
-workspaces
-reading states
-notes
-highlights
-```
-
-phải có migration rõ.
-
----
-
-# 167. Development Phases
-
-Web nên phát triển theo vertical slice, không xây toàn UI trước backend.
+# 122. Development Phases
 
 ```text
 Phase A — Platform Shell
 Phase B — Source & Reader
-Phase C — Grounded Learning
+Phase C — Grounded RAG
 Phase D — Practice
-Phase E — Learning Tracking
-Phase F — Analytics & Personalization
+Phase E — Tracking & Analytics
+Phase F — Manual Planner + Admin
 Phase G — Production Quality
 ```
 
 ---
 
-# 168. Phase A — Platform Shell
-
-Implement:
+# 123. Phase A — Platform Shell
 
 ```text
 Authentication
 App layout
 Navigation
-User profile
 Workspace basic CRUD
 API client
 Error handling
 ```
 
-Acceptance:
-
-```text
-user login
-create workspace
-navigate authenticated app
-```
-
 ---
 
-# 169. Phase B — Source & Reader
-
-Implement:
+# 124. Phase B — Source & Reader
 
 ```text
 Library
 Upload
-MinIO integration
-Document status
-Realtime processing update
+MinIO
+Processing state
+Realtime updates
 Reader
 Reading state
-```
-
-Acceptance:
-
-```text
-upload
-processing
-READY
-open source
-resume position
+Citation navigation foundation
 ```
 
 ---
 
-# 170. Phase C — Grounded Learning
-
-Implement:
+# 125. Phase C — Grounded RAG
 
 ```text
 AI Tutor
 Source selection
 RAG request
 Streaming
-Citation card
-Citation navigation
-Insufficient context UX
-```
-
-Acceptance:
-
-```text
-ask from selected source
-get grounded answer
-click citation
-navigate source
+Citation UI/navigation
+Insufficient-context UX
 ```
 
 ---
 
-# 171. Phase D — Practice
-
-Implement:
+# 126. Phase D — Practice
 
 ```text
 Summary
 Quiz generation
-Quiz attempt
-Quiz review
+Quiz attempt/review
 Flashcards
-Flashcard review
-```
-
-Acceptance:
-
-```text
-source → practice → result → source citation
 ```
 
 ---
 
-# 172. Phase E — Learning Tracking
-
-Implement:
+# 127. Phase E — Tracking & Analytics
 
 ```text
 StudySession
@@ -4370,57 +2653,43 @@ LearningEvent
 Notes
 Highlights
 Bookmarks
+Analytics overview
+Topic performance
 Learning timeline
 ```
 
-Acceptance:
-
-```text
-system has structured interaction history
-```
-
 ---
 
-# 173. Phase F — Analytics & Personalization
-
-Implement:
+# 128. Phase F — Planner + Admin
 
 ```text
-Analytics
-Topic mastery UI
-Weak topics
-Recommendation
-Planner
+Manual StudyPlan CRUD
+StudyTask lifecycle
 Calendar
+Notifications
+Admin dashboard
+Retrieval debug UI
+Source-understanding debug UI
 ```
 
-Acceptance:
-
-```text
-quiz/activity changes learning profile
-recommendation appears
-user can turn it into action/task
-```
+Không có personalization phase.
 
 ---
 
-# 174. Phase G — Production Quality
-
-Implement:
+# 129. Phase G — Production Quality
 
 ```text
 security hardening
 E2E
 performance
 observability
-admin
 deployment
-usability test
+usability testing
 ```
 
 ---
 
-# 175. P0 — Web MVP bắt buộc
+# 130. P0 — Web MVP
 
 ```text
 Authentication
@@ -4439,37 +2708,35 @@ Flashcard
 Study Session
 Learning Events
 Analytics overview
-Topic mastery
-Recommendation
-Planner
+Topic performance
+Manual Planner
 Admin basic
 Responsive core flows
 Security
-E2E critical journey
+E2E
 Docker deployment
 ```
 
 ---
 
-# 176. P1 — Nâng chất lượng Web
+# 131. P1
 
 ```text
-SSE unified event stream
-Rich notes
-Advanced highlights
-Mindmap graph
+SSE unified events
+Rich notes/highlights
+Mindmap
 Notification center
 Calendar drag/drop
-Adaptive replanning UX
 Command palette
 PWA shell
 Advanced admin/debug UI
-Outbox/event reliability
+Outbox/reliability
+Spaced repetition optional
 ```
 
 ---
 
-# 177. P2 — Chỉ làm nếu còn thời gian
+# 132. P2
 
 ```text
 Collaboration
@@ -4478,526 +2745,271 @@ WebSocket presence
 Full offline sync
 Voice
 Social learning
-Leaderboard
-Challenge
-Complex gamification
+Gamification nâng cao
 ```
-
-Không để P2 làm trễ P0.
 
 ---
 
-# 178. MVP Web Definition of Done
+# 133. MVP Definition of Done
 
-Một student phải làm được toàn bộ flow sau:
+Student làm được:
 
 ```text
 1. Register/Login
-
-2. Create/Open a Learning Workspace
-
+2. Create/Open Workspace
 3. Upload PDF/DOCX/PPTX
-
 4. See real processing status
-
 5. Open source in Reader
-
 6. Ask AI using selected sources
-
 7. Receive grounded answer
-
-8. Click citation and return to source
-
-9. Create/view note or highlight
-
+8. Open citation back to source
+9. Create note/highlight
 10. Generate quiz
-
-11. Complete quiz and review evidence
-
+11. Complete/review quiz
 12. Review flashcards
-
-13. Run a Study Session
-
+13. Run Study Session
 14. View analytics
-
-15. View mastery/weak topics
-
-16. Receive explainable recommendation
-
-17. Convert recommendation into learning action
-
-18. View/manage study plan
-
-19. Resume learning later
-
-20. All resources remain isolated per user
+15. View topic attempts/accuracy
+16. Create/manage study tasks
+17. Resume learning later
+18. Data remains isolated per user
 ```
 
 ---
 
-# 179. Web Acceptance Criteria về Citation
-
-```text
-citation never invents page
-citation opens correct source
-anchor resolution gracefully falls back
-citation cannot reference unauthorized source
-quiz explanation source is navigable
-```
-
----
-
-# 180. Web Acceptance Criteria về Learning Loop
-
-Flow phải thật:
+# 134. Learning Loop Acceptance
 
 ```text
 Practice
  ↓
-Attempt data
+Attempt Data
  ↓
-Learning Event/Evidence
+Learning Event
  ↓
-Student Model
+Analytics Aggregate
  ↓
-Recommendation
- ↓
-Planner Action
+Progress UI
 ```
 
-Không demo bằng hard-coded analytics.
+Planner là user-driven branch:
+
+```text
+User creates/edits task
+→ Planner state
+→ Reminder/Completion
+```
+
+Không có `Analytics → Recommendation → Planner` automation.
 
 ---
 
-# 181. Demo Scenario bảo vệ — Web-first
+# 135. Demo Scenario — Web-first
 
-## Bước 1 — Login
+## Step 1 — Login / Workspace
 
-Student login.
+Open `Database Final Exam`.
 
-Home hiển thị:
+## Step 2 — Upload + Realtime
 
-```text
-Continue Learning
-Today's Plan
-Weak Topics
-```
-
----
-
-# 182. Demo Step 2 — Workspace
-
-Mở:
+Upload source, observe:
 
 ```text
-Database Final Exam
+UPLOADED → PROCESSING → READY
 ```
 
-Workspace có:
+## Step 3 — Reader + AI
+
+Open source, select LEFT JOIN, ask Explain.
+
+## Step 4 — Citation
+
+Click citation and jump to SourceAnchor.
+
+## Step 5 — Multi-source Control
+
+Select Book + Lecture, exclude Personal Notes, ask comparison.
+
+## Step 6 — Practice
+
+Generate and submit JOIN quiz.
+
+## Step 7 — Analytics
+
+View:
 
 ```text
-Database Systems.pdf
-Lecture 5.pptx
-My Notes.docx
+quiz score
+JOIN attempts
+JOIN accuracy
+study activity
 ```
 
----
+## Step 8 — Planner
 
-# 183. Demo Step 3 — Upload + Realtime
-
-Upload source mới.
-
-UI:
-
-```text
-Upload ✓
-Processing...
-READY
-```
-
-Không reload page thủ công.
-
----
-
-# 184. Demo Step 4 — Reader + AI
-
-Mở `Database Systems.pdf`.
-
-Select đoạn về LEFT JOIN.
-
-Bấm:
-
-```text
-Explain
-```
-
-AI trả lời bằng stream.
-
----
-
-# 185. Demo Step 5 — Citation
-
-Click citation.
-
-Reader:
-
-```text
-jump tới SourceAnchor
-```
-
-và highlight source.
-
-Đây là bằng chứng Web ↔ Source Understanding integration.
-
----
-
-# 186. Demo Step 6 — Multi-source Control
-
-User chọn:
-
-```text
-☑ Book
-☑ Lecture
-☐ Personal Notes
-```
-
-Hỏi comparison.
-
-System chỉ sử dụng selected sources.
-
----
-
-# 187. Demo Step 7 — Practice
-
-Generate quiz:
-
-```text
-LEFT JOIN
-10 questions
-```
-
-Student sai nhiều câu.
-
----
-
-# 188. Demo Step 8 — Learning Profile
-
-Sau submit:
-
-```text
-LEFT JOIN
-mastery ↓
-confidence updated
-```
-
-Nếu async, UI cập nhật sau event/refetch.
-
----
-
-# 189. Demo Step 9 — Recommendation
-
-Home/Topic Detail:
+User creates:
 
 ```text
 Review LEFT JOIN
-
-Why:
-recent errors
-low mastery
-review due
+Wednesday 20:00
+30 min
 ```
 
-User bấm:
+Then drag/reschedule and persist.
 
-```text
-Schedule
-```
+## Step 9 — Study Session
+
+Run 20-minute session and observe timeline update.
+
+## Step 10 — Admin / Debug
+
+Open retrieval trace/source graph.
 
 ---
 
-# 190. Demo Step 10 — Planner
+# 136. “Có phải chỉ là chatbot PDF?”
 
-Task xuất hiện trên calendar.
-
-User drag task sang ngày khác.
-
-Backend persist.
-
----
-
-# 191. Demo Step 11 — Study Session
-
-Start:
-
-```text
-Review LEFT JOIN
-20 min
-```
-
-Sau session:
-
-```text
-active time
-resources
-flashcards
-quiz
-```
-
-Timeline cập nhật.
-
----
-
-# 192. Demo Step 12 — Admin / Debug
-
-Admin có thể mở:
-
-```text
-RAG trace
-retrieved units
-selected evidence
-citation
-```
-
-Đây là phần chứng minh hệ thống không chỉ có UI đẹp.
-
----
-
-# 193. Hội đồng hỏi: “Đây có phải chỉ là chatbot PDF?”
-
-Trả lời:
-
-```text
 Không.
 
-Web application có một learning loop hoàn chỉnh:
-
+```text
 Sources
 → Reader/Tutor
+→ Grounded Citation
 → Practice
 → Learning Events
-→ Student Model
-→ Recommendation
-→ Planner
-→ Next Session
+→ Analytics
+→ User-managed Planner
 ```
 
-Chat chỉ là một interaction trong workflow.
+Chat chỉ là một interaction.
 
 ---
 
-# 194. Hội đồng hỏi: “Điểm Web nằm ở đâu?”
-
-Có thể trả lời:
+# 137. “Điểm Web nằm ở đâu?”
 
 ```text
-1. Complex Learning Workspace
-2. Multi-source navigation
-3. Interactive document reader
-4. Citation deep-linking
-5. Streaming/realtime UX
-6. Study session lifecycle
-7. Planner/calendar interactions
-8. Analytics visualization
+1. Multi-source workspace
+2. Interactive reader
+3. Citation deep-linking
+4. Streaming/realtime UX
+5. Practice workflows
+6. Study-session lifecycle
+7. Analytics visualization
+8. Planner/calendar interaction
 9. Auth/object authorization
 10. Async jobs
 11. State management
 12. Error recovery
 13. Responsive/accessibility
-14. Deployment/observability
+14. Admin/debug tooling
+15. Deployment/observability
 ```
 
 ---
 
-# 195. Hội đồng hỏi: “Vì sao không gọi AI trực tiếp từ Next.js?”
+# 138. “Vì sao bỏ personalization/recommendation?”
 
-Vì Spring Boot cần enforce:
+Vì subsystem đó yêu cầu thêm:
 
 ```text
-authentication
-authorization
-source ownership
-learning events
-conversation persistence
-rate limit
-AI usage tracking
-business rules
+Student Model
+mastery calibration
+forgetting model
+ranking policy
+recommendation lifecycle
+adaptive planner
+separate evaluation dataset
 ```
 
-Frontend không phải security boundary.
+Đây là scope lớn nhưng không cần thiết để chứng minh Web Engineering, RAG correctness hoặc Learning Analytics. Phiên bản hiện tại giữ user control: analytics cung cấp dữ liệu minh bạch, còn người dùng tự quyết định task/plan.
 
 ---
 
-# 196. Hội đồng hỏi: “Vì sao cần Workspace?”
-
-Workspace là product organization boundary.
-
-Nó giúp gom:
+# 139. Quan hệ với FULL AI SYSTEM DESIGN
 
 ```text
-sources
-learning activity
-practice
-plan
-analytics
-```
-
-theo một learning goal.
-
-Nhưng source identity vẫn được giữ độc lập cho:
-
-```text
-retrieval
-citation
-ownership
-provenance
-```
-
----
-
-# 197. Hội đồng hỏi: “Realtime có cần WebSocket?”
-
-Không nhất thiết.
-
-MVP chủ yếu cần server → client:
-
-```text
-processing status
-AI stream
-notification
-```
-
-SSE phù hợp hơn.
-
-WebSocket chỉ cần khi có bidirectional realtime như collaboration/presence.
-
----
-
-# 198. Hội đồng hỏi: “Frontend có tự tính mastery không?”
-
-Không.
-
-Student Model nằm ở backend/AI layer.
-
-Frontend chỉ render structured state:
-
-```text
-mastery
-confidence
-forgetting risk
-```
-
-Điều này tránh duplicate business logic và sai lệch giữa clients.
-
----
-
-# 199. Quan hệ cuối cùng với FULL AI SYSTEM DESIGN
-
-Hai tài liệu phải ghép như sau:
-
-```text
-FULL WEB SYSTEM DESIGN
-        │
-        │ user intent + interaction
-        ▼
+WEB EXPERIENCE
+     │ user intent + source scope
+     ▼
 APPLICATION BACKEND
-        │
-        │ structured AI requests
-        ▼
-FULL AI SYSTEM DESIGN
-        │
-        │ evidence / answer / mastery / recommendation
-        ▼
+     │ authorized structured request
+     ▼
+AI SYSTEM
+     │ evidence / answer / generated content / citation
+     ▼
 APPLICATION BACKEND
-        │
-        ▼
+     │ persist events / analytics
+     ▼
 WEB EXPERIENCE
 ```
 
-Web không thay AI.
-
-AI không thay Web.
+AI không quản lý planner hoặc user learning policy.
 
 ---
 
-# 200. Quan hệ cuối cùng với Universal Source Understanding
-
-Source Understanding:
+# 140. Quan hệ với Universal Source Understanding
 
 ```text
-Source
-→ Element
-→ LogicalUnit
-→ RetrievalUnit
-→ Evidence
-→ Citation
-```
+Source Understanding:
+Source → Element → LogicalUnit → RetrievalUnit → Evidence → Citation
 
 Web:
-
-```text
-Source Library
-→ Reader
-→ Source Selection
-→ AI Interaction
-→ Citation Navigation
+Library → Reader → Source Selection → AI Interaction → Citation Navigation
 ```
 
 Điểm nối:
 
 ```text
 source_id
+RetrievalUnit/Evidence IDs
 SourceAnchor
-Evidence/Citation metadata
+citation metadata
 ```
 
 ---
 
-# 201. Final Architecture
+# 141. Final Architecture
 
 ```mermaid
 flowchart TB
     USER[Student]
 
-    subgraph WEB[1. Web Experience]
-        HOME[Learning Home]
+    subgraph WEB[Web Experience]
+        HOME[Home]
         WS[Workspace]
         READER[Reader]
         TUTOR[AI Tutor]
         PRACTICE[Quiz / Flashcard]
         SESSION[Study Session]
         DASH[Analytics]
-        PLAN[Planner]
+        PLAN[Manual Planner]
     end
 
-    subgraph APP[2. Application Platform]
+    subgraph APP[Application Platform]
         AUTH[Auth & Access]
         DOC[Document Management]
         LEARN[Learning Domain]
         EVENT[Learning Events]
-        ANA[Analytics API]
-        RECAPP[Recommendation API]
-        PLANAPP[Planning API]
+        ANA[Analytics]
+        PLANAPP[Planner CRUD]
         STREAM[Realtime / SSE]
     end
 
-    subgraph AI[3. AI Intelligence]
+    subgraph AI[AI Intelligence]
         SU[Source Understanding]
         RET[Retrieval]
         RAG[RAG + Citation]
-        GEN[Learning Generation]
-        SM[Student Model]
-        REC[Recommendation]
+        GEN[Grounded Generation]
+        EVAL[Evaluation]
     end
 
-    subgraph DATA[4. Data]
+    subgraph DATA[Data]
         PG[(PostgreSQL)]
         REDIS[(Redis)]
         MINIO[(MinIO)]
         QDRANT[(Qdrant)]
     end
 
-    USER --> HOME
-    HOME --> WS
+    USER --> HOME --> WS
     WS --> READER
     WS --> TUTOR
     WS --> PRACTICE
@@ -5009,7 +3021,6 @@ flowchart TB
     WEB --> DOC
     WEB --> LEARN
     WEB --> ANA
-    WEB --> RECAPP
     WEB --> PLANAPP
 
     APP --> PG
@@ -5019,117 +3030,92 @@ flowchart TB
     DOC --> SU
     TUTOR --> RAG
     PRACTICE --> GEN
-
     SU --> QDRANT
     RAG --> RET
     RET --> QDRANT
-
-    EVENT --> SM
-    SM --> REC
-    REC --> RECAPP
-
+    RAG --> EVAL
     STREAM --> WEB
 ```
 
 ---
 
-# 202. Core Web Loop
-
-Trái tim của Web System:
+# 142. Core Web Loop
 
 ```text
-                 ┌────────────────┐
-                 │ Learning Home  │
-                 └───────┬────────┘
-                         │
-                         ▼
-                 ┌────────────────┐
-                 │   Workspace    │
-                 └───────┬────────┘
-                         │
-              ┌──────────┼──────────┐
-              ▼          ▼          ▼
-           Reader     AI Tutor   Practice
-              └──────────┼──────────┘
-                         ▼
-                 Learning Events
-                         │
-                         ▼
-                    Analytics
-                         │
-                         ▼
-                  Recommendation
-                         │
-                         ▼
-                      Planner
-                         │
-                         ▼
-                 Next Study Session
+Learning Home
+    ↓
+Workspace
+    ↓
+Reader / AI Tutor / Practice
+    ↓
+Learning Events
+    ↓
+Analytics
+    ↓
+User Reflection
+    ↓
+Manual Planner / Continue Learning
 ```
+
+Không có hidden algorithm tự chuyển analytics thành hành động bắt buộc hoặc recommendation.
 
 ---
 
-# 203. Nguyên tắc cuối cùng
+# 143. Nguyên tắc cuối cùng
 
-Mỗi feature Web nên cải thiện ít nhất một trong:
+Mỗi Web feature nên cải thiện ít nhất một trong:
 
 ```text
 1. Learning continuity
 2. User control
 3. Source traceability
-4. Actionability
+4. Practice usability
 5. System observability
 6. Security/correctness
 ```
 
-Nếu một feature chỉ làm giao diện nhiều hơn mà không cải thiện các điểm trên, không ưu tiên nó.
+Nếu feature chỉ tăng complexity nhưng không cải thiện các điểm trên, không ưu tiên.
 
 ---
 
-# 204. Một câu mô tả phần Web dùng trong báo cáo
+# 144. Một câu mô tả phần Web dùng trong báo cáo
 
-> **Web System của AI Study Assistant 2.0 được thiết kế như một Personal Learning Workspace, nơi người học có thể tổ chức nhiều nguồn học tập, đọc và tương tác trực tiếp với tài liệu, hỏi AI có citation, thực hành bằng quiz và flashcard, theo dõi quá trình học, quan sát mức độ thành thạo và chuyển các khuyến nghị cá nhân hóa thành kế hoạch học cụ thể. Phần Web đóng vai trò Product Experience Layer kết nối Spring Boot Application Platform với AI Intelligence Layer, đồng thời đảm bảo realtime interaction, provenance navigation, state consistency, security, testing và khả năng triển khai thực tế.**
+> **Web System của AI Study Assistant 2.0 được thiết kế như một Learning Workspace nơi người học tổ chức nhiều nguồn học tập, đọc và tương tác trực tiếp với tài liệu, hỏi AI có citation, thực hành bằng quiz/flashcard, ghi nhận study session, xem Learning Analytics và tự quản lý kế hoạch học. Web là Product Experience Layer kết nối Spring Boot Application Platform với Source Understanding/RAG AI, đồng thời đảm bảo realtime interaction, provenance navigation, user control, state consistency, security, testing và khả năng triển khai thực tế. Hệ thống không triển khai personalization hoặc Recommendation Engine.**
 
 ---
 
-# 205. Kết luận
+# 145. Kết luận
 
-Thiết kế cuối không phải:
-
-```text
-AI
-↓
-Web UI
-```
-
-mà là:
+Thiết kế cuối:
 
 ```text
-                    PRODUCT EXPERIENCE
-                           │
-                           ▼
-              ┌─────────────────────────┐
-              │ Personal Learning Web   │
-              └────────────┬────────────┘
-                           │
-                    User Interaction
-                           │
-                           ▼
-              ┌─────────────────────────┐
-              │ Application Platform    │
-              └────────────┬────────────┘
-                           │
-          ┌────────────────┼────────────────┐
-          ▼                ▼                ▼
-    Source System      AI System      Learning System
-          │                │                │
-          └────────────────┼────────────────┘
-                           ▼
-                    Personalized Action
+                   PRODUCT EXPERIENCE
+                          │
+                          ▼
+               ┌───────────────────┐
+               │   Learning Web    │
+               └─────────┬─────────┘
+                         │
+                  User Interaction
+                         ▼
+               ┌───────────────────┐
+               │ Application Layer │
+               └─────────┬─────────┘
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+    Source System     AI/RAG       Learning Data
+          │              │              │
+          └──────────────┼──────────────┘
+                         ▼
+                     Analytics
+                         │
+                         ▼
+                 User-controlled Action
 ```
 
-Giá trị cốt lõi của đồ án khi nhìn từ Web:
+Giá trị cốt lõi của Web:
 
-> **Source-grounded learning experience → measurable learning interaction → personalized next action.**
+> **Source-grounded learning experience → measurable learning interaction → transparent analytics → user-controlled planning.**
 
-Đây là cách giữ được chiều sâu AI hiện có nhưng vẫn làm rõ rằng sản phẩm cuối cùng là một **đồ án Web Engineering hoàn chỉnh**, không phải một collection các AI endpoint có giao diện.
+Đây là một đồ án Web Engineering có AI đủ sâu ở Source Understanding/RAG, nhưng không phải gánh thêm một personalization/recommendation subsystem độc lập.
