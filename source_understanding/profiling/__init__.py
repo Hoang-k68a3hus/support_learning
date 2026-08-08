@@ -7,6 +7,7 @@ from .content_profiler import (
     ContentProfileSignals,
     ContentProfiler,
     ContentProfilingError,
+    content_category_for_element,
     content_category_for_type,
 )
 from .regions import (
@@ -31,5 +32,6 @@ __all__ = [
     "ContentRegionSegmentationError",
     "ContentRegionSegmentationResult",
     "ContentRegionSegmenter",
+    "content_category_for_element",
     "content_category_for_type",
 ]
