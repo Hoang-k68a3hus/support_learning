@@ -8,9 +8,10 @@ from pydantic import Field
 
 from source_understanding.schemas.context import Confidence, ConfidenceMap, SchemaModel
 from source_understanding.schemas.element import Element, ElementType
+from source_understanding.source_attributes import SourceAttributeError, source_zone
 
 
-CONTENT_PROFILER_VERSION = "1"
+CONTENT_PROFILER_VERSION = "2"
 
 
 class ContentProfilingError(ValueError):
@@ -76,6 +77,23 @@ def content_category_for_type(element_type: ElementType) -> ContentCategory:
         ) from exc
 
 
+def content_category_for_element(element: Element) -> ContentCategory:
+    """Return routing category while respecting explicit source-zone facts.
+
+    Header/footer material remains typed (TABLE, FIGURE, CODE, ...) so no source
+    structure is lost, but it routes as boilerplate instead of changing the main
+    document modality merely because a header contains a layout table or logo.
+    """
+
+    try:
+        zone = source_zone(element)
+    except SourceAttributeError as exc:
+        raise ContentProfilingError(str(exc)) from exc
+    if zone is not None and zone.casefold() in {"header", "footer"}:
+        return ContentCategory.BOILERPLATE
+    return content_category_for_type(element.type)
+
+
 class ContentProfileSignals(SchemaModel):
     """Directly observed counts/ratios; no lexical or semantic inference."""
 
@@ -133,7 +151,7 @@ class ContentProfiler:
         self._validate_elements(snapshot)
 
         type_counts: Counter[ElementType] = Counter(element.type for element in snapshot)
-        categories = tuple(content_category_for_type(element.type) for element in snapshot)
+        categories = tuple(content_category_for_element(element) for element in snapshot)
         category_counts: Counter[ContentCategory] = Counter(categories)
         element_count = len(snapshot)
 
@@ -175,11 +193,7 @@ class ContentProfiler:
             key_value_count=type_counts[ElementType.KEY_VALUE],
             visual_count=type_counts[ElementType.FIGURE] + type_counts[ElementType.CHART],
             separator_count=type_counts[ElementType.SEPARATOR],
-            boilerplate_count=(
-                type_counts[ElementType.HEADER]
-                + type_counts[ElementType.FOOTER]
-                + type_counts[ElementType.PAGE_NUMBER]
-            ),
+            boilerplate_count=category_counts[ContentCategory.BOILERPLATE],
             unknown_count=unknown_count,
             text_present_count=text_present_count,
             located_element_count=sum(element.location is not None for element in snapshot),
