@@ -151,6 +151,8 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
         self.assertEqual(manifest["pipeline_version"], "1")
         self.assertEqual(manifest["content_profiler_version"], "1")
         self.assertEqual(manifest["structure_signal_version"], "1")
+        self.assertIn("structure_signal_policy", manifest)
+        self.assertIn("section_markers", manifest["structure_signal_policy"])
         self.assertIn("boundary_policy", manifest)
         self.assertIn("grouping_policy", manifest)
         self.assertIn("hierarchy_policy", manifest)
