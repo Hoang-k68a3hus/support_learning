@@ -184,7 +184,9 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
                 return self.Result()
 
         pipeline = SourceUnderstandingPipeline(profiler=WrongProfiler())
-        with self.assertRaisesRegex(SourceUnderstandingPipelineError, "element_count mismatch"):
+        with self.assertRaisesRegex(
+            SourceUnderstandingPipelineError, "element_count mismatch"
+        ):
             pipeline.understand(
                 document_id="doc1",
                 content_hash=HASH,
