@@ -8,12 +8,13 @@ from source_understanding.schemas.context import Confidence, SchemaModel
 from source_understanding.schemas.document import DocumentQuality
 from source_understanding.schemas.element import Element, ElementType
 
-from .boundary import BoundaryClass, BoundaryReason, BoundarySet
+from .boundary import BoundaryClass, BoundarySet
 from .grouping import GroupingResult
 from .hierarchy import HierarchyResult
+from .integrity import unresolved_integrity_boundary_ids
 
 
-STRUCTURE_QUALITY_VERSION = "1"
+STRUCTURE_QUALITY_VERSION = "2"
 
 
 class StructureQualityError(ValueError):
@@ -102,10 +103,11 @@ class StructureQualityEstimator:
             boundary.classification == BoundaryClass.UNKNOWN
             for boundary in boundary_set.boundaries
         )
-        unresolved_integrity = sum(
-            BoundaryReason.CONTENT_INTEGRITY_UNRESOLVED in boundary.reasons
-            for boundary in boundary_set.boundaries
+        unresolved_integrity_ids = unresolved_integrity_boundary_ids(
+            boundary_set,
+            grouping_result,
         )
+        unresolved_integrity = len(unresolved_integrity_ids)
         context_assigned = sum(
             bool(assignment.context_node_ids)
             for assignment in hierarchy_result.assignments
@@ -174,6 +176,7 @@ class StructureQualityEstimator:
                 "unknown_element_ratio": unknown_element_ratio,
                 "unknown_boundary_ratio": unknown_boundary_ratio,
                 "integrity_resolution_ratio": integrity_resolution_ratio,
+                "unresolved_integrity_boundary_ids": list(unresolved_integrity_ids),
                 "context_assignment_ratio": context_assignment_ratio,
             },
         )
