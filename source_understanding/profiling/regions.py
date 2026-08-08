@@ -4,6 +4,7 @@ import hashlib
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from pydantic import Field, model_validator
 
@@ -17,12 +18,16 @@ from source_understanding.schemas.context import (
 )
 from source_understanding.schemas.document import ContentRegion, DocumentStructure
 from source_understanding.schemas.element import Element
-from source_understanding.structure.hierarchy import HierarchyResult
+from .content_profiler import (
+    ContentCategory,
+    content_category_for_element,
+)
 
-from .content_profiler import ContentCategory, content_category_for_type
+if TYPE_CHECKING:
+    from source_understanding.structure.hierarchy import HierarchyResult
 
 
-CONTENT_REGION_SEGMENTER_VERSION = "1"
+CONTENT_REGION_SEGMENTER_VERSION = "2"
 CONTENT_REGION_POLICY_VERSION = "1"
 
 
@@ -161,7 +166,7 @@ class ContentRegionSegmenter:
         leading_bridges: list[Element] = []
 
         for element in elements:
-            category = content_category_for_type(element.type)
+            category = content_category_for_element(element)
             if category in bridge_categories:
                 if current is None:
                     leading_bridges.append(element)
@@ -198,7 +203,7 @@ class ContentRegionSegmenter:
             drafts.append(current)
         else:
             # All elements were bridge material. Preserve them in one neutral routing region.
-            categories = [content_category_for_type(element.type) for element in leading_bridges]
+            categories = [content_category_for_element(element) for element in leading_bridges]
             counts = Counter(categories)
             highest = max(counts.values())
             routing_category = next(
@@ -221,7 +226,7 @@ class ContentRegionSegmenter:
         hierarchy_result: HierarchyResult,
     ) -> ContentRegion:
         elements = tuple(draft.elements)
-        categories = tuple(content_category_for_type(element.type) for element in elements)
+        categories = tuple(content_category_for_element(element) for element in elements)
         counts = Counter(categories)
         total = len(elements)
         profile = {
@@ -329,10 +334,10 @@ class ContentRegionSegmenter:
     ) -> tuple[DocumentStructure, bool, dict[str, object]]:
         bridge_categories = set(self._policy.bridge_categories)
         material_categories = [
-            content_category_for_type(element.type)
+            content_category_for_element(element)
             for element in elements
-            if content_category_for_type(element.type) not in bridge_categories
-            and content_category_for_type(element.type) != ContentCategory.UNKNOWN
+            if content_category_for_element(element) not in bridge_categories
+            and content_category_for_element(element) != ContentCategory.UNKNOWN
         ]
         distinct = set(material_categories)
         interaction = distinct & set(self._policy.interaction_categories)
