@@ -100,14 +100,15 @@ class BoundaryScorerTests(unittest.TestCase):
         self.assertEqual(decision.classification, BoundaryClass.HARD)
         self.assertIn(BoundaryReason.SEPARATOR, decision.reasons)
 
-    def test_table_internal_adjacency_is_protected(self) -> None:
+    def test_table_continuity_is_unknown_without_block_identity(self) -> None:
         elements = (
             element("e0", 0, ElementType.TABLE_ROW),
             element("e1", 1, ElementType.TABLE_CELL),
         )
         decision = self.scorer.score(elements, signals(elements)).boundaries[0]
-        self.assertEqual(decision.classification, BoundaryClass.NONE)
-        self.assertEqual(decision.integrity_guard, BoundaryIntegrityGuard.TABLE_BLOCK)
+        self.assertEqual(decision.classification, BoundaryClass.UNKNOWN)
+        self.assertIsNone(decision.integrity_guard)
+        self.assertIn(BoundaryReason.CONTENT_INTEGRITY_UNRESOLVED, decision.reasons)
 
     def test_entering_table_is_hard(self) -> None:
         elements = (
@@ -118,15 +119,18 @@ class BoundaryScorerTests(unittest.TestCase):
         self.assertEqual(decision.classification, BoundaryClass.HARD)
         self.assertIn(BoundaryReason.TABLE_BOUNDARY, decision.reasons)
 
-    def test_code_internal_adjacency_is_protected_and_exit_is_hard(self) -> None:
+    def test_code_continuity_is_unknown_and_exit_is_hard(self) -> None:
         elements = (
             element("e0", 0, ElementType.CODE),
             element("e1", 1, ElementType.CODE),
             element("e2", 2, ElementType.PARAGRAPH),
         )
         result = self.scorer.score(elements, signals(elements))
-        self.assertEqual(result.boundaries[0].integrity_guard, BoundaryIntegrityGuard.CODE_BLOCK)
-        self.assertEqual(result.boundaries[0].classification, BoundaryClass.NONE)
+        self.assertEqual(result.boundaries[0].classification, BoundaryClass.UNKNOWN)
+        self.assertIn(
+            BoundaryReason.CONTENT_INTEGRITY_UNRESOLVED,
+            result.boundaries[0].reasons,
+        )
         self.assertEqual(result.boundaries[1].classification, BoundaryClass.HARD)
         self.assertIn(BoundaryReason.CODE_BOUNDARY, result.boundaries[1].reasons)
 
@@ -164,14 +168,15 @@ class BoundaryScorerTests(unittest.TestCase):
         self.assertEqual(elements[0].type, ElementType.PARAGRAPH)
         self.assertEqual(elements[1].type, ElementType.PARAGRAPH)
 
-    def test_list_continuity_is_protected(self) -> None:
+    def test_list_continuity_is_unknown_without_continuity_evidence(self) -> None:
         elements = (
             element("e0", 0, ElementType.LIST_ITEM),
             element("e1", 1, ElementType.LIST_ITEM),
         )
         decision = self.scorer.score(elements, signals(elements)).boundaries[0]
-        self.assertEqual(decision.integrity_guard, BoundaryIntegrityGuard.LIST_GROUP)
-        self.assertEqual(decision.classification, BoundaryClass.NONE)
+        self.assertEqual(decision.classification, BoundaryClass.UNKNOWN)
+        self.assertIsNone(decision.integrity_guard)
+        self.assertIn(BoundaryReason.CONTENT_INTEGRITY_UNRESOLVED, decision.reasons)
 
     def test_paragraph_break_is_soft(self) -> None:
         elements = (
