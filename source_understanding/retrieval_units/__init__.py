@@ -8,12 +8,24 @@ from .builder import (
     RetrievalUnitBuildResult,
     RetrievalUnitBuilder,
 )
+from .semantic import (
+    SEMANTIC_RETRIEVAL_ENRICHER_VERSION,
+    SemanticRetrievalEnrichmentError,
+    SemanticRetrievalEnricher,
+    SemanticRetrievalPolicy,
+    SemanticRetrievalResult,
+)
 
 __all__ = [
     "RETRIEVAL_UNIT_BUILDER_VERSION",
+    "SEMANTIC_RETRIEVAL_ENRICHER_VERSION",
     "RetrievalStrategy",
     "RetrievalUnitBuildError",
     "RetrievalUnitBuildPolicy",
     "RetrievalUnitBuildResult",
     "RetrievalUnitBuilder",
+    "SemanticRetrievalEnrichmentError",
+    "SemanticRetrievalEnricher",
+    "SemanticRetrievalPolicy",
+    "SemanticRetrievalResult",
 ]
