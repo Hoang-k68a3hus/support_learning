@@ -68,7 +68,6 @@ def processing():
     return ProcessingManifest(
         adapter_name="test-adapter",
         adapter_version="1",
-        normalizer_version="1" if False else None,
         processed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
         configuration={"adapter": {"preserve_raw": True}},
     )
