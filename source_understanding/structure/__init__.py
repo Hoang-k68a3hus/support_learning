@@ -1,4 +1,4 @@
-"""Structural evidence extraction, boundary scoring, grouping, and hierarchy."""
+"""Structural evidence extraction, boundary scoring, grouping, hierarchy, and integration."""
 
 from .boundary import (
     BOUNDARY_POLICY_VERSION,
@@ -31,8 +31,22 @@ from .hierarchy import (
     HierarchyPolicy,
     HierarchyResult,
 )
+from .integration import (
+    CONTEXT_INTEGRATION_VERSION,
+    ContextIntegrationError,
+    ContextIntegrationResult,
+    ContextIntegrator,
+)
 from .log import LogWindowBuilder, LogWindowCandidate
 from .qa import QAPairBuilder, QAPairCandidate, QAPairRule
+from .quality import (
+    STRUCTURE_QUALITY_VERSION,
+    StructureQualityError,
+    StructureQualityEstimator,
+    StructureQualityMetrics,
+    StructureQualityPolicy,
+    StructureQualityReport,
+)
 from .signals import (
     STRUCTURE_SIGNAL_VERSION,
     StructureSignal,
@@ -55,6 +69,10 @@ __all__ = [
     "BoundaryReason",
     "BoundaryScorer",
     "BoundarySet",
+    "CONTEXT_INTEGRATION_VERSION",
+    "ContextIntegrationError",
+    "ContextIntegrationResult",
+    "ContextIntegrator",
     "DialogueSegmentBuilder",
     "DialogueSegmentCandidate",
     "ElementContextAssignment",
@@ -75,7 +93,13 @@ __all__ = [
     "QAPairBuilder",
     "QAPairCandidate",
     "QAPairRule",
+    "STRUCTURE_QUALITY_VERSION",
     "STRUCTURE_SIGNAL_VERSION",
+    "StructureQualityError",
+    "StructureQualityEstimator",
+    "StructureQualityMetrics",
+    "StructureQualityPolicy",
+    "StructureQualityReport",
     "StructureSignal",
     "StructureSignalError",
     "StructureSignalExtractor",
