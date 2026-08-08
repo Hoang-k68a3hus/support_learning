@@ -5,7 +5,7 @@ from xml.etree import ElementTree as ET
 from source_understanding.source_attributes import SOURCE_ANCHOR_ATTRIBUTE
 
 from .base import AdapterDiagnostic, AdapterError
-from ._docx_common import NS, W, Emitter, local_name
+from ._docx_common import NS, W, Emitter, local_name, stable_group_id
 
 
 class DocxFixupMixin:
@@ -61,6 +61,67 @@ class DocxFixupMixin:
                 },
             )
 
+    def _emit_table(
+        self,
+        package,
+        emitter: Emitter,
+        table: ET.Element,
+        *,
+        part: str,
+        zone: str,
+        rels: dict[str, object],
+        content_hash: str,
+        content_types: dict[str, str],
+        path: str,
+        parent_group: str | None,
+        wrappers: tuple[dict[str, object], ...] = (),
+    ) -> None:
+        # The base extractor promotes direct child tables. Keep that behavior,
+        # then additionally promote tables hidden under source wrappers (sdt,
+        # customXml, tracked revisions) instead of silently flattening them.
+        super()._emit_table(
+            package,
+            emitter,
+            table,
+            part=part,
+            zone=zone,
+            rels=rels,
+            content_hash=content_hash,
+            content_types=content_types,
+            path=path,
+            parent_group=parent_group,
+            wrappers=wrappers,
+        )
+        group_id = stable_group_id("table", part, zone, path)
+        for row_index, (row, row_wrappers) in enumerate(self._iter_wrapped(table, "tr")):
+            for cell_index, (cell, cell_wrappers) in enumerate(self._iter_wrapped(row, "tc")):
+                for nested_index, (nested, nested_wrappers) in enumerate(
+                    self._iter_wrapped(cell, "tbl")
+                ):
+                    if not nested_wrappers:
+                        continue  # direct nested tables were already promoted above.
+                    self._emit_table(
+                        package,
+                        emitter,
+                        nested,
+                        part=part,
+                        zone=zone,
+                        rels=rels,
+                        content_hash=content_hash,
+                        content_types=content_types,
+                        path=(
+                            f"{path}/r{row_index}/c{cell_index}/"
+                            f"wrapped_tbl{nested_index}"
+                        ),
+                        parent_group=group_id,
+                        wrappers=(
+                            *wrappers,
+                            *row_wrappers,
+                            *cell_wrappers,
+                            *nested_wrappers,
+                        ),
+                    )
+
     def _node_text(self, node: ET.Element) -> str:
         """Collect row/cell text without duplicating nested-table descendants."""
 
@@ -82,12 +143,7 @@ class DocxFixupMixin:
         return "\n".join(chunks)
 
     def _flatten_note_text(self, node: ET.Element) -> str:
-        """Preserve all paragraph text when a note/comment is intentionally flattened.
-
-        Unlike row/cell summaries, flattened notes must include text inside nested
-        tables because no first-class nested blocks are emitted for note zones.
-        Structural loss remains explicit via the diagnostic emitted by `_read_notes`.
-        """
+        """Preserve all paragraph text when a note/comment is intentionally flattened."""
 
         chunks: list[str] = []
         for paragraph in node.findall(".//w:p", NS):
