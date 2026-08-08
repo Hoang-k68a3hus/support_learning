@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from enum import StrEnum
+import re
 from typing import Protocol, runtime_checkable
 
 from pydantic import Field, model_validator
@@ -62,6 +63,10 @@ class SemanticCapability(SchemaModel):
                 raise ValueError("ontology namespaces must be non-blank and trimmed")
             if len(namespace) > 128:
                 raise ValueError("ontology namespace must be <= 128 chars")
+            if re.fullmatch(r"[A-Za-z0-9_.-]+", namespace) is None:
+                raise ValueError(
+                    "ontology namespace must match [A-Za-z0-9_.-]+"
+                )
         return self
 
 
@@ -74,6 +79,11 @@ class SemanticProviderCapabilities(SchemaModel):
 
     @model_validator(mode="after")
     def validate_capabilities(self) -> "SemanticProviderCapabilities":
+        if self.protocol_version != SEMANTIC_PROVIDER_PROTOCOL_VERSION:
+            raise ValueError(
+                "unsupported semantic provider protocol_version: "
+                f"{self.protocol_version!r} != {SEMANTIC_PROVIDER_PROTOCOL_VERSION!r}"
+            )
         names = [capability.name for capability in self.capabilities]
         if len(names) != len(set(names)):
             raise ValueError("semantic capability names must be unique")
