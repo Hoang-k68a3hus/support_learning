@@ -43,13 +43,11 @@ class BoundaryReason(StrEnum):
     PATTERN_START = "PATTERN_START"
     PARAGRAPH_BREAK = "PARAGRAPH_BREAK"
     INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+    CONTENT_INTEGRITY_UNRESOLVED = "CONTENT_INTEGRITY_UNRESOLVED"
 
 
 class BoundaryIntegrityGuard(StrEnum):
     QA_PAIR = "QA_PAIR"
-    TABLE_BLOCK = "TABLE_BLOCK"
-    CODE_BLOCK = "CODE_BLOCK"
-    LIST_GROUP = "LIST_GROUP"
 
 
 class BoundaryPolicy(SchemaModel):
@@ -207,8 +205,11 @@ class BoundaryScorer:
 
         explicit_start = self._has_explicit_structure_start(right, right_signals)
         separator = left.type == ElementType.SEPARATOR or right.type == ElementType.SEPARATOR
-        type_change = left.type != right.type
-        style_change = self._style_change(left, right)
+        shared_integrity_family = self._shared_integrity_family(left, right)
+        type_change = left.type != right.type and not shared_integrity_family
+        style_change = (
+            0.0 if shared_integrity_family else self._style_change(left, right)
+        )
         pattern_start = any(signal.kind in _PATTERN_START_KINDS for signal in right_signals)
         paragraph_break = (
             left.type == ElementType.PARAGRAPH and right.type == ElementType.PARAGRAPH
@@ -256,6 +257,8 @@ class BoundaryScorer:
         elif self._is_unknown_pair(left, right, score):
             classification = BoundaryClass.UNKNOWN
             reasons.append(BoundaryReason.INSUFFICIENT_EVIDENCE)
+            if shared_integrity_family:
+                reasons.append(BoundaryReason.CONTENT_INTEGRITY_UNRESOLVED)
         elif score >= self._policy.hard_threshold:
             classification = BoundaryClass.HARD
         elif score >= self._policy.soft_threshold:
@@ -296,12 +299,6 @@ class BoundaryScorer:
         ):
             return BoundaryIntegrityGuard.QA_PAIR
 
-        if left.type in _TABLE_TYPES and right.type in _TABLE_TYPES:
-            return BoundaryIntegrityGuard.TABLE_BLOCK
-        if left.type in _CODE_TYPES and right.type in _CODE_TYPES:
-            return BoundaryIntegrityGuard.CODE_BLOCK
-        if left.type in _LIST_TYPES and right.type in _LIST_TYPES:
-            return BoundaryIntegrityGuard.LIST_GROUP
         return None
 
     @staticmethod
@@ -349,11 +346,17 @@ class BoundaryScorer:
         return changed / comparable
 
     @staticmethod
-    def _is_unknown_pair(left: Element, right: Element, score: float) -> bool:
-        return (
-            score == 0.0
-            and left.type == ElementType.UNKNOWN
-            and right.type == ElementType.UNKNOWN
+    def _shared_integrity_family(left: Element, right: Element) -> bool:
+        return any(
+            left.type in family and right.type in family
+            for family in (_TABLE_TYPES, _CODE_TYPES, _LIST_TYPES)
+        )
+
+    @classmethod
+    def _is_unknown_pair(cls, left: Element, right: Element, score: float) -> bool:
+        return score == 0.0 and (
+            (left.type == ElementType.UNKNOWN and right.type == ElementType.UNKNOWN)
+            or cls._shared_integrity_family(left, right)
         )
 
     @staticmethod
