@@ -3,11 +3,13 @@
 from .context import (
     Confidence,
     ConfidenceMap,
+    ContentHash,
     ContextNode,
     ContextNodeRef,
     FiniteFloat,
     Identifier,
     JsonObject,
+    NormalizedCoordinate,
     SchemaModel,
     StructureMode,
     StructureSource,
@@ -15,9 +17,11 @@ from .context import (
 from .document import (
     Asset,
     CanonicalDocument,
+    ContentRegion,
     DocumentMetadata,
     DocumentQuality,
     DocumentStructure,
+    ProcessingManifest,
     SemanticAnnotation,
     SemanticAnnotationType,
     SubDocument,
@@ -34,7 +38,7 @@ from .element import (
     TransformationRecord,
 )
 from .logical_unit import LogicalUnit, LogicalUnitType
-from .relation import Relation, RelationType
+from .relation import Relation, RelationLayer, RelationType
 from .retrieval_unit import (
     AnnotationRef,
     RetrievalUnit,
@@ -49,6 +53,8 @@ __all__ = [
     "CanonicalDocument",
     "Confidence",
     "ConfidenceMap",
+    "ContentHash",
+    "ContentRegion",
     "ContextNode",
     "ContextNodeRef",
     "DocumentMetadata",
@@ -62,9 +68,12 @@ __all__ = [
     "JsonObject",
     "LogicalUnit",
     "LogicalUnitType",
+    "NormalizedCoordinate",
+    "ProcessingManifest",
     "Provenance",
     "RawElement",
     "Relation",
+    "RelationLayer",
     "RelationType",
     "RetrievalUnit",
     "RetrievalUnitType",

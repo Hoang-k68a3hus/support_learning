@@ -9,6 +9,7 @@ from .context import (
     FiniteFloat,
     Identifier,
     JsonObject,
+    NormalizedCoordinate,
     SchemaModel,
     StructureSource,
 )
@@ -44,10 +45,12 @@ class ElementType(StrEnum):
 
 
 class BoundingBox(SchemaModel):
-    x0: FiniteFloat
-    y0: FiniteFloat
-    x1: FiniteFloat
-    y1: FiniteFloat
+    """Canonical page-relative box using top-left origin and [0, 1] coordinates."""
+
+    x0: NormalizedCoordinate
+    y0: NormalizedCoordinate
+    x1: NormalizedCoordinate
+    y1: NormalizedCoordinate
 
     @model_validator(mode="after")
     def validate_extents(self) -> BoundingBox:
@@ -59,6 +62,15 @@ class BoundingBox(SchemaModel):
 
 
 class SourceLocation(SchemaModel):
+    """Canonical source location.
+
+    ``page`` is 1-based and only valid for a stable fixed/rendered page view.
+    ``bbox`` is normalized to that page with top-left origin. Character offsets
+    use the adapter source-text view before canonical normalization, are 0-based,
+    and follow the half-open interval ``[start_char, end_char)``. Line ranges are
+    1-based and inclusive.
+    """
+
     page: int | None = Field(default=None, ge=1)
     bbox: BoundingBox | None = None
     start_char: int | None = Field(default=None, ge=0)
@@ -93,7 +105,9 @@ class StyleInfo(SchemaModel):
 
 
 class ElementConfidence(SchemaModel):
-    overall: Confidence = 1.0
+    """Measured extraction confidence; ``None`` means not assessed."""
+
+    overall: Confidence | None = None
     text: Confidence | None = None
     type: Confidence | None = None
     order: Confidence | None = None
@@ -111,7 +125,7 @@ class Provenance(SchemaModel):
     source: StructureSource
     extractor: str = Field(min_length=1, max_length=256)
     extractor_version: str | None = Field(default=None, max_length=128)
-    confidence: Confidence = 1.0
+    confidence: Confidence | None = None
     transformations: tuple[TransformationRecord, ...] = Field(default_factory=tuple)
     metadata: JsonObject = Field(default_factory=dict)
 
@@ -125,6 +139,7 @@ class RawElement(SchemaModel):
     location: SourceLocation | None = None
     style: StyleInfo | None = None
     attributes: JsonObject = Field(default_factory=dict)
+    provenance: Provenance
 
 
 class Element(SchemaModel):

@@ -8,16 +8,18 @@ from pydantic import Field, model_validator
 from .context import (
     Confidence,
     ConfidenceMap,
+    ContentHash,
     ContextNode,
     Identifier,
     JsonObject,
+    Label,
     SchemaModel,
     StructureMode,
     StructureSource,
 )
 from .element import Element, SourceLocation
 from .logical_unit import LogicalUnit
-from .relation import Relation
+from .relation import Relation, RelationType
 
 
 class SemanticAnnotationType(StrEnum):
@@ -50,10 +52,33 @@ class DocumentMetadata(SchemaModel):
     attributes: JsonObject = Field(default_factory=dict)
 
 
+class ProcessingManifest(SchemaModel):
+    """Versions required to reproduce the canonical representation."""
+
+    adapter_name: str = Field(min_length=1, max_length=256)
+    adapter_version: str | None = Field(default=None, max_length=128)
+    normalizer_version: str | None = Field(default=None, max_length=128)
+    structure_version: str | None = Field(default=None, max_length=128)
+    semantic_version: str | None = Field(default=None, max_length=128)
+    processed_at: datetime
+    configuration: JsonObject = Field(default_factory=dict)
+
+
 class DocumentStructure(SchemaModel):
     mode: StructureMode = StructureMode.UNKNOWN
-    confidence: Confidence = 0.0
+    source: StructureSource | None = None
+    confidence: Confidence | None = None
     signals: ConfidenceMap = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_known_structure_has_provenance(self) -> DocumentStructure:
+        if self.mode == StructureMode.UNKNOWN:
+            if self.source is not None or self.confidence is not None:
+                raise ValueError("UNKNOWN structure must not carry source/confidence claims")
+            return self
+        if self.source is None or self.confidence is None:
+            raise ValueError("known structure mode requires source and confidence")
+        return self
 
 
 class DocumentQuality(SchemaModel):
@@ -65,6 +90,25 @@ class DocumentQuality(SchemaModel):
     overall: Confidence | None = None
     warnings: tuple[str, ...] = Field(default_factory=tuple)
     metrics: JsonObject = Field(default_factory=dict)
+
+
+class ContentRegion(SchemaModel):
+    """Non-overlapping source region used for local profiling/routing."""
+
+    id: Identifier
+    element_ids: tuple[Identifier, ...] = Field(min_length=1)
+    dominant_type: Label | None = None
+    profile: ConfidenceMap = Field(default_factory=dict)
+    structure: DocumentStructure = Field(default_factory=DocumentStructure)
+    source: StructureSource
+    confidence: Confidence
+    metadata: JsonObject = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_unique_elements(self) -> ContentRegion:
+        if len(self.element_ids) != len(set(self.element_ids)):
+            raise ValueError("content region element_ids must be unique")
+        return self
 
 
 class Asset(SchemaModel):
@@ -103,19 +147,17 @@ class SemanticAnnotation(SchemaModel):
 
 
 class CanonicalDocument(SchemaModel):
-    """Loss-minimizing canonical representation of one source.
+    """Loss-minimizing canonical representation of exactly one source revision."""
 
-    ``document_id`` is the canonical source identity for this layer. Retrieval
-    anchors must use the same value as ``SourceAnchor.source_id``. Retrieval units
-    intentionally do not live here because they are rebuildable task-facing
-    projections created from this canonical document.
-    """
-
-    schema_version: str = Field(default="1.0", min_length=1, max_length=64)
+    schema_version: str = Field(default="1.1", min_length=1, max_length=64)
     document_id: Identifier
+    content_hash: ContentHash
+    source_revision: Identifier | None = None
+    processing: ProcessingManifest
     metadata: DocumentMetadata = Field(default_factory=DocumentMetadata)
     structure: DocumentStructure = Field(default_factory=DocumentStructure)
     elements: tuple[Element, ...] = Field(default_factory=tuple)
+    regions: tuple[ContentRegion, ...] = Field(default_factory=tuple)
     logical_units: tuple[LogicalUnit, ...] = Field(default_factory=tuple)
     context_nodes: tuple[ContextNode, ...] = Field(default_factory=tuple)
     relations: tuple[Relation, ...] = Field(default_factory=tuple)
@@ -126,12 +168,12 @@ class CanonicalDocument(SchemaModel):
 
     @property
     def source_id(self) -> str:
-        """Alias exposing the source identity used by retrieval/citation layers."""
         return self.document_id
 
     @model_validator(mode="after")
     def validate_integrity(self) -> CanonicalDocument:
         element_ids = self._unique_ids("elements", self.elements)
+        region_ids = self._unique_ids("regions", self.regions)
         logical_ids = self._unique_ids("logical_units", self.logical_units)
         context_ids = self._unique_ids("context_nodes", self.context_nodes)
         asset_ids = self._unique_ids("assets", self.assets)
@@ -141,6 +183,7 @@ class CanonicalDocument(SchemaModel):
 
         namespaces = {
             "elements": element_ids,
+            "regions": region_ids,
             "logical_units": logical_ids,
             "context_nodes": context_ids,
             "assets": asset_ids,
@@ -157,22 +200,59 @@ class CanonicalDocument(SchemaModel):
                         f"id collision between {left_name} and {right_name}: {sorted(collisions)}"
                     )
 
-        self._validate_element_order()
+        element_order = self._validate_element_order()
+
+        seen_region_elements: dict[str, str] = {}
+        region_by_id = {region.id: region for region in self.regions}
+        for region in self.regions:
+            self._require_subset(
+                f"content region {region.id} element_ids", region.element_ids, element_ids
+            )
+            self._validate_reference_order(
+                f"content region {region.id} element_ids", region.element_ids, element_order
+            )
+            for element_id in region.element_ids:
+                previous = seen_region_elements.get(element_id)
+                if previous is not None:
+                    raise ValueError(
+                        f"element {element_id!r} belongs to multiple content regions: "
+                        f"{previous!r} and {region.id!r}"
+                    )
+                seen_region_elements[element_id] = region.id
+
+        if self.structure.mode == StructureMode.MIXED and not self.regions:
+            raise ValueError("MIXED document structure requires content regions")
 
         for unit in self.logical_units:
             self._require_subset(
                 f"logical unit {unit.id} element_ids", unit.element_ids, element_ids
+            )
+            self._validate_reference_order(
+                f"logical unit {unit.id} element_ids", unit.element_ids, element_order
             )
             self._require_subset(
                 f"logical unit {unit.id} context_node_ids",
                 unit.context_node_ids,
                 context_ids,
             )
+            if unit.region_id is not None:
+                region = region_by_id.get(unit.region_id)
+                if region is None:
+                    raise ValueError(
+                        f"logical unit {unit.id} references unknown region_id {unit.region_id!r}"
+                    )
+                if not set(unit.element_ids).issubset(region.element_ids):
+                    raise ValueError(
+                        f"logical unit {unit.id} contains elements outside region {region.id!r}"
+                    )
 
         seen_subdocument_elements: dict[str, str] = {}
         for subdoc in self.subdocuments:
             self._require_subset(
                 f"subdocument {subdoc.id} element_ids", subdoc.element_ids, element_ids
+            )
+            self._validate_reference_order(
+                f"subdocument {subdoc.id} element_ids", subdoc.element_ids, element_order
             )
             for element_id in subdoc.element_ids:
                 previous = seen_subdocument_elements.get(element_id)
@@ -183,7 +263,7 @@ class CanonicalDocument(SchemaModel):
                     )
                 seen_subdocument_elements[element_id] = subdoc.id
 
-        relation_targets = element_ids | logical_ids | context_ids | subdocument_ids
+        relation_targets = element_ids | region_ids | logical_ids | context_ids | subdocument_ids
         for relation in self.relations:
             if relation.source_id not in relation_targets:
                 raise ValueError(
@@ -192,6 +272,14 @@ class CanonicalDocument(SchemaModel):
             if relation.target_id not in relation_targets:
                 raise ValueError(
                     f"relation {relation.id} has unknown target_id {relation.target_id!r}"
+                )
+            if (
+                relation.type == RelationType.PARENT_OF
+                and relation.source_id in context_ids
+                and relation.target_id in context_ids
+            ):
+                raise ValueError(
+                    "context hierarchy must use ContextNode.parent_id, not redundant PARENT_OF relations"
                 )
 
         annotation_targets = relation_targets | asset_ids
@@ -218,12 +306,21 @@ class CanonicalDocument(SchemaModel):
         if missing:
             raise ValueError(f"{name} contains unknown ids: {sorted(missing)}")
 
-    def _validate_element_order(self) -> None:
+    def _validate_element_order(self) -> dict[str, int]:
         orders = [element.order for element in self.elements]
         if len(orders) != len(set(orders)):
             raise ValueError("elements must have unique order values")
         if orders != sorted(orders):
             raise ValueError("elements must be stored in ascending order")
+        return {element.id: element.order for element in self.elements}
+
+    @staticmethod
+    def _validate_reference_order(
+        name: str, refs: tuple[str, ...], element_order: dict[str, int]
+    ) -> None:
+        orders = [element_order[ref] for ref in refs]
+        if orders != sorted(orders):
+            raise ValueError(f"{name} must follow canonical element order")
 
     def _validate_context_tree(self, context_ids: set[str]) -> None:
         parents: dict[str, str | None] = {}

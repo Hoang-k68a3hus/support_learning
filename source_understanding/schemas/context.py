@@ -4,7 +4,15 @@ from enum import StrEnum
 from math import isfinite
 from typing import Annotated, Generic, TypeVar
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StringConstraints,
+    model_validator,
+)
 
 Identifier = Annotated[
     str,
@@ -14,8 +22,21 @@ Label = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=2048),
 ]
+ContentHash = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+        min_length=71,
+        max_length=71,
+    ),
+]
 Confidence = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]
 FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
+NormalizedCoordinate = Annotated[
+    float,
+    Field(ge=0.0, le=1.0, allow_inf_nan=False),
+]
 
 
 T = TypeVar("T")
@@ -82,13 +103,7 @@ ConfidenceMap = Annotated[dict[str, Confidence], AfterValidator(_freeze_mapping)
 
 
 class SchemaModel(BaseModel):
-    """Immutable base model for source-understanding schemas.
-
-    Foundation objects are frozen so cross-object invariants cannot silently become
-    invalid after construction. Reference collections use tuples for the same reason.
-    Builders should collect mutable state first and materialize validated schemas only
-    at stage boundaries.
-    """
+    """Immutable base model for source-understanding schemas."""
 
     model_config = ConfigDict(
         extra="forbid",

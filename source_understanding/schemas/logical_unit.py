@@ -8,21 +8,18 @@ from .context import Confidence, Identifier, JsonObject, Label, SchemaModel, Str
 
 
 class LogicalUnitType(StrEnum):
+    """Content-integrity and structural unit types, not semantic roles."""
+
     TEXT_BLOCK = "TEXT_BLOCK"
     SECTION = "SECTION"
     TOPIC_GROUP = "TOPIC_GROUP"
     QA_PAIR = "QA_PAIR"
     DIALOGUE_SEGMENT = "DIALOGUE_SEGMENT"
-    PROCEDURE = "PROCEDURE"
-    DEFINITION_BLOCK = "DEFINITION_BLOCK"
-    EXAMPLE_BLOCK = "EXAMPLE_BLOCK"
-    EXERCISE_BLOCK = "EXERCISE_BLOCK"
     CODE_BLOCK = "CODE_BLOCK"
     TABLE_BLOCK = "TABLE_BLOCK"
     LOG_WINDOW = "LOG_WINDOW"
     KEY_VALUE_GROUP = "KEY_VALUE_GROUP"
     LIST_GROUP = "LIST_GROUP"
-    SUBDOCUMENT = "SUBDOCUMENT"
     UNKNOWN_GROUP = "UNKNOWN_GROUP"
 
 
@@ -30,6 +27,7 @@ class LogicalUnit(SchemaModel):
     id: Identifier
     type: LogicalUnitType
     element_ids: tuple[Identifier, ...] = Field(min_length=1)
+    region_id: Identifier | None = None
     context_node_ids: tuple[Identifier, ...] = Field(default_factory=tuple)
     label: Label | None = None
     source: StructureSource
