@@ -83,6 +83,43 @@ class IntegrityConsolidationReport(SchemaModel):
         return self
 
 
+def unresolved_integrity_boundary_ids(
+    boundary_set: "BoundarySet",
+    grouping_result: GroupingResult,
+) -> tuple[str, ...]:
+    """Return integrity-warning boundaries not resolved by one LogicalUnit.
+
+    Boundary scoring intentionally marks uncertain same-family adjacency before
+    grouping. Once grouping/consolidation places both adjacent elements in the
+    same LogicalUnit, that warning is structurally resolved and must not continue
+    to depress document-quality diagnostics.
+    """
+
+    owners: dict[str, str] = {}
+    for unit in grouping_result.logical_units:
+        for element_id in unit.element_ids:
+            previous = owners.get(element_id)
+            if previous is not None and previous != unit.id:
+                raise IntegrityConsolidationError(
+                    f"element {element_id!r} belongs to multiple logical units"
+                )
+            owners[element_id] = unit.id
+
+    unresolved: list[str] = []
+    for boundary in boundary_set.boundaries:
+        reason_values = {
+            getattr(reason, "value", str(reason))
+            for reason in getattr(boundary, "reasons", ())
+        }
+        if "CONTENT_INTEGRITY_UNRESOLVED" not in reason_values:
+            continue
+        left_owner = owners.get(boundary.left_element_id)
+        right_owner = owners.get(boundary.right_element_id)
+        if left_owner is None or left_owner != right_owner:
+            unresolved.append(boundary.id)
+    return tuple(unresolved)
+
+
 class IntegrityGroupConsolidator:
     """Preserve native multi-element table/list/code/formula/key-value integrity."""
 
@@ -201,7 +238,9 @@ class IntegrityGroupConsolidator:
                 seen_container = seen_container or is_container
                 members.append(candidate.id)
                 boundary_ids.append(boundary.id)
-                boundary_classes.append(getattr(boundary.classification, "value", str(boundary.classification)))
+                boundary_classes.append(
+                    getattr(boundary.classification, "value", str(boundary.classification))
+                )
                 cursor += 1
             spans.append(
                 (
