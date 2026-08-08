@@ -1,4 +1,4 @@
-"""Structural evidence extraction, boundary scoring, and logical grouping."""
+"""Structural evidence extraction, boundary scoring, grouping, and hierarchy."""
 
 from .boundary import (
     BOUNDARY_POLICY_VERSION,
@@ -21,6 +21,15 @@ from .grouping import (
     GroupingPolicy,
     GroupingResult,
     LogicalGroupBuilder,
+)
+from .hierarchy import (
+    HIERARCHY_POLICY_VERSION,
+    HIERARCHY_VERSION,
+    ElementContextAssignment,
+    HierarchyBuilder,
+    HierarchyError,
+    HierarchyPolicy,
+    HierarchyResult,
 )
 from .log import LogWindowBuilder, LogWindowCandidate
 from .qa import QAPairBuilder, QAPairCandidate, QAPairRule
@@ -48,11 +57,18 @@ __all__ = [
     "BoundarySet",
     "DialogueSegmentBuilder",
     "DialogueSegmentCandidate",
+    "ElementContextAssignment",
     "GROUPING_POLICY_VERSION",
     "GROUPING_VERSION",
     "GroupingError",
     "GroupingPolicy",
     "GroupingResult",
+    "HIERARCHY_POLICY_VERSION",
+    "HIERARCHY_VERSION",
+    "HierarchyBuilder",
+    "HierarchyError",
+    "HierarchyPolicy",
+    "HierarchyResult",
     "LogicalGroupBuilder",
     "LogWindowBuilder",
     "LogWindowCandidate",
