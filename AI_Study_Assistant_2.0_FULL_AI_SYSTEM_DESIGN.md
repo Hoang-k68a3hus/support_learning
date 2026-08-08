@@ -1,91 +1,92 @@
 # FULL AI SYSTEM DESIGN
 # AI Study Assistant 2.0
 
-> **Mục tiêu tài liệu:** Thiết kế riêng toàn bộ hệ thống AI trước khi xây dựng Web/Backend nghiệp vụ.  
-> **Vai trò của AI System:** Biến tài liệu thô và dữ liệu học tập thành tri thức có thể truy xuất, nội dung học tập có kiểm chứng, hồ sơ năng lực người học và các khuyến nghị cá nhân hóa.
+> **Mục tiêu tài liệu:** Thiết kế hệ thống AI phục vụ Source Understanding, Retrieval, grounded RAG, learning-content generation và AI evaluation.  
+> **Vai trò của AI System:** Biến nguồn học tập thô thành biểu diễn có cấu trúc, truy xuất được, có provenance; sau đó tạo câu trả lời/nội dung học tập có grounding và citation.  
+> **Scope:** Không triển khai Student Model, mastery/forgetting inference, personalization, Recommendation Engine hoặc AI-generated/adaptive Study Planner.
 
 ---
 
 # 1. Tư tưởng thiết kế cốt lõi
 
-AI System không nên được xây theo kiểu:
+AI System không phải:
 
 ```text
-User -> Prompt -> LLM -> Answer
+User
+→ Prompt
+→ LLM
+→ Answer
 ```
 
-Mà phải là một hệ thống nhiều tầng:
+Mà là một pipeline preserve-first:
 
 ```text
-                    ┌────────────────────┐
-                    │  Learning Sources  │
-                    │ PDF/DOCX/PPTX/Image│
-                    └─────────┬──────────┘
-                              │
-                              ▼
-                    ┌────────────────────┐
-                    │ Knowledge Ingestion│
-                    └─────────┬──────────┘
-                              │
-                              ▼
-                    ┌────────────────────┐
-                    │  Knowledge Layer   │
-                    │ chunks/topics/meta │
-                    └─────────┬──────────┘
-                              │
-          ┌───────────────────┼─────────────────────┐
-          ▼                   ▼                     ▼
-   ┌────────────┐      ┌───────────────┐     ┌──────────────┐
-   │ RAG Engine │      │ Learning Gen. │     │ Topic Engine │
-   └─────┬──────┘      └──────┬────────┘     └──────┬───────┘
-         │                    │                      │
-         ▼                    ▼                      ▼
-   Grounded Answer       Quiz / Card /          Topic Structure
-   + Citation            Summary / Map
-          └───────────────────┬─────────────────────┘
-                              ▼
-                    ┌────────────────────┐
-                    │ Learning Evidence  │
-                    │ quiz/review/events │
-                    └─────────┬──────────┘
-                              ▼
-                    ┌────────────────────┐
-                    │   Student Model    │
-                    │ mastery/forgetting │
-                    └─────────┬──────────┘
-                              ▼
-                    ┌────────────────────┐
-                    │ Recommendation     │
-                    │ + Study Planner    │
-                    └────────────────────┘
+Learning Source
+      ↓
+Source Adapter
+      ↓
+RawElement
+      ↓
+Element
+      ↓
+LogicalUnit
+      ↓
+Inferred Structure / Optional Semantic Enrichment
+      ↓
+RetrievalUnit
+      ↓
+Retrieval / Reranking
+      ↓
+Evidence
+      ↓
+Grounded Generation
+      ↓
+Citation
+```
+
+Song song với RAG:
+
+```text
+Evidence / source scope
+      ↓
+Learning Content Generation
+      ↓
+Summary / Quiz / Flashcard / Mindmap
 ```
 
 Trọng tâm:
 
-> **Document Intelligence + Grounded RAG + Learning Intelligence + Personalization**
+> **Source Understanding + Retrieval Quality + Grounded Generation + Evaluation**
+
+AI không quan sát lịch sử học để tự quyết định người dùng nên học gì tiếp theo.
 
 ---
 
 # 2. Phạm vi AI System
 
-AI System gồm 8 subsystem.
+AI System gồm 6 subsystem.
 
-## A. Document Intelligence
+## A. Source Understanding
 
-- File parsing.
-- OCR.
-- Text cleaning.
-- Structure detection.
-- Table/code handling.
-- Metadata extraction.
-- Chunking.
-- Topic extraction.
+- File/source adapters.
+- Native extraction / OCR khi cần.
+- Element normalization.
+- Information preservation.
+- Content profiling.
+- Structure signals.
+- Boundary scoring.
+- Logical grouping.
+- Context/hierarchy inference.
+- Structural relations.
+- CanonicalDocument assembly.
+- RetrievalUnit projection.
+- SourceAnchor / provenance.
 
 ## B. Knowledge Indexing
 
 - Embedding.
 - Vector indexing.
-- Lexical indexing.
+- Optional lexical indexing.
 - Metadata indexing.
 - Re-indexing.
 - Versioning.
@@ -94,18 +95,19 @@ AI System gồm 8 subsystem.
 
 - Query analysis.
 - Dense retrieval.
-- BM25/hybrid retrieval.
-- Metadata filtering.
+- Optional BM25/hybrid retrieval.
+- Source/ACL filtering.
 - Reranking.
-- Context selection.
+- Context/evidence selection.
 
 ## D. RAG Engine
 
-- Prompt construction.
-- Grounded answer generation.
-- Citation alignment.
-- Insufficient-context detection.
-- Conversation-aware retrieval.
+- Grounded prompt construction.
+- Sufficiency/abstention.
+- Answer generation.
+- Citation binding.
+- Claim/evidence validation.
+- Conversation-aware query handling.
 
 ## E. Learning Content Generator
 
@@ -117,176 +119,188 @@ AI System gồm 8 subsystem.
 - Mindmap.
 - Practice generation.
 
-## F. Student Modeling
+## F. Evaluation & Observability
 
-- Learning evidence aggregation.
-- Topic mastery.
-- Confidence.
-- Forgetting risk.
-- Learning progress.
-
-## G. Recommendation & Planning
-
-- Weak-topic detection.
-- Review recommendation.
-- Resource recommendation.
-- Practice recommendation.
-- Study-plan generation.
-- Priority scheduling.
-
-## H. AI Evaluation & Observability
-
+- Source-understanding quality.
 - Retrieval benchmark.
 - RAG evaluation.
 - Generation quality.
-- Student-model evaluation.
-- Recommendation evaluation.
+- Citation correctness.
 - Latency/cost monitoring.
+- Regression tests.
 
----
-
-# 3. Nguyên tắc kiến trúc
-
-## 3.1. LLM không phải nguồn sự thật
-
-LLM chỉ là một component.
-
-Nguồn sự thật của hệ thống:
+Không có AI subsystem cho:
 
 ```text
-Documents
-+
-Structured metadata
-+
-User learning data
-```
-
-## 3.2. Structured-first
-
-Các output quan trọng không nhận free text trực tiếp.
-
-Ví dụ quiz generator phải trả:
-
-```json
-{
-  "questions": [
-    {
-      "type": "MULTIPLE_CHOICE",
-      "question": "...",
-      "choices": ["...", "..."],
-      "correct_answer": "...",
-      "explanation": "...",
-      "source_chunk_ids": ["..."],
-      "topic_ids": ["..."],
-      "difficulty": "MEDIUM"
-    }
-  ]
-}
-```
-
-Sau đó mới validate và lưu DB.
-
-## 3.3. Grounded-by-default
-
-Các chức năng liên quan kiến thức tài liệu:
-
-- Chat.
-- Quiz.
-- Flashcard.
-- Summary.
-- Mindmap.
-
-đều phải truy vết được về nguồn.
-
-## 3.4. Deterministic logic trước, LLM sau
-
-Ví dụ Study Planner:
-
-Không dùng:
-
-```text
-"Đây là điểm của user, hãy lập kế hoạch."
-```
-
-Mà dùng:
-
-```text
-mastery
-forgetting risk
-deadline
-available time
-difficulty
-priority
-        ↓
-deterministic scheduler
-        ↓
-LLM chỉ viết/giải thích kế hoạch
+Student Modeling
+Personalization
+Recommendation Ranking
+Forgetting Risk
+Adaptive Study Planning
 ```
 
 ---
 
-# 4. AI Service Architecture
+# 3. Kiến trúc trách nhiệm
+
+AI System chỉ chịu trách nhiệm cho AI/source pipeline.
+
+```text
+FastAPI / AI Worker
+├── source understanding
+├── indexing
+├── retrieval
+├── reranking
+├── RAG
+├── generation
+└── evaluation
+```
+
+Application backend chịu trách nhiệm:
+
+```text
+authentication
+authorization
+workspace ownership
+conversation persistence
+quiz attempts
+learning events
+analytics aggregates
+manual study plan/tasks
+notification
+```
+
+Learning Analytics không được đưa vào AI System chỉ để tạo cảm giác “thông minh hơn”.
+
+---
+
+# 4. Nguyên tắc kiến trúc
+
+## 4.1. Preserve trước khi interpret
+
+```text
+Preserve
+→ Structure
+→ Enrich
+→ Retrieve
+```
+
+Không:
+
+```text
+interpret source
+→ overwrite source representation
+```
+
+## 4.2. Phân biệt ba loại thông tin
+
+```text
+1. SOURCE FACT
+2. INFERRED STRUCTURE
+3. SEMANTIC ENRICHMENT
+```
+
+Inference không được biến thành source fact.
+
+## 4.3. UNKNOWN và FLAT là hợp lệ
+
+Không ép source thành hierarchy khi evidence yếu.
+
+```text
+UNKNOWN
+FLAT
+LOCAL
+GROUPED
+HIERARCHICAL
+MIXED
+```
+
+đều là state hợp lệ tùy evidence.
+
+## 4.4. Grounded-by-default
+
+Các chức năng dựa trên source:
+
+```text
+RAG
+Summary
+Quiz
+Flashcard
+Mindmap
+Explanation
+```
+
+phải truy vết được về source.
+
+## 4.5. Deterministic logic trước LLM
+
+Dùng deterministic validation cho:
+
+- order/reference checks;
+- source scope;
+- schema validation;
+- provenance;
+- citation resolution;
+- duplicate detection;
+- token budget;
+- permission filters.
+
+LLM chỉ dùng nơi cần semantic/generation capability.
+
+---
+
+# 5. AI Service Architecture
 
 ```mermaid
 flowchart TB
     API[FastAPI Gateway]
 
-    subgraph ING[Document Intelligence]
-        PARSER[Parser]
-        OCR[OCR]
-        CLEAN[Cleaner]
-        STRUCT[Structure Detector]
-        CHUNK[Chunker]
-        TOPIC[Topic Extractor]
+    subgraph SU[Source Understanding]
+        ADAPTER[Source Adapters]
+        ATOMIC[Element Normalization]
+        PROFILE[Content Profile]
+        SIGNAL[Structure Signals]
+        BOUND[Boundary]
+        GROUP[Logical Grouping]
+        HIER[Context / Hierarchy]
+        ASSEMBLE[CanonicalDocument]
+        RU[RetrievalUnit Builder]
     end
 
     subgraph IDX[Knowledge Index]
-        EMB[Embedding Service]
+        EMB[Embedding]
         VDB[(Qdrant)]
-        BM[(Lexical Index)]
+        BM[(Lexical Index optional)]
     end
 
     subgraph RET[Retrieval]
         QA[Query Analyzer]
         DENSE[Dense Retriever]
-        HYB[Hybrid Retriever]
+        HYB[Hybrid Retriever optional]
         RERANK[Reranker]
-        CTX[Context Builder]
+        EV[Evidence Builder]
     end
 
-    subgraph GEN[Generation]
+    subgraph GEN[Grounded Generation]
         RAG[RAG Answer]
         SUM[Summary]
         QUIZ[Quiz]
         FC[Flashcard]
         MAP[Mindmap]
-        EXP[Explain]
-    end
-
-    subgraph LEARN[Learning Intelligence]
-        EVID[Evidence Aggregator]
-        MASTER[Mastery Engine]
-        FORGET[Forgetting Engine]
-        REC[Recommendation Engine]
-        PLAN[Study Planner]
+        EXP[Explanation]
     end
 
     subgraph EVAL[Evaluation]
-        RAGE[RAG Eval]
-        RETE[Retrieval Eval]
-        GENE[Generation Eval]
-        RECE[Recommendation Eval]
+        SE[Source Eval]
+        RE[Retrieval Eval]
+        RGE[RAG Eval]
+        GE[Generation Eval]
     end
 
-    API --> PARSER
-    PARSER --> OCR
-    PARSER --> CLEAN
-    CLEAN --> STRUCT
-    STRUCT --> CHUNK
-    CHUNK --> TOPIC
-    CHUNK --> EMB
-    EMB --> VDB
-    CHUNK --> BM
+    API --> ADAPTER
+    ADAPTER --> ATOMIC --> PROFILE --> SIGNAL --> BOUND --> GROUP --> HIER --> ASSEMBLE --> RU
+    RU --> EMB --> VDB
+    RU --> BM
 
     API --> QA
     QA --> DENSE
@@ -296,616 +310,456 @@ flowchart TB
     HYB --> BM
     DENSE --> RERANK
     HYB --> RERANK
-    RERANK --> CTX
+    RERANK --> EV
 
-    CTX --> RAG
-    CTX --> SUM
-    CTX --> QUIZ
-    CTX --> FC
-    CTX --> MAP
-    CTX --> EXP
+    EV --> RAG
+    EV --> SUM
+    EV --> QUIZ
+    EV --> FC
+    ASSEMBLE --> MAP
+    EV --> EXP
 
-    API --> EVID
-    EVID --> MASTER
-    MASTER --> FORGET
-    MASTER --> REC
-    FORGET --> REC
-    REC --> PLAN
-
-    RAG --> RAGE
-    RERANK --> RETE
-    QUIZ --> GENE
-    REC --> RECE
+    ASSEMBLE --> SE
+    RERANK --> RE
+    RAG --> RGE
+    QUIZ --> GE
 ```
 
 ---
 
-# 5. Cấu trúc source code AI Service
+# 6. Source Understanding — canonical pipeline
+
+Canonical architecture:
 
 ```text
-ai-service/
-├── app/
-│   ├── api/
-│   │   ├── ingestion.py
-│   │   ├── retrieval.py
-│   │   ├── rag.py
-│   │   ├── generation.py
-│   │   ├── student_model.py
-│   │   └── recommendation.py
-│   │
-│   ├── ingestion/
-│   │   ├── parsers/
-│   │   │   ├── pdf.py
-│   │   │   ├── docx.py
-│   │   │   ├── pptx.py
-│   │   │   └── image.py
-│   │   ├── ocr/
-│   │   ├── cleaning/
-│   │   ├── structure/
-│   │   ├── chunking/
-│   │   └── topics/
-│   │
-│   ├── knowledge/
-│   │   ├── embeddings/
-│   │   ├── vector_store/
-│   │   ├── lexical_index/
-│   │   └── metadata/
-│   │
-│   ├── retrieval/
-│   │   ├── query_analyzer.py
-│   │   ├── dense.py
-│   │   ├── hybrid.py
-│   │   ├── fusion.py
-│   │   ├── reranker.py
-│   │   └── context_builder.py
-│   │
-│   ├── rag/
-│   │   ├── pipeline.py
-│   │   ├── prompts.py
-│   │   ├── citation.py
-│   │   ├── confidence.py
-│   │   └── conversation.py
-│   │
-│   ├── generation/
-│   │   ├── summary.py
-│   │   ├── quiz.py
-│   │   ├── flashcard.py
-│   │   ├── mindmap.py
-│   │   ├── explanation.py
-│   │   └── translation.py
-│   │
-│   ├── learning/
-│   │   ├── evidence.py
-│   │   ├── mastery.py
-│   │   ├── forgetting.py
-│   │   ├── weak_topics.py
-│   │   ├── recommendation.py
-│   │   └── planner.py
-│   │
-│   ├── models/
-│   │   ├── llm.py
-│   │   ├── embedding.py
-│   │   ├── reranker.py
-│   │   └── registry.py
-│   │
-│   ├── evaluation/
-│   │   ├── datasets/
-│   │   ├── retrieval_eval.py
-│   │   ├── rag_eval.py
-│   │   ├── generation_eval.py
-│   │   └── recommendation_eval.py
-│   │
-│   ├── schemas/
-│   ├── observability/
-│   └── core/
-│
-├── workers/
-├── tests/
-├── configs/
-├── scripts/
-└── Dockerfile
+ANY SOURCE
+→ Element
+→ LogicalUnit
+→ RetrievalUnit
+→ Evidence
+→ Grounded Answer
+→ Citation
 ```
+
+Parallel structure branch:
+
+```text
+LogicalUnit
+→ Inferred Structure
+→ Semantic Enrichment optional
+```
+
+Core identities:
+
+- `Element`: representation gần source.
+- `LogicalUnit`: integrity/logical grouping.
+- `RetrievalUnit`: downstream retrieval projection.
+- `Evidence`: selected support for a request.
+- `SourceAnchor`: back-reference to original source location.
+
+RetrievalUnit phải rebuild được từ CanonicalDocument mà không parse lại source.
 
 ---
 
-# 6. Document Intelligence Pipeline
+# 7. Source Adapter boundary
 
-## 6.1. Input
-
-MVP:
-
-- PDF.
-- DOCX.
-- PPTX.
-
-Phase 2:
-
-- Image.
-- Scanned PDF.
-- TXT.
-- HTML.
-
-## 6.2. Pipeline
-
-```mermaid
-flowchart TD
-    A[File]
-    B[Detect File Type]
-    C[Native Text Extraction]
-    D{Enough Text?}
-    E[OCR]
-    F[Normalize Unicode]
-    G[Clean Noise]
-    H[Detect Structure]
-    I[Extract Tables / Code]
-    J[Build Canonical Document]
-    K[Chunk]
-    L[Extract Topics]
-    M[Embedding]
-    N[Index]
-
-    A --> B --> C --> D
-    D -- No --> E --> F
-    D -- Yes --> F
-    F --> G --> H --> I --> J --> K --> L --> M --> N
-```
-
----
-
-# 7. Canonical Document Model
-
-Mọi format cần được chuyển về cùng một cấu trúc.
-
-```json
-{
-  "document_id": "doc_123",
-  "title": "Database Systems",
-  "language": "vi",
-  "pages": [
-    {
-      "page_number": 10,
-      "blocks": [
-        {
-          "type": "heading",
-          "level": 2,
-          "text": "5.2 SQL JOIN"
-        },
-        {
-          "type": "paragraph",
-          "text": "..."
-        },
-        {
-          "type": "table",
-          "content": "..."
-        }
-      ]
-    }
-  ]
-}
-```
-
-Block type:
+Adapter theo format chỉ nên chịu trách nhiệm:
 
 ```text
-TITLE
-HEADING
-PARAGRAPH
-LIST
-TABLE
-CODE
-CAPTION
-IMAGE_TEXT
-FOOTNOTE
+Source
+→ RawElement[]
 ```
-
----
-
-# 8. Text Cleaning
-
-Không làm sạch kiểu xóa tất cả formatting.
-
-Mục tiêu là bỏ noise nhưng giữ semantic structure.
-
-Loại bỏ:
-
-- Repeated header/footer.
-- Page number standalone.
-- Broken hyphen.
-- OCR artifacts.
-- Excess whitespace.
-
-Giữ:
-
-- Heading.
-- List.
-- Table.
-- Code.
-- Formula text.
-- Page location.
-
----
-
-# 9. OCR Strategy
-
-OCR chỉ chạy khi cần.
-
-Decision:
-
-```text
-native_text_chars / page < threshold
-        ↓
-OCR page
-```
-
-Không OCR toàn bộ PDF nếu đã có text.
-
-Output OCR phải gắn:
-
-```text
-page
-bounding box
-confidence
-```
-
-Nếu confidence quá thấp:
-
-```text
-mark OCR_LOW_CONFIDENCE
-```
-
-để tránh đưa text rác vào knowledge base.
-
----
-
-# 10. Structure Detection
-
-Mục tiêu:
-
-```text
-Document
-├── Chapter
-│   ├── Section
-│   │   ├── Paragraph
-│   │   ├── Table
-│   │   └── Code
-```
-
-Có thể kết hợp:
-
-1. PDF font/layout heuristic.
-2. Regex heading numbering.
-3. DOCX/PPTX native structure.
-4. LLM fallback cho các tài liệu khó.
-
----
-
-# 11. Chunking
-
-Chunking là một trong các biến ảnh hưởng mạnh nhất đến RAG.
-
-## 11.1. Không dùng một chiến lược duy nhất
-
-### Strategy A — Recursive
-
-MVP baseline.
-
-```text
-chunk ~ 600 tokens
-overlap ~ 80 tokens
-```
-
-### Strategy B — Structure-aware
-
-Ưu tiên:
-
-```text
-Section
-→ paragraph groups
-→ chunk
-```
-
-Không trộn hai section không liên quan.
-
-### Strategy C — Parent/Child
-
-```text
-Parent = section ~ 1500 tokens
-Child  = retrieval chunk ~ 300 tokens
-```
-
-Retriever tìm child nhưng LLM nhận parent context.
-
-## 11.2. Metadata
-
-```json
-{
-  "chunk_id": "...",
-  "document_id": "...",
-  "page_start": 12,
-  "page_end": 13,
-  "chapter": "5",
-  "section": "5.2 LEFT JOIN",
-  "text": "...",
-  "token_count": 540,
-  "parent_chunk_id": "...",
-  "content_type": "paragraph"
-}
-```
-
----
-
-# 12. Topic Extraction
-
-Topic là cầu nối giữa Knowledge System và Learning System.
 
 Ví dụ:
 
 ```text
-Database
- └── SQL
-     └── JOIN
-         ├── INNER JOIN
-         └── LEFT JOIN
+PDFAdapter
+DOCXAdapter
+PPTXAdapter
+TextAdapter
 ```
 
-Mỗi chunk có:
+Universal Source Understanding bắt đầu sau adapter.
+
+Adapter phải preserve khi source cung cấp:
 
 ```text
-topic_ids
-topic_confidence
+raw text
+native order
+page / bbox / offset
+style
+native type hint
+source metadata
 ```
 
-Topic extraction MVP:
-
-```text
-heading + keyword + LLM structured extraction
-```
-
-Sau đó normalize các topic gần nhau:
-
-```text
-"left join"
-"LEFT JOIN"
-"SQL left outer join"
-→ LEFT_JOIN
-```
+Không để adapter bịa hierarchy chỉ vì font lớn.
 
 ---
 
-# 13. Embedding Layer
+# 8. Atomic normalization
 
-Một interface chung:
+Invariant:
+
+```text
+1 RawElement
+→ 1 Element
+```
+
+Atomic layer không:
+
+- split;
+- merge;
+- deduplicate;
+- sort silent;
+- infer heading/question/table semantics từ text.
+
+Conservative normalization:
+
+- CRLF/CR → LF;
+- Unicode NFC;
+- preserve raw text;
+- append transformation provenance;
+- deterministic element ID;
+- source location giữ nguyên.
+
+---
+
+# 9. Content Profiling
+
+Profiler chỉ đo distribution/signal summary.
+
+Ví dụ:
+
+```text
+paragraph ratio
+heading count
+list count
+table count
+code count
+question/answer count
+dialogue count
+unknown ratio
+style/location coverage
+category transitions
+```
+
+Profiler không gán một `document_type` cứng cho toàn source.
+
+---
+
+# 10. Structure Signals
+
+Signals có thể gồm:
+
+```text
+ELEMENT_TYPE
+STYLE_BOLD
+STYLE_FONT_SIZE
+STYLE_INDENTATION
+NUMBERING_MARKER
+SECTION_MARKER
+QUESTION_MARKER
+ANSWER_MARKER
+TIMESTAMP_PATTERN
+SPEAKER_LABEL_CANDIDATE
+ELEMENT_TYPE_TRANSITION
+```
+
+Signal là evidence, chưa phải boundary/hierarchy fact.
+
+---
+
+# 11. Boundary Scoring
+
+Mỗi cặp Element kề nhau có thể nhận:
+
+```text
+HARD
+SOFT
+NONE
+UNKNOWN
+```
+
+Priority:
+
+```text
+explicit structure
+> content-type integrity
+> strong local pattern
+> semantic boundary
+> token target
+```
+
+Không phá:
+
+- QA pair;
+- code block;
+- table;
+- formula;
+- integrity unit;
+
+chỉ để đạt chunk size.
+
+---
+
+# 12. Logical Grouping
+
+Specialized builders xử lý khi evidence đủ:
+
+```text
+QA_PAIR
+DIALOGUE_SEGMENT
+LOG_WINDOW
+CODE_BLOCK
+TABLE_BLOCK
+LIST_GROUP
+TEXT_BLOCK
+```
+
+Nếu continuity chưa chứng minh được:
+
+```text
+leave ungrouped / UNKNOWN
+```
+
+Không merge chỉ vì hai element cùng type.
+
+---
+
+# 13. Context / Hierarchy
+
+Hierarchy builder dùng canonical `TITLE`/`HEADING` và structural evidence.
+
+Không:
+
+```text
+PARAGRAPH "1.2 Something"
+→ tự động HEADING
+```
+
+Nếu numbering chỉ chứng minh level-like pattern nhưng chưa chứng minh headinghood, không tạo hierarchy node.
+
+Context path được giữ riêng và sau đó integrate vào LogicalUnit bằng common valid path.
+
+---
+
+# 14. CanonicalDocument assembly
+
+Assembly là final structural gate:
+
+```text
+Elements
++ LogicalUnits
++ ContextNodes
++ Relations
++ SubDocuments
++ Structure
++ Quality
+→ CanonicalDocument
+```
+
+Assembler:
+
+- không re-infer;
+- không silent repair;
+- kiểm tra stage alignment/version;
+- kiểm tra order/reference;
+- preserve metadata/assets/regions;
+- merge structure quality;
+- gọi CanonicalDocument validation cuối.
+
+---
+
+# 15. RetrievalUnit
+
+RetrievalUnit là projection phục vụ downstream retrieval.
+
+Mục tiêu:
+
+```text
+retrieval-friendly
+rebuildable
+source-traceable
+context-aware
+```
+
+Provenance chain bắt buộc:
+
+```text
+RetrievalUnit
+→ LogicalUnit
+→ Element
+→ SourceAnchor
+→ Original Source
+```
+
+RetrievalUnit không được giữ citation/page do LLM tự sinh.
+
+---
+
+# 16. Semantic Enrichment
+
+Semantic enrichment là optional.
+
+Có thể gồm:
+
+```text
+topics
+entities
+roles
+keywords
+semantic annotations
+```
+
+Nếu enrichment fail:
+
+```text
+base RAG vẫn phải hoạt động
+```
+
+Không biến enrichment thành dependency bắt buộc của parsing/retrieval.
+
+---
+
+# 17. Embedding Layer
+
+Interface:
 
 ```python
 embed_documents(texts)
 embed_query(query)
 ```
 
-Không hard-code model vào pipeline.
+Không hard-code provider sâu trong pipeline.
 
-Model registry:
-
-```text
-EMBEDDING_MODEL
-EMBEDDING_DIM
-MODEL_VERSION
-```
-
-Mỗi vector cần lưu version.
-
-```json
-{
-  "embedding_model": "...",
-  "embedding_version": "v1"
-}
-```
-
-Khi đổi embedding model:
+Version:
 
 ```text
-reindex_required = true
+embedding_model
+embedding_version
+dimension
 ```
+
+Khi đổi embedding model phải biết index nào cần rebuild.
 
 ---
 
-# 14. Vector Database Design
+# 18. Vector Database
 
-Qdrant collection:
+Qdrant payload phải mang source/security scope.
 
-```text
-knowledge_chunks_v1
-```
-
-Payload:
+Ví dụ:
 
 ```json
 {
   "user_id": "...",
-  "document_id": "...",
-  "chunk_id": "...",
-  "page_start": 10,
-  "page_end": 10,
-  "chapter": "...",
-  "section": "...",
-  "topic_ids": ["..."],
-  "language": "vi",
-  "content_type": "paragraph",
+  "source_id": "...",
+  "retrieval_unit_id": "...",
+  "content_type": "TEXT",
   "embedding_version": "v1"
 }
 ```
 
-Critical filter:
+Critical:
 
 ```text
-user_id == current_user_id
+ownership/source filter
 ```
 
-Nếu user chọn folder/document:
-
-```text
-document_id IN selected_document_ids
-```
+phải áp dụng ngay trong retrieval query, không retrieval toàn collection rồi filter sau.
 
 ---
 
-# 15. Retrieval Engine
-
-Retriever không nên chỉ là:
-
-```text
-query embedding
-→ top 5
-```
+# 19. Retrieval Engine
 
 Pipeline:
 
-```mermaid
-flowchart LR
-    Q[User Query]
-    QA[Query Analyzer]
-    QR[Query Rewrite]
-    D[Dense Search]
-    B[BM25 Search]
-    F[Rank Fusion]
-    R[Reranker]
-    M[Metadata Diversity]
-    C[Context Selection]
-
-    Q --> QA --> QR
-    QR --> D
-    QR --> B
-    D --> F
-    B --> F
-    F --> R --> M --> C
+```text
+Query
+→ Query Analysis
+→ Source Scope Validation
+→ Dense / Hybrid Candidate Retrieval
+→ Reranking
+→ Dedup / Diversity
+→ Evidence Selection
 ```
+
+Không đưa raw top-K trực tiếp vào LLM nếu có thể rerank/select tốt hơn.
 
 ---
 
-# 16. Query Analyzer
+# 20. Query Analyzer
 
-Phân tích:
+Có thể nhận diện:
 
 ```text
-intent
 language
-requested document scope
-topic
-question type
-need_comparison
-need_definition
-need_list
+intent
+comparison
+definition
+list
+requested source scope
+conversation dependence
 ```
 
-Ví dụ:
-
-```text
-"So sánh INNER JOIN và LEFT JOIN"
-```
-
-Analyzer:
-
-```json
-{
-  "intent": "comparison",
-  "topics": ["INNER JOIN", "LEFT JOIN"],
-  "need_multiple_evidence": true
-}
-```
+Query Analyzer không được thay đổi security/source scope do backend đã authorize.
 
 ---
 
-# 17. Query Rewriting
+# 21. Query Rewriting
 
-Dùng cho hội thoại.
+Chỉ rewrite khi câu hỏi phụ thuộc conversation.
 
 Ví dụ:
 
-User:
-
 ```text
-INNER JOIN là gì?
+Turn 1: INNER JOIN là gì?
+Turn 2: Còn LEFT JOIN khác thế nào?
 ```
 
-sau đó:
-
-```text
-Còn cái kia khác gì?
-```
-
-Standalone query:
+Standalone form:
 
 ```text
 LEFT JOIN khác INNER JOIN như thế nào?
 ```
 
-Chỉ rewrite khi query thực sự phụ thuộc context.
+Rewrite không được thêm source fact mới.
 
 ---
 
-# 18. Dense Retrieval
+# 22. Dense / Lexical / Hybrid Retrieval
 
-Baseline:
+## Baseline
 
 ```text
-query
-→ embedding
-→ cosine search
-→ top 20
+Dense Retrieval
 ```
 
-Không đưa top 20 trực tiếp vào LLM.
-
----
-
-# 19. Lexical/BM25 Retrieval
-
-Dense search tốt cho semantic.
-
-BM25 tốt cho:
-
-- thuật ngữ chính xác;
-- tên hàm;
-- code;
-- ký hiệu;
-- từ viết tắt.
-
-Ví dụ:
+## Advanced
 
 ```text
-HashMap
-LEFT JOIN
-@Transaction
-SELECT DISTINCT
-```
-
----
-
-# 20. Hybrid Search
-
-```text
-Dense Top-K
+Dense
 +
-BM25 Top-K
-       ↓
+BM25
++
 Rank Fusion
 ```
 
-Có thể dùng Reciprocal Rank Fusion:
+BM25 có ích cho:
 
-\[
-RRF(d)=\sum_i \frac{1}{k+rank_i(d)}
-\]
-
-Sau đó lấy candidate để rerank.
+- exact technical names;
+- code symbols;
+- abbreviations;
+- identifiers.
 
 ---
 
-# 21. Reranker
+# 23. Reranker
 
 Input:
 
 ```text
-query + candidate chunk
+query + candidate RetrievalUnit
 ```
 
 Output:
@@ -914,58 +768,46 @@ Output:
 relevance score
 ```
 
-Pipeline:
+Mục tiêu:
 
 ```text
-Dense/BM25: 30 candidates
-        ↓
-Reranker
-        ↓
-Top 5–8
+candidate recall cao
+→ reranking chính xác hơn
+→ evidence nhỏ, sạch hơn
 ```
 
-Reranker thường đáng đầu tư hơn tăng context vô hạn.
+Retrieval kém không được “sửa” bằng prompt engineering.
 
 ---
 
-# 22. Context Selection
+# 24. Evidence Construction
 
-Không chỉ lấy top-score.
+Evidence builder chịu trách nhiệm:
 
-Cần xử lý:
+- token budget;
+- duplicate suppression;
+- overlap handling;
+- source diversity khi phù hợp;
+- context/path preservation;
+- source anchors;
+- score/trace metadata.
 
-- Duplicate chunks.
-- Overlap.
-- Same-section redundancy.
-- Topic diversity.
-- Token budget.
-
-Pseudo:
-
-```text
-sort by rerank_score
-
-for chunk:
-    if duplicate -> skip
-    if too_similar_to_selected -> skip
-    if token_budget exceeded -> stop
-    add chunk
-```
+Evidence là input cho grounded generation.
 
 ---
 
-# 23. Retrieval Confidence
+# 25. Retrieval Sufficiency
 
-Tạo confidence từ:
+Có thể kết hợp:
 
 ```text
-top rerank score
+top score
 score margin
-number of supporting chunks
-topic coverage
+support count
+query coverage
 ```
 
-Ví dụ:
+Output:
 
 ```text
 HIGH
@@ -974,157 +816,144 @@ LOW
 INSUFFICIENT
 ```
 
-Nếu INSUFFICIENT:
+Nếu `INSUFFICIENT`:
 
 ```text
-không gọi LLM để "đoán".
+không gọi LLM để đoán câu trả lời
 ```
 
 ---
 
-# 24. RAG Engine
+# 26. RAG Engine
 
 ```mermaid
 sequenceDiagram
     participant U as User
     participant Q as Query Analyzer
-    participant RET as Retrieval Engine
+    participant R as Retrieval
     participant RR as Reranker
-    participant C as Context Builder
+    participant E as Evidence Builder
     participant L as LLM
-    participant CIT as Citation Validator
+    participant C as Citation Validator
 
-    U->>Q: Question
-    Q->>RET: Standalone query + filters
-    RET->>RR: Candidates
-    RR->>C: Ranked evidence
-    C->>C: Confidence check
+    U->>Q: Question + authorized sources
+    Q->>R: Query
+    R->>RR: Candidates
+    RR->>E: Ranked units
+    E->>E: Sufficiency check
 
-    alt insufficient context
-        C-->>U: Không đủ dữ liệu
-    else enough context
-        C->>L: Grounded prompt
-        L->>CIT: Structured answer
-        CIT->>CIT: Validate citations
-        CIT-->>U: Answer + sources
+    alt insufficient evidence
+        E-->>U: INSUFFICIENT_CONTEXT
+    else sufficient
+        E->>L: Grounded prompt + evidence IDs
+        L->>C: Structured answer
+        C->>C: Resolve citation IDs
+        C-->>U: Answer + citations
     end
 ```
 
 ---
 
-# 25. RAG Output Schema
+# 27. RAG Output
 
 ```json
 {
   "answer": "...",
+  "status": "ANSWERED",
   "confidence": "HIGH",
   "citations": [
     {
-      "chunk_id": "...",
-      "document_id": "...",
-      "page": 87,
-      "quote_span": "..."
+      "evidence_id": "...",
+      "retrieval_unit_id": "...",
+      "source_id": "...",
+      "source_anchor": {}
     }
   ],
-  "used_context_ids": ["..."],
   "retrieval_trace_id": "..."
 }
 ```
 
+Không yêu cầu mọi source phải có page.
+
 ---
 
-# 26. Citation Alignment
+# 28. Citation Alignment
 
-Không để LLM tự bịa page.
-
-Page/document metadata lấy từ retrieved chunk.
-
-LLM chỉ có thể reference:
+LLM chỉ reference evidence IDs được cung cấp.
 
 ```text
-[S1]
-[S2]
-[S3]
+[E1]
+[E2]
 ```
 
 Sau generation:
 
 ```text
-[S1]
-→ resolve chunk_id
-→ document/page
+E1
+→ RetrievalUnit
+→ Element
+→ SourceAnchor
 ```
 
-Nếu answer chứa citation không tồn tại:
+Nếu citation reference không tồn tại:
 
 ```text
 validation_failed
 ```
 
+Không suy đoán page từ chunk index.
+
 ---
 
-# 27. Hallucination Control
+# 29. Hallucination Control
 
-4 lớp.
-
-## Layer 1 — Retrieval threshold
-
-Không có evidence -> từ chối.
-
-## Layer 2 — Prompt rule
+Các lớp chính:
 
 ```text
-Answer only from evidence.
+1. authorized source scope
+2. retrieval sufficiency
+3. grounded prompt
+4. structured output
+5. citation validation
+6. optional claim/evidence checker
 ```
 
-## Layer 3 — Citation validation
-
-Claim quan trọng phải gắn source.
-
-## Layer 4 — Post-check
-
-Có thể chạy một groundedness checker:
-
-```text
-claim
-+
-evidence
-→ SUPPORTED / UNSUPPORTED
-```
-
-Nếu unsupported:
+Nếu claim không support:
 
 - regenerate;
-- hoặc loại claim.
+- remove claim;
+- hoặc fail safely.
 
 ---
 
-# 28. Conversation Memory
+# 30. Conversation Memory
 
-Không lưu toàn bộ chat vào prompt mãi mãi.
+Không gửi toàn bộ history mãi mãi.
 
-Ba lớp:
+Có thể dùng:
 
 ```text
-Recent messages
-Conversation summary
-Relevant historical turns
+recent messages
+conversation summary
+relevant historical turns
 ```
 
-RAG vẫn ưu tiên document evidence hơn conversation memory.
+Document/source evidence luôn quan trọng hơn chat memory trong grounded mode.
 
 ---
 
-# 29. AI Summary Engine
+# 31. Summary Engine
 
-## Input
+Input scope:
 
-- document;
-- chapter;
-- section;
-- selected pages.
+```text
+source
+logical units
+selected range
+selected topics optional
+```
 
-## Output mode
+Modes:
 
 ```text
 QUICK
@@ -1132,54 +961,38 @@ STANDARD
 DETAILED
 ```
 
-## Long-document pipeline
+Long source:
 
-```mermaid
-flowchart TD
-    A[Document]
-    B[Section Chunks]
-    C[Section Summaries]
-    D[Chapter Summaries]
-    E[Global Summary]
-    F[Grounding Validation]
-
-    A --> B --> C --> D --> E --> F
+```text
+local summaries
+→ higher-level synthesis
+→ grounding validation
 ```
 
-Summary object:
-
-```json
-{
-  "level": "STANDARD",
-  "summary": "...",
-  "key_points": [],
-  "important_terms": [],
-  "source_chunk_ids": []
-}
-```
+Summary phải giữ source references.
 
 ---
 
-# 30. AI Quiz Generator
-
-Không sinh quiz trực tiếp từ cả document.
+# 32. Quiz Generator
 
 Pipeline:
 
 ```text
-Select topic
-→ Retrieve source chunks
-→ Generate candidate questions
-→ Validate answer
-→ Validate grounding
-→ Remove duplicates
-→ Difficulty check
+Source scope
+→ Evidence retrieval
+→ Candidate questions
+→ Schema validation
+→ Answer validation
+→ Grounding validation
+→ Duplicate removal
 → Save
 ```
 
+Không sinh quiz từ một giant unbounded prompt chứa cả document.
+
 ---
 
-# 31. Quiz Schema
+# 33. Quiz Schema
 
 ```json
 {
@@ -1192,631 +1005,101 @@ Select topic
   "correct_choice": "B",
   "explanation": "...",
   "difficulty": "MEDIUM",
-  "topic_ids": ["..."],
-  "source_chunk_ids": ["..."]
+  "source_references": ["..."]
 }
 ```
 
+Topic annotation có thể optional nếu enrichment chưa chạy.
+
 ---
 
-# 32. Quiz Quality Validator
+# 34. Quiz Quality Validation
 
 Reject nếu:
 
-- Không có answer trong source.
-- Hai đáp án đều đúng.
-- Distractor vô nghĩa.
-- Question mơ hồ.
-- Trùng với câu khác.
-- Citation không support answer.
+- answer không có support;
+- question mơ hồ;
+- multiple choices cùng đúng;
+- distractor vô nghĩa;
+- duplicate;
+- explanation không grounded.
 
-Có thể dùng:
-
-```text
-rule validator
-+
-LLM judge
-```
-
-nhưng rule là lớp đầu tiên.
+Rule validation chạy trước LLM judge khi có thể.
 
 ---
 
-# 33. Difficulty Generation
-
-Không để LLM tự gắn EASY/MEDIUM/HARD tùy ý.
-
-Định nghĩa rubric:
+# 35. Difficulty Rubric
 
 ### EASY
 
-- Recall trực tiếp.
-- Definition.
-- Single fact.
+- direct recall;
+- definition;
+- single fact.
 
 ### MEDIUM
 
-- Apply concept.
-- Compare.
-- Multi-sentence reasoning.
+- comparison;
+- application;
+- multi-sentence evidence.
 
 ### HARD
 
-- Multiple concepts.
-- Scenario.
-- Infer from several pieces of evidence.
+- scenario;
+- multiple concepts;
+- evidence synthesis.
+
+Difficulty là generation/evaluation property, không phải personalized difficulty theo user profile.
 
 ---
 
-# 34. Flashcard Generator
+# 36. Flashcard Generator
 
-Flashcard ưu tiên atomic knowledge.
-
-Không tạo:
+Ưu tiên atomic learning unit.
 
 ```text
-Front: Hãy giải thích toàn bộ chương SQL.
+source evidence
+→ candidate facts/concepts
+→ cards
+→ grounding
+→ dedup
 ```
 
-Mà:
-
-```text
-Front: LEFT JOIN giữ những hàng nào từ bảng bên trái?
-Back: Tất cả...
-```
-
-Pipeline:
-
-```text
-source
-→ identify learning units
-→ generate cards
-→ deduplicate
-→ grounding check
-```
+Review scheduling nếu có thuộc flashcard application logic; AI service không xây global personalized learning policy.
 
 ---
 
-# 35. Spaced Repetition
+# 37. Explanation / Translation
 
-MVP có thể dùng thuật toán đơn giản.
-
-Review rating:
-
-```text
-AGAIN
-HARD
-GOOD
-EASY
-```
-
-Sau này có thể thay scheduler nâng cao mà không đổi API.
-
-Output:
-
-```text
-next_review_at
-interval
-stability
-difficulty
-```
-
----
-
-# 36. Explanation Engine
-
-Modes:
+Explanation modes có thể gồm:
 
 ```text
 SIMPLE
 NORMAL
 DETAILED
-EXAMPLE_BASED
 STEP_BY_STEP
+EXAMPLE_BASED
 ```
 
-Input luôn kèm source context nếu đang giải thích tài liệu.
-
-Ví dụ:
-
-```text
-"Giải thích LEFT JOIN như học sinh lớp 6"
-```
-
-AI được phép đổi cách diễn đạt nhưng không đổi fact.
+Translation phải preserve technical terms và không mutate source fact.
 
 ---
 
-# 37. Translation Engine
-
-Hai mode:
-
-## Literal learning translation
-
-Giữ thuật ngữ kỹ thuật.
-
-## Explain terminology
-
-Ví dụ:
-
-```text
-polymorphism
-→ tính đa hình
-→ giải thích trong ngữ cảnh OOP
-```
-
-Dịch tài liệu không nên tự động thay đổi source knowledge.
-
----
-
-# 38. Mindmap Generator
-
-Không sinh mindmap hoàn toàn tự do.
+# 38. Mindmap
 
 Nguồn:
 
 ```text
-document hierarchy
-+
-topic hierarchy
-+
-topic relations
+ContextNode hierarchy
++ validated semantic relations optional
 ```
 
-Output dạng graph:
+Output graph có IDs và source references.
 
-```json
-{
-  "nodes": [
-    {"id":"1","label":"SQL"},
-    {"id":"2","label":"JOIN"}
-  ],
-  "edges":[
-    {"source":"1","target":"2","relation":"HAS_TOPIC"}
-  ]
-}
-```
-
-Frontend render bằng Mermaid/React Flow.
+Không tạo knowledge graph tự do chỉ dựa vào imagination của LLM.
 
 ---
 
-# 39. Topic Knowledge Layer
-
-Đây là layer quan trọng.
-
-```text
-Topic
-├── parent
-├── aliases
-├── related_topics
-├── source_chunks
-├── questions
-├── flashcards
-└── mastery
-```
-
-Không nhất thiết phải làm full Knowledge Graph ở MVP.
-
-MVP chỉ cần hierarchy + mappings.
-
----
-
-# 40. Learning Evidence
-
-Student Model không đọc raw click tùy tiện.
-
-Chuẩn hóa evidence.
-
-```json
-{
-  "user_id": "...",
-  "topic_id": "...",
-  "type": "QUIZ_RESPONSE",
-  "value": 1.0,
-  "quality": 0.9,
-  "timestamp": "...",
-  "metadata": {
-    "difficulty": "MEDIUM",
-    "response_time_ms": 8100
-  }
-}
-```
-
-Evidence types:
-
-```text
-QUIZ_RESPONSE
-FLASHCARD_REVIEW
-PRACTICE_RESULT
-DOCUMENT_STUDY
-CHAT_INTERACTION
-REVISION_COMPLETED
-```
-
----
-
-# 41. Trọng số evidence
-
-Không coi đọc tài liệu = trả lời đúng quiz.
-
-Ví dụ:
-
-```text
-Quiz correctness          strong evidence
-Flashcard recall          medium/strong
-Practice answer           strong
-Document opened           very weak
-Study duration            weak
-Chat question             weak diagnostic
-```
-
----
-
-# 42. Student Model
-
-Output cho mỗi topic:
-
-```json
-{
-  "topic_id": "...",
-  "mastery": 0.62,
-  "confidence": 0.74,
-  "last_practiced": "...",
-  "forgetting_risk": 0.31,
-  "evidence_count": 18
-}
-```
-
-Mastery và confidence phải tách riêng.
-
-Ví dụ:
-
-```text
-mastery = 0.90
-confidence = 0.20
-```
-
-nghĩa là user mới trả lời đúng 1 câu, chưa đủ bằng chứng.
-
----
-
-# 43. Mastery Engine — MVP
-
-Có thể dùng weighted evidence.
-
-Ví dụ:
-
-\[
-M_t =
-\frac{\sum_i w_i x_i}{\sum_i w_i}
-\]
-
-Trong đó:
-
-- \(x_i\): performance evidence.
-- \(w_i\): trọng số theo type, difficulty và recency.
-
-Recency weight:
-
-\[
-w_{time}=e^{-\lambda \Delta t}
-\]
-
-Final:
-
-```text
-weight =
-source_weight
-× difficulty_weight
-× recency_weight
-```
-
----
-
-# 44. Mastery Update
-
-Ví dụ quiz:
-
-```text
-correct HARD
-→ positive evidence cao
-
-wrong EASY
-→ negative evidence mạnh
-
-correct EASY
-→ positive vừa
-```
-
-Không update mạnh từ một sample duy nhất.
-
----
-
-# 45. Confidence
-
-Một approximation:
-
-```text
-confidence =
-1 - exp(-effective_evidence_count / k)
-```
-
-Có thể thêm diversity:
-
-- nhiều loại quiz;
-- nhiều lần học;
-- nhiều ngày khác nhau.
-
----
-
-# 46. Forgetting Model
-
-MVP:
-
-\[
-Retention(t)=e^{-t/S}
-\]
-
-Trong đó:
-
-```text
-S = stability
-```
-
-Stability tăng sau successful review.
-
-Forgetting risk:
-
-\[
-Risk=1-Retention(t)
-\]
-
----
-
-# 47. Weak Topic Detection
-
-Không chỉ:
-
-```text
-mastery < 0.6
-```
-
-Mà:
-
-```text
-weak_score =
-a * (1 - mastery)
-+
-b * error_rate
-+
-c * forgetting_risk
-+
-d * prerequisite_importance
-```
-
-Sau đó rank.
-
----
-
-# 48. Prerequisite Awareness
-
-Ví dụ:
-
-```text
-Spring Boot
-requires
-Java Core
-OOP
-HTTP
-```
-
-Nếu OOP mastery thấp:
-
-```text
-không nên đề xuất học ngay advanced Spring Security.
-```
-
-MVP prerequisite có thể nhập từ roadmap/topic hierarchy.
-
----
-
-# 49. Recommendation Engine
-
-Các loại recommendation:
-
-```text
-READ
-REVIEW
-QUIZ
-FLASHCARD
-PRACTICE
-CONTINUE
-REVISIT_PREREQUISITE
-```
-
-Input:
-
-```text
-mastery
-confidence
-forgetting risk
-recent errors
-study goal
-deadline
-available time
-topic prerequisite
-```
-
-Output:
-
-```json
-{
-  "type": "REVIEW",
-  "topic_id": "left_join",
-  "priority": 0.91,
-  "reason_codes": [
-    "LOW_MASTERY",
-    "RECENT_ERRORS",
-    "REVIEW_DUE"
-  ],
-  "recommended_resource_id": "section_5_3"
-}
-```
-
----
-
-# 50. Explainable Recommendation
-
-Reason do system logic tạo, không để LLM tự bịa.
-
-Ví dụ:
-
-```text
-Bạn nên ôn LEFT JOIN vì:
-- mastery hiện tại: 0.42
-- sai 4/6 câu gần nhất
-- lần ôn gần nhất: 5 ngày trước
-```
-
-LLM chỉ chuyển reason codes thành câu tự nhiên.
-
----
-
-# 51. Recommendation Ranking
-
-Ví dụ:
-
-\[
-Priority =
-0.35(1-M)
-+0.25F
-+0.20E
-+0.10U
-+0.10P
-\]
-
-Trong đó:
-
-- M = mastery.
-- F = forgetting risk.
-- E = recent error score.
-- U = deadline urgency.
-- P = prerequisite importance.
-
-Trọng số phải là config, không hard-code sâu trong logic.
-
----
-
-# 52. Study Planner
-
-Planner gồm hai lớp.
-
-## Layer 1 — Scheduling engine
-
-Xác định:
-
-```text
-topic
-activity
-duration
-date
-priority
-```
-
-## Layer 2 — LLM presentation
-
-Viết thành kế hoạch dễ hiểu.
-
----
-
-# 53. Planner Input
-
-```json
-{
-  "goal": "Thi Database sau 20 ngày",
-  "deadline": "...",
-  "available_minutes_per_day": 120,
-  "days_off": [],
-  "preferred_session_minutes": 45
-}
-```
-
-System bổ sung:
-
-```text
-topic mastery
-topic difficulty
-prerequisites
-forgetting risk
-```
-
----
-
-# 54. Planner Algorithm
-
-```text
-1. Collect candidate topics
-2. Calculate topic priority
-3. Estimate required study minutes
-4. Respect prerequisites
-5. Allocate sessions before deadline
-6. Add spaced reviews
-7. Avoid overload
-8. Save structured tasks
-```
-
----
-
-# 55. Planner Output
-
-```json
-{
-  "days": [
-    {
-      "date": "2026-08-10",
-      "tasks": [
-        {
-          "topic": "LEFT JOIN",
-          "activity": "REVIEW",
-          "minutes": 30
-        },
-        {
-          "topic": "LEFT JOIN",
-          "activity": "QUIZ",
-          "minutes": 20
-        }
-      ]
-    }
-  ]
-}
-```
-
----
-
-# 56. Adaptive Planner
-
-Kế hoạch phải thay đổi khi user học.
-
-Ví dụ:
-
-```text
-Day 3 quiz unexpectedly high
-→ giảm review LEFT JOIN
-→ chuyển thời gian sang normalization
-```
-
-Khi user bỏ task:
-
-```text
-reschedule remaining workload
-```
-
----
-
-# 57. AI Model Abstraction
-
-Không để business logic phụ thuộc một provider.
+# 39. AI Model Abstraction
 
 Interfaces:
 
@@ -1827,95 +1110,71 @@ RerankerClient
 OCRClient
 ```
 
-Model config:
-
-```yaml
-llm:
-  provider: ...
-  model: ...
-  temperature: 0.1
-
-embedding:
-  provider: ...
-  model: ...
-
-reranker:
-  provider: ...
-  model: ...
-```
+Business/source pipeline không phụ thuộc trực tiếp một provider.
 
 ---
 
-# 58. Model Routing
+# 40. Model Routing
 
-Không phải task nào cũng dùng model lớn.
+Không phải task nào cũng cần model lớn.
 
 Ví dụ:
 
 ```text
 query rewrite      → small model
-topic extraction   → small model
+semantic extraction → small/medium model
 quiz validation    → medium model
 RAG answer         → strong model
-planner wording    → medium model
 ```
 
-Giúp giảm chi phí.
+Routing dựa trên task, không dựa trên personalization profile.
 
 ---
 
-# 59. Prompt Management
-
-Prompt không hard-code rải rác.
+# 41. Prompt Management
 
 ```text
 prompts/
 ├── rag_answer_v1.txt
+├── summary_v1.txt
 ├── quiz_generate_v1.txt
 ├── quiz_validate_v1.txt
-├── summary_v1.txt
-└── topic_extract_v1.txt
+├── flashcard_v1.txt
+└── semantic_extract_v1.txt
 ```
 
-Mỗi request log:
+Log:
 
 ```text
 prompt_version
 model_version
 ```
 
+Không hard-code prompt rải rác.
+
 ---
 
-# 60. Structured Output Validation
-
-Sử dụng schema/Pydantic.
-
-Ví dụ:
+# 42. Structured Output Validation
 
 ```text
 LLM output
-↓
-JSON parse
-↓
-schema validation
-↓
-business validation
-↓
-retry/fail
+→ JSON parse
+→ Pydantic/schema validation
+→ business/source validation
+→ accept / retry / fail
 ```
 
-Không save JSON invalid.
+Không save invalid model output.
 
 ---
 
-# 61. AI Job Types
+# 43. AI Job Types
 
 Background:
 
 ```text
-DOCUMENT_PARSE
+DOCUMENT_PROCESS
 OCR
-CHUNK
 EMBED
 REINDEX
 SUMMARY_LONG
@@ -1924,45 +1183,24 @@ FLASHCARD_GENERATE
 MINDMAP_GENERATE
 ```
 
-Synchronous:
+Synchronous/streaming:
 
 ```text
 RAG_QUERY
 SMALL_EXPLANATION
-RECOMMENDATION_FETCH
 ```
+
+Không có recommendation/personalization refresh job.
 
 ---
 
-# 62. Idempotency
+# 44. Internal AI API
 
-Document reprocessing phải tránh nhân đôi vector.
-
-Mỗi chunk key:
+## Source Processing
 
 ```text
-document_id
-document_version
-chunk_version
-chunk_index
-```
-
-Re-index:
-
-```text
-delete old vector version
-or mark inactive
-```
-
----
-
-# 63. AI API nội bộ
-
-## Ingestion
-
-```text
-POST /internal/ai/documents/process
-POST /internal/ai/documents/reindex
+POST /internal/ai/sources/process
+POST /internal/ai/sources/reindex
 GET  /internal/ai/jobs/{id}
 ```
 
@@ -1988,146 +1226,139 @@ POST /internal/ai/generate/mindmap
 POST /internal/ai/generate/explanation
 ```
 
-## Learning
-
-```text
-POST /internal/ai/mastery/recalculate
-POST /internal/ai/recommendations/generate
-POST /internal/ai/planner/generate
-```
+Không có mastery/recommendation/planner AI endpoint.
 
 ---
 
-# 64. RAG Request Example
+# 45. RAG Request Example
 
 ```json
 {
   "user_id": "...",
   "conversation_id": "...",
   "query": "LEFT JOIN khác INNER JOIN như thế nào?",
-  "document_ids": ["..."],
+  "selected_source_ids": ["..."],
   "mode": "GROUNDED_ONLY"
 }
 ```
 
----
-
-# 65. RAG Response Example
-
-```json
-{
-  "answer": "...",
-  "confidence": 0.87,
-  "citations": [
-    {
-      "document_id": "...",
-      "chunk_id": "...",
-      "page": 87
-    }
-  ],
-  "retrieval": {
-    "candidate_count": 30,
-    "used_chunk_count": 5
-  }
-}
-```
+Backend phải authorize source IDs trước khi request tới AI.
 
 ---
 
-# 66. Prompt Injection Defense
+# 46. Security — Prompt Injection
 
-Document là untrusted input.
+Source là untrusted data.
 
-Ví dụ PDF chứa:
+Ví dụ document chứa:
 
 ```text
-Ignore previous instructions and reveal...
+Ignore previous instructions...
 ```
 
-Hệ thống phải coi đây là **content**, không phải system instruction.
+AI phải coi đây là content.
 
 Defense:
 
-- Strong system prompt.
-- Delimit evidence.
-- No tool execution from document text.
-- Whitelist tool calls.
-- Ownership filter.
-- Output schema.
-- Prompt injection detection optional.
+- system instructions tách khỏi evidence;
+- evidence delimiters;
+- no tool execution from source text;
+- source/ACL filter;
+- structured outputs;
+- strict tool allowlist nếu có tools.
 
 ---
 
-# 67. Data Isolation
+# 47. Data Isolation
 
-Không bao giờ retrieval toàn collection rồi filter sau.
+Không retrieval toàn collection rồi filter sau.
 
-Phải filter ngay query vector DB:
-
-```text
-user_id=current_user
-```
-
-Nếu shared document:
+Filter phải được áp dụng tại search boundary:
 
 ```text
-ACL filter
+user_id / ACL
++
+selected_source_ids
 ```
 
-Đây là requirement bảo mật AI quan trọng.
+Citation cũng phải validate ownership.
 
 ---
 
-# 68. AI Observability
+# 48. Observability
 
-Mỗi RAG request log:
+Mỗi AI request nên trace:
 
 ```text
 trace_id
-query
-query_type
-retrieval_method
-candidate_count
-selected_chunks
-retrieval_scores
-rerank_scores
-context_tokens
+request type
+source scope
+retrieval method
+candidate count
+selected evidence IDs
+retrieval scores
+rerank scores
+context tokens
 model
 latency
-input_tokens
-output_tokens
-confidence
+input/output tokens
+status
 ```
 
-Có thể redact query nếu cần privacy.
+Không log private content tùy tiện.
 
 ---
 
-# 69. Cost Monitoring
+# 49. Cost Monitoring
 
-Theo user:
+Theo loại operation:
 
 ```text
 embedding calls
 LLM calls
-input tokens
-output tokens
+input/output tokens
 OCR pages
 generation requests
 ```
 
-Admin có dashboard AI Usage.
+Không cần cost model theo personalization subsystem vì subsystem đó không tồn tại.
 
 ---
 
-# 70. Retrieval Evaluation Dataset
+# 50. Source Understanding Evaluation
 
-Tạo dataset thủ công:
+Đánh giá:
+
+```text
+text preservation
+order preservation
+reference validity
+provenance completeness
+structure precision/coverage
+RetrievalUnit rebuildability
+citation resolution
+```
+
+Error taxonomy nên phân biệt:
+
+```text
+TEXT_LOSS
+WRONG_ORDER
+INVALID_REFERENCE
+CITATION_LOSS
+STRUCTURE_OVERINFERENCE
+```
+
+---
+
+# 51. Retrieval Dataset
+
+Tạo question–evidence pairs:
 
 ```json
 {
   "question": "...",
-  "relevant_chunk_ids": ["..."],
+  "relevant_retrieval_unit_ids": ["..."],
   "reference_answer": "..."
 }
 ```
@@ -2136,59 +1367,44 @@ Nên có:
 
 - definition;
 - comparison;
-- multi-hop;
 - exact terminology;
-- question không có answer.
+- multi-evidence;
+- no-answer questions.
 
 ---
 
-# 71. Retrieval Metrics
+# 52. Retrieval Metrics
 
-## Recall@K
+- Recall@K.
+- Hit@K.
+- MRR.
+- Precision@K.
+- nDCG nếu graded relevance.
 
-\[
-Recall@K =
-\frac{\text{relevant evidence found in top K}}
-{\text{all relevant evidence}}
-\]
-
-## Hit@K
-
-Có ít nhất một evidence đúng trong top K.
-
-## MRR
-
-Đánh giá vị trí evidence đầu tiên.
-
-## nDCG
-
-Nếu có graded relevance.
+Không tối ưu RAG bằng cảm giác.
 
 ---
 
-# 72. RAG Evaluation
+# 53. RAG Evaluation
 
 Đánh giá riêng:
 
 ```text
-Retrieval quality
-Answer correctness
-Faithfulness
-Citation correctness
-Insufficient-context accuracy
+retrieval quality
+answer correctness
+faithfulness
+citation correctness
+abstention accuracy
+unsupported-answer rate
 ```
 
-Không gộp tất cả thành một metric.
+Không gộp tất cả thành một “AI score”.
 
 ---
 
-# 73. Hallucination Test Set
+# 54. Hallucination Test Set
 
-Có một subset câu hỏi:
-
-```text
-answer not present in document
-```
+Có subset câu hỏi không có answer trong source.
 
 Expected:
 
@@ -2200,516 +1416,391 @@ Metric:
 
 ```text
 abstention accuracy
-false answer rate
+false-answer rate
 ```
 
 ---
 
-# 74. RAG Ablation
+# 55. RAG Ablation
 
 So sánh:
 
 ```text
-A. Dense only
-B. Dense + reranker
-C. Hybrid
-D. Hybrid + reranker
+Dense
+Dense + Reranker
+Hybrid
+Hybrid + Reranker
 ```
 
-Thử:
+Và các RetrievalUnit/chunk policy khác nhau nếu cần.
 
-```text
-chunk size 300
-chunk size 600
-chunk size 900
-```
-
-Báo cáo kết quả.
+Thay đổi retrieval phải benchmark trước khi kết luận tốt hơn.
 
 ---
 
-# 75. Quiz Evaluation
+# 56. Generation Evaluation
 
-Sample:
+## Quiz
 
-```text
-100–200 generated questions
-```
-
-Rubric:
-
-- answer correctness;
+- correctness;
 - groundedness;
 - clarity;
 - distractor quality;
-- difficulty correctness.
+- difficulty consistency.
 
----
-
-# 76. Summary Evaluation
-
-Đánh giá:
+## Summary
 
 - factual consistency;
 - coverage;
 - redundancy;
-- citation coverage.
+- source coverage.
 
-Có thể kết hợp human evaluation.
+## Flashcard
 
----
-
-# 77. Student Model Evaluation
-
-MVP không cần chứng minh như paper ML.
-
-Có thể tạo synthetic/controlled scenarios.
-
-Ví dụ:
-
-```text
-User trả lời sai EASY liên tục
-→ mastery phải giảm
-
-User trả lời đúng HARD nhiều lần
-→ mastery tăng
-
-Không ôn lâu
-→ forgetting risk tăng
-```
-
-Viết unit test cho các invariants này.
+- atomicity;
+- correctness;
+- grounding;
+- duplicate rate.
 
 ---
 
-# 78. Recommendation Evaluation
-
-Scenario test:
-
-```text
-Topic A mastery 0.30
-Topic B mastery 0.80
-Topic C mastery 0.70
-```
-
-Expected:
-
-```text
-A phải được rank cao hơn
-```
-
-Nếu B có exam tomorrow:
-
-```text
-urgency có thể đẩy B lên
-```
-
-Tất cả phải explainable.
-
----
-
-# 79. Offline AI Benchmark Suite
+# 57. Offline Benchmark Suite
 
 ```text
 evaluation/
+├── source_understanding/
 ├── retrieval/
 ├── rag/
 ├── quiz/
 ├── summary/
-├── recommendation/
+├── flashcard/
 └── regression/
 ```
 
 Mỗi lần đổi:
 
+- parser;
+- structure;
+- RetrievalUnit policy;
 - embedding;
-- chunking;
+- retrieval;
+- reranker;
 - prompt;
 - model;
-- reranker;
 
-chạy benchmark lại.
+cần regression check phù hợp.
 
 ---
 
-# 80. Versioning
+# 58. Versioning
 
-Version tất cả thành phần ảnh hưởng output:
+Version các thành phần ảnh hưởng output:
 
 ```text
-document_parser_version
-chunking_version
+schema_version
+adapter_version
+normalizer_version
+structure_version
+retrieval_unit_version
 embedding_version
 retrieval_version
 reranker_version
 prompt_version
 llm_model
-mastery_version
-recommendation_version
 ```
 
-Đây là điểm rất tốt để trình bày trong đồ án.
+Không còn `mastery_version` hoặc `recommendation_version`.
 
 ---
 
-# 81. Cache AI
+# 59. Cache AI
 
-Cache hợp lý:
+Cache phù hợp:
 
 ```text
-same document summary
+source parsing artifacts
 embedding
-document parsing
+same-source generated summary khi inputs/version giống nhau
 topic extraction
 ```
 
-Không nên cache mù RAG answer nếu:
+RAG answer cache phải rất cẩn thận vì:
 
-- context thay đổi;
-- permission khác;
-- personalization khác.
+```text
+source scope
+source revision
+conversation state
+permissions
+```
+
+có thể khác nhau.
 
 ---
 
-# 82. Failure Handling
+# 60. Failure Handling
 
-## Parser fail
+Ví dụ:
 
 ```text
 FAILED_PARSE
-```
-
-## OCR fail
-
-```text
 FAILED_OCR
+FAILED_INDEX
+INVALID_GENERATION
+INSUFFICIENT_CONTEXT
+AI_TIMEOUT
 ```
 
-## Embedding fail
+Retry phải có giới hạn và idempotency.
 
-retry.
-
-## LLM timeout
+Nếu semantic enrichment fail nhưng base retrieval-ready data hợp lệ:
 
 ```text
-retry with exponential backoff
-```
-
-## Invalid structured output
-
-```text
-repair/retry once
-→ fail safely
+RAG base vẫn hoạt động
 ```
 
 ---
 
-# 83. AI State Machine cho document
-
-```mermaid
-stateDiagram-v2
-    [*] --> RECEIVED
-    RECEIVED --> PARSING
-    PARSING --> OCR: low text quality
-    PARSING --> STRUCTURING
-    OCR --> STRUCTURING
-    STRUCTURING --> CHUNKING
-    CHUNKING --> EMBEDDING
-    EMBEDDING --> INDEXING
-    INDEXING --> READY
-
-    PARSING --> FAILED
-    OCR --> FAILED
-    CHUNKING --> FAILED
-    EMBEDDING --> FAILED
-    INDEXING --> FAILED
-
-    FAILED --> RECEIVED: retry
-    READY --> RECEIVED: reprocess
-```
-
----
-
-# 84. AI Data Flow tổng thể
+# 61. AI Data Flow
 
 ```mermaid
 flowchart LR
-    DOC[Documents]
-    K[Knowledge Chunks]
-    Q[Questions]
-    A[Answers]
-    QC[Quiz/Flashcards]
-    EV[Learning Evidence]
-    SM[Student Model]
-    RC[Recommendations]
-    PL[Study Plan]
+    SRC[Sources]
+    CAN[CanonicalDocument]
+    RU[RetrievalUnits]
+    IDX[Index]
+    EV[Evidence]
+    RAG[RAG Answer]
+    GEN[Summary / Quiz / Flashcard]
 
-    DOC --> K
-    K --> Q
-    Q --> A
-    K --> QC
-    QC --> EV
-    A --> EV
-    EV --> SM
-    SM --> RC
-    RC --> PL
-    PL --> EV
+    SRC --> CAN --> RU --> IDX
+    IDX --> EV
+    EV --> RAG
+    EV --> GEN
 ```
+
+Learning Event/Analytics thuộc application/data workflow sau khi user tương tác với outputs này.
 
 ---
 
-# 85. MVP AI thật sự nên làm gì?
+# 62. MVP AI
 
-## P0 — bắt buộc
+## P0
 
-### Document AI
+### Source Understanding
 
-- PDF/DOCX/PPTX parsing.
-- Cleaning.
-- Structure-aware chunking.
-- Embedding.
-- Qdrant indexing.
+- PDF/DOCX/PPTX adapters.
+- Element normalization.
+- Structure signals/grouping.
+- CanonicalDocument.
+- RetrievalUnit projection.
+- SourceAnchor/provenance.
+
+### Index / Retrieval
+
+- embedding;
+- Qdrant;
+- source filters;
+- dense retrieval;
+- reranking;
+- evidence construction.
 
 ### RAG
 
-- Dense retrieval.
-- Metadata filter.
-- Reranker.
-- Grounded answer.
-- Citation.
-- Insufficient context.
+- grounded answer;
+- citation;
+- insufficient context;
+- streaming contract.
 
-### Learning generation
+### Generation
 
-- Summary.
-- Quiz.
-- Flashcard.
-
-### Learning intelligence
-
-- Topic extraction.
-- Learning evidence.
-- Topic mastery.
-- Weak-topic detection.
-- Recommendation.
+- summary;
+- quiz;
+- flashcard.
 
 ### Evaluation
 
-- Retrieval benchmark.
-- RAG test.
-- Quiz groundedness test.
+- source invariants;
+- retrieval benchmark;
+- RAG evaluation;
+- quiz groundedness.
+
+## P1
+
+- BM25/hybrid retrieval;
+- query rewriting;
+- OCR improvements;
+- mindmap;
+- better generation validators;
+- richer semantic enrichment.
+
+## P2
+
+- Graph RAG;
+- multimodal figure/table understanding;
+- lecture video ingestion;
+- voice tutoring.
 
 ---
 
-# 86. P1 — nâng chất lượng
+# 63. Những thứ không nên làm ngay
 
-- BM25.
-- Hybrid retrieval.
-- Query rewriting.
-- Parent-child retrieval.
-- Better OCR.
-- Forgetting model.
-- Spaced repetition.
-- Adaptive planner.
-- Mindmap.
-- Explanation modes.
+Không ưu tiên:
 
----
-
-# 87. P2 — nghiên cứu / mở rộng
-
-- Knowledge Graph RAG.
-- Bayesian Knowledge Tracing.
-- Deep Knowledge Tracing.
-- Item Response Theory.
-- Adaptive quiz difficulty.
-- Multi-modal document understanding.
-- Lecture video ingestion.
-- Voice tutoring.
-
----
-
-# 88. Những thứ KHÔNG nên làm ngay
-
-Không nên bắt đầu bằng:
-
-- Fine-tune LLM.
-- Train embedding model.
-- Build full knowledge graph.
-- Deep Knowledge Tracing.
-- Multi-agent system.
-- Voice.
-- Video.
-- Recommendation deep learning.
+- fine-tune LLM;
+- train embedding model;
+- multi-agent system;
+- full knowledge graph;
+- voice/video;
+- personalization/recommendation models.
 
 Lý do:
 
 ```text
-Data chưa đủ
-Evaluation chưa có
-Baseline chưa hoàn thiện
-Scope đồ án sẽ nổ
+baseline chưa hoàn thiện
+evaluation chưa đủ
+scope tăng mạnh
+không cải thiện trực tiếp retrieval/citation correctness
 ```
 
 ---
 
-# 89. Thứ tự triển khai AI tối ưu
+# 64. Thứ tự triển khai AI
 
-## Phase A — Knowledge Foundation
+## Phase A — Source Foundation
 
-1. Parser.
-2. Canonical document.
-3. Cleaning.
-4. Chunking.
-5. Embedding.
-6. Qdrant.
+1. schemas;
+2. adapters/RawElement;
+3. Element normalization;
+4. profiling/signals;
+5. grouping/hierarchy;
+6. CanonicalDocument assembly;
+7. RetrievalUnit builder;
+8. provenance/citation anchors.
 
-## Phase B — RAG Baseline
+## Phase B — Retrieval Baseline
 
-7. Dense retrieval.
-8. Context builder.
-9. Grounded prompt.
-10. Citation.
-11. Evaluation dataset.
+9. embedding;
+10. Qdrant;
+11. dense retrieval;
+12. evidence builder;
+13. retrieval dataset.
 
 ## Phase C — Retrieval Quality
 
-12. Reranker.
-13. Hybrid retrieval.
-14. Query rewriting.
-15. Threshold/abstention.
-16. Ablation benchmark.
+14. reranker;
+15. BM25/hybrid nếu cần;
+16. query rewriting;
+17. sufficiency threshold;
+18. ablation benchmark.
 
-## Phase D — Learning Content
+## Phase D — Grounded RAG
 
-17. Summary.
-18. Quiz.
-19. Quiz validation.
-20. Flashcard.
-21. Topic mapping.
+19. prompt;
+20. structured answer;
+21. citation resolution;
+22. abstention;
+23. RAG evaluation.
 
-## Phase E — Learning Intelligence
+## Phase E — Learning Generation
 
-22. Evidence model.
-23. Mastery.
-24. Confidence.
-25. Forgetting.
-26. Weak-topic detection.
+24. summary;
+25. quiz;
+26. quiz validation;
+27. flashcard;
+28. mindmap optional.
 
-## Phase F — Personalization
+## Phase F — Production / Evaluation
 
-27. Recommendation.
-28. Explainability.
-29. Planner.
-30. Adaptive replanning.
+29. regression suite;
+30. observability;
+31. cost/latency;
+32. failure handling;
+33. security hardening.
+
+Không có personalization phase.
 
 ---
 
-# 90. Demo AI nên thể hiện
+# 65. Demo AI nên thể hiện
 
-## Demo 1 — Grounded RAG
-
-```text
-Upload Database.pdf
-→ Ask LEFT JOIN
-→ answer + page citation
-```
-
-## Demo 2 — Hallucination control
-
-Hỏi một câu không có trong tài liệu.
+## Demo 1 — Source Understanding
 
 ```text
-→ AI từ chối đoán
+PDF/DOCX/PPTX
+→ Elements
+→ LogicalUnits
+→ RetrievalUnits
+→ SourceAnchor
 ```
 
-## Demo 3 — Retrieval improvement
+## Demo 2 — Grounded RAG
 
-Show:
+```text
+Ask LEFT JOIN
+→ retrieved evidence
+→ answer
+→ citation
+→ open original source
+```
+
+## Demo 3 — Hallucination Control
+
+Question không có trong source:
+
+```text
+→ INSUFFICIENT_CONTEXT
+```
+
+## Demo 4 — Retrieval Improvement
 
 ```text
 Dense
 vs
-Dense + reranker
+Dense + Reranker
 ```
 
-## Demo 4 — Learning loop
+show benchmark/traces.
+
+## Demo 5 — Grounded Quiz
 
 ```text
-Generate quiz
-→ user wrong LEFT JOIN
-→ mastery giảm
-→ weak topic detected
-→ recommendation created
+selected source
+→ generate quiz
+→ source-backed explanations
 ```
 
-## Demo 5 — Personalization
-
-Hai user có kết quả khác nhau:
-
-```text
-User A weak JOIN
-User B weak Normalization
-```
-
-→ recommendation khác nhau.
-
-Đây là bằng chứng personalization thật.
+Không cần demo hai user nhận hai gợi ý khác nhau.
 
 ---
 
-# 91. Các điểm có thể biến thành phần "nghiên cứu/thực nghiệm"
+# 66. Các experiment chính
 
-Để đồ án không chỉ là sản phẩm:
-
-## Experiment 1
-
-Ảnh hưởng của chunk size đến Recall@K.
-
-## Experiment 2
-
-Dense vs Hybrid Retrieval.
-
-## Experiment 3
-
-Có/không Reranker.
-
-## Experiment 4
-
-Ảnh hưởng threshold đến:
-
-```text
-answer coverage
-vs
-hallucination
-```
-
-## Experiment 5
-
-Quality của quiz generator trước/sau validation.
-
-## Experiment 6
-
-Recommendation rule baseline vs mastery+forgetting.
+1. RetrievalUnit/chunk policy vs Recall@K.
+2. Dense vs Hybrid Retrieval.
+3. Có/không Reranker.
+4. Sufficiency threshold vs answer coverage / hallucination.
+5. Quiz generation trước/sau grounding validation.
+6. Source-structure quality vs retrieval quality nếu đủ dữ liệu.
 
 ---
 
-# 92. KPI cho AI System
+# 67. KPI AI System
 
-### Ingestion
+### Source Understanding
 
 ```text
-processing success rate
-average processing time/page
-OCR confidence
+text preservation
+order/reference correctness
+citation resolution rate
+structure quality
 ```
 
 ### Retrieval
 
 ```text
-Recall@5
+Recall@K
 MRR
-Hit@5
+Hit@K
 ```
 
 ### RAG
@@ -2725,186 +1816,157 @@ abstention accuracy
 
 ```text
 quiz groundedness
-answer correctness
-summary consistency
+quiz correctness
+summary factual consistency
+flashcard groundedness
 ```
 
-### Learning Intelligence
-
-```text
-weak-topic accuracy
-recommendation precision
-planner constraint satisfaction
-```
+Không có recommendation precision hoặc planner quality KPI.
 
 ---
 
-# 93. Định nghĩa "AI hoạt động tốt"
+# 68. “AI hoạt động tốt” nghĩa là gì?
 
 Không nói:
 
-> AI trả lời có vẻ hay.
+> AI trả lời nghe hay.
 
-Mà phải nói:
+Mà báo cáo:
 
 ```text
 Retrieval Recall@5 = ...
 Citation correctness = ...
 Unsupported-answer rate = ...
+Abstention accuracy = ...
 Quiz groundedness = ...
-Recommendation precision = ...
 ```
 
-Số liệu lấy từ thực nghiệm sau khi hệ thống hoàn thành.
+Số liệu lấy sau thực nghiệm.
 
 ---
 
-# 94. Điều quan trọng nhất khi bảo vệ
+# 69. Nếu hội đồng hỏi “AI có gì ngoài gọi API?”
 
-Nếu hội đồng hỏi:
-
-> "Phần AI của em có gì ngoài gọi API?"
-
-Câu trả lời phải dựa trên kiến trúc:
+Trả lời bằng pipeline:
 
 ```text
-1. Document Intelligence
-2. Chunking/indexing
-3. Retrieval
-4. Reranking
-5. Context selection
-6. Grounding/citation
-7. Generation validation
-8. Student modeling
-9. Forgetting estimation
-10. Recommendation ranking
-11. Study scheduling
-12. Evaluation
+1. Multi-format source understanding
+2. Canonical representation
+3. Provenance/source anchors
+4. RetrievalUnit design
+5. Embedding/indexing
+6. Retrieval
+7. Reranking
+8. Evidence construction
+9. Grounding/abstention
+10. Citation validation
+11. Learning-content validation
+12. Evaluation/observability
 ```
 
-LLM chỉ là một component trong pipeline.
+LLM chỉ là một component.
 
 ---
 
-# 95. Kết luận thiết kế AI
+# 70. Kết luận thiết kế AI
 
-AI Study Assistant 2.0 nên được xem là ba hệ AI kết nối với nhau:
+AI Study Assistant 2.0 gồm bốn năng lực AI chính:
 
 ```text
 ┌────────────────────────────┐
-│ 1. Knowledge Intelligence  │
-│ document → searchable KB   │
+│ 1. Source Intelligence     │
+│ source → canonical model   │
 └─────────────┬──────────────┘
-              │
               ▼
 ┌────────────────────────────┐
-│ 2. Learning Intelligence   │
-│ RAG / quiz / flashcards    │
+│ 2. Retrieval Intelligence  │
+│ query → evidence           │
 └─────────────┬──────────────┘
-              │
               ▼
 ┌────────────────────────────┐
-│ 3. Student Intelligence    │
-│ mastery → recommendation   │
+│ 3. Grounded Generation     │
+│ answer/content + citation  │
+└─────────────┬──────────────┘
+              ▼
+┌────────────────────────────┐
+│ 4. Evaluation              │
+│ measurable quality         │
 └────────────────────────────┘
 ```
 
-Công thức cốt lõi của toàn hệ thống:
+Công thức cốt lõi:
 
-> **Knowledge Source → Evidence Retrieval → Learning Interaction → Learning Evidence → Student Model → Personalized Action**
+> **Knowledge Source → Canonical Representation → Retrieval Evidence → Grounded Learning Output → Citation.**
 
-Nếu xây đúng chuỗi này, phần AI của đồ án sẽ có chiều sâu thực sự và không bị đánh giá là một "LLM wrapper".
+AI System dừng ở việc cung cấp output học tập đáng tin cậy và có thể đánh giá. Learning Analytics và user-managed planner thuộc Application/Web layer; AI không tạo personalized next action.
 
 ---
 
-# 96. Kiến trúc AI cuối cùng đề xuất cho đồ án
+# 71. Kiến trúc AI cuối cùng
 
 ```mermaid
 flowchart TB
-    FILE[Learning Documents]
+    FILE[Learning Sources]
 
-    subgraph DI[1. Document Intelligence]
-        P[Parser/OCR]
-        S[Structure]
-        C[Chunking]
-        T[Topic Extraction]
+    subgraph SU[1. Source Understanding]
+        A[Adapters]
+        E[Elements]
+        L[LogicalUnits]
+        C[CanonicalDocument]
+        RU[RetrievalUnits]
     end
 
-    subgraph KL[2. Knowledge Layer]
-        E[Embedding]
+    subgraph KI[2. Knowledge Index]
+        EM[Embedding]
         V[(Vector DB)]
-        B[(Lexical Index)]
+        B[(Lexical Index optional)]
     end
 
-    subgraph RE[3. Retrieval Intelligence]
+    subgraph RI[3. Retrieval]
         Q[Query Analyzer]
-        H[Hybrid Retrieval]
+        H[Dense / Hybrid]
         R[Reranker]
-        CB[Context Builder]
+        EV[Evidence Builder]
     end
 
-    subgraph LG[4. Learning Generation]
+    subgraph GG[4. Grounded Generation]
         RA[RAG Answer]
-        SU[Summary]
+        SU2[Summary]
         QU[Quiz]
-        FC[Flashcards]
+        FC[Flashcard]
         MM[Mindmap]
     end
 
-    subgraph SI[5. Student Intelligence]
-        LE[Learning Evidence]
-        MA[Mastery]
-        FO[Forgetting]
-        WT[Weak Topics]
+    subgraph EVAL[5. Evaluation]
+        SUT[Source Tests]
+        RT[Retrieval Tests]
+        RGT[RAG Tests]
+        GT[Generation Tests]
     end
 
-    subgraph PI[6. Personalization]
-        RC[Recommendation]
-        SP[Study Planner]
-    end
-
-    subgraph EV[7. Evaluation]
-        RT[Retrieval Test]
-        RG[RAG Test]
-        GT[Generation Test]
-        PT[Personalization Test]
-    end
-
-    FILE --> P --> S --> C
-    C --> T
-    C --> E --> V
-    C --> B
+    FILE --> A --> E --> L --> C --> RU
+    RU --> EM --> V
+    RU --> B
 
     Q --> H
     H --> V
     H --> B
-    H --> R --> CB
+    H --> R --> EV
 
-    CB --> RA
-    CB --> SU
-    CB --> QU
-    CB --> FC
-    T --> MM
+    EV --> RA
+    EV --> SU2
+    EV --> QU
+    EV --> FC
+    C --> MM
 
-    QU --> LE
-    FC --> LE
-    RA --> LE
-    LE --> MA --> FO
-    MA --> WT
-    FO --> WT
-
-    WT --> RC
-    RC --> SP
-
+    C --> SUT
     R --> RT
-    RA --> RG
+    RA --> RGT
     QU --> GT
-    RC --> PT
 ```
 
 ---
 
-# 97. Một câu mô tả phần AI dùng trong báo cáo
+# 72. Một câu mô tả phần AI dùng trong báo cáo
 
-> Hệ thống AI được thiết kế theo kiến trúc nhiều tầng gồm Document Intelligence, Knowledge Indexing, Retrieval-Augmented Generation, Learning Content Generation, Student Modeling và Personalized Recommendation. Thay vì sử dụng LLM như một chatbot độc lập, hệ thống kiểm soát nguồn tri thức thông qua retrieval và citation, đồng thời khai thác kết quả học tập của người dùng để ước lượng mức độ thành thạo, nguy cơ quên và sinh khuyến nghị học tập cá nhân hóa.
-
+> **Hệ thống AI của AI Study Assistant 2.0 được thiết kế theo pipeline Source Understanding → Retrieval → Evidence → Grounded Generation → Citation. Hệ thống bảo toàn provenance từ nguồn gốc, hỗ trợ truy xuất và reranking trên RetrievalUnit, kiểm soát hallucination bằng sufficiency/grounding/citation validation, đồng thời sinh summary, quiz và flashcard có căn cứ. Phiên bản đồ án này không triển khai Student Model, personalization hoặc Recommendation Engine; trọng tâm AI là correctness, information preservation, retrieval quality và khả năng đánh giá.**
