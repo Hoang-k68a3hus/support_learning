@@ -14,7 +14,7 @@ from source_understanding.pipeline import (
 from source_understanding.semantics import HeuristicSemanticProvider, SemanticAnnotator
 from source_understanding.schemas.context import StructureSource
 from source_understanding.schemas.document import ProcessingManifest, SemanticAnnotationType
-from source_understanding.schemas.element import Element, ElementType, Provenance
+from source_understanding.schemas.element import Element, ElementType, Provenance, RawElement
 
 
 HASH = "sha256:" + "a" * 64
@@ -41,17 +41,89 @@ def make_elements():
     )
 
 
+def make_raw_elements():
+    return (
+        RawElement(
+            text="Definition: A queue follows FIFO.\r\ncontinued",
+            type_hint="paragraph",
+            order=0,
+            provenance=Provenance(
+                source=StructureSource.EXPLICIT,
+                extractor="test-adapter",
+            ),
+        ),
+        RawElement(
+            text="Ordinary explanation.",
+            type_hint="paragraph",
+            order=1,
+            provenance=Provenance(
+                source=StructureSource.EXPLICIT,
+                extractor="test-adapter",
+            ),
+        ),
+    )
+
+
 def processing():
     return ProcessingManifest(
         adapter_name="test-adapter",
         adapter_version="1",
-        normalizer_version="1",
+        normalizer_version="1" if False else None,
         processed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
         configuration={"adapter": {"preserve_raw": True}},
     )
 
 
 class SourceUnderstandingPipelineTests(unittest.TestCase):
+    def test_understand_raw_normalizes_before_structural_understanding(self):
+        result = SourceUnderstandingPipeline().understand_raw(
+            document_id="doc1",
+            content_hash=HASH,
+            processing=processing(),
+            raw_elements=make_raw_elements(),
+        )
+        self.assertIsNotNone(result.normalization_result)
+        self.assertEqual(result.document.elements[0].raw_text, make_raw_elements()[0].text)
+        self.assertIn("\ncontinued", result.document.elements[0].normalized_text)
+        self.assertNotIn("\r", result.document.elements[0].normalized_text)
+        self.assertEqual(result.document.processing.normalizer_version, "1")
+        config = result.document.processing.configuration["element_normalization"]
+        self.assertEqual(config["normalizer_version"], "1")
+        self.assertIn("policy", config)
+
+    def test_direct_element_pipeline_has_no_normalization_result(self):
+        result = SourceUnderstandingPipeline().understand(
+            document_id="doc1",
+            content_hash=HASH,
+            processing=processing(),
+            elements=make_elements(),
+        )
+        self.assertIsNone(result.normalization_result)
+
+    def test_understand_raw_rejects_conflicting_normalizer_version(self):
+        stale = processing().model_copy(update={"normalizer_version": "old"})
+        with self.assertRaisesRegex(
+            SourceUnderstandingPipelineError, "normalizer_version conflicts"
+        ):
+            SourceUnderstandingPipeline().understand_raw(
+                document_id="doc1",
+                content_hash=HASH,
+                processing=stale,
+                raw_elements=make_raw_elements(),
+            )
+
+    def test_raw_normalization_errors_are_localized(self):
+        with self.assertRaisesRegex(
+            SourceUnderstandingPipelineError, "element normalization failed"
+        ) as ctx:
+            SourceUnderstandingPipeline().understand_raw(
+                document_id="doc1",
+                content_hash=HASH,
+                processing=processing(),
+                raw_elements=(),
+            )
+        self.assertIsNotNone(ctx.exception.__cause__)
+
     def test_structural_pipeline_is_terminal_without_semantics(self):
         result = SourceUnderstandingPipeline().understand(
             document_id="doc1",
