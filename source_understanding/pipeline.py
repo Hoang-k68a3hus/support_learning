@@ -6,6 +6,10 @@ from enum import StrEnum
 from pydantic import Field, model_validator
 
 from source_understanding.assembly import CanonicalDocumentAssembler
+from source_understanding.completion import (
+    UnderstandingCompletionBuilder,
+    UnderstandingCompletionReport,
+)
 from source_understanding.atomic.normalizer import (
     ElementNormalizationResult,
     ElementNormalizer,
@@ -98,6 +102,7 @@ class SourceUnderstandingResult(SchemaModel):
     semantic_status: SemanticStageStatus
     semantic_result: SemanticAnnotationResult | None = None
     semantic_error: str | None = Field(default=None, max_length=8192)
+    completion_report: UnderstandingCompletionReport
 
     @model_validator(mode="after")
     def validate_result(self) -> "SourceUnderstandingResult":
@@ -159,6 +164,7 @@ class SourceUnderstandingPipeline:
         region_router: RegionRouter | None = None,
         assembler: CanonicalDocumentAssembler | None = None,
         semantic_annotator: SemanticAnnotator | None = None,
+        completion_builder: UnderstandingCompletionBuilder | None = None,
         policy: SourceUnderstandingPipelinePolicy | None = None,
     ) -> None:
         self._normalizer = normalizer if normalizer is not None else ElementNormalizer()
@@ -191,6 +197,11 @@ class SourceUnderstandingPipeline:
         self._region_router = region_router if region_router is not None else RegionRouter()
         self._assembler = assembler if assembler is not None else CanonicalDocumentAssembler()
         self._semantic_annotator = semantic_annotator
+        self._completion_builder = (
+            completion_builder
+            if completion_builder is not None
+            else UnderstandingCompletionBuilder()
+        )
         self._policy = policy if policy is not None else SourceUnderstandingPipelinePolicy()
 
     def understand_raw(
@@ -378,6 +389,7 @@ class SourceUnderstandingPipeline:
             region_source=region_source,
             region_count=len(region_snapshot),
             region_router=self._region_router,
+            completion_builder=self._completion_builder,
             assembler=self._assembler,
         )
         structural_document = run_stage(
@@ -422,6 +434,21 @@ class SourceUnderstandingPipeline:
                 semantic_status = SemanticStageStatus.COMPLETED
                 final_document = semantic_result.document
 
+        completion_report = run_stage(
+            "understanding completion reporting",
+            lambda: self._completion_builder.build(
+                document=final_document,
+                boundary_set=boundary_set,
+                grouping_result=grouping_result,
+                hierarchy_result=hierarchy_result,
+                integrity_report=integrity_report,
+                quality_report=quality_report,
+                region_result=region_result,
+                semantic_status=semantic_status.value,
+                semantic_result=semantic_result,
+            ),
+        )
+
         return SourceUnderstandingResult(
             document_id=document_id,
             content_profile=content_profile,
@@ -440,4 +467,5 @@ class SourceUnderstandingPipeline:
             semantic_status=semantic_status,
             semantic_result=semantic_result,
             semantic_error=semantic_error,
+            completion_report=completion_report,
         )
