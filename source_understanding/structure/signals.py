@@ -5,7 +5,7 @@ import re
 from collections.abc import Sequence
 from enum import StrEnum
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from source_understanding.schemas.context import (
     Confidence,
@@ -20,6 +20,7 @@ from source_understanding.schemas.element import Element, ElementType
 
 
 STRUCTURE_SIGNAL_VERSION = "1"
+STRUCTURE_SIGNAL_POLICY_VERSION = "1"
 
 _DEFAULT_SECTION_MARKERS = (
     "chapter",
@@ -80,6 +81,37 @@ class StructureSignalKind(StrEnum):
     ELEMENT_TYPE_TRANSITION = "ELEMENT_TYPE_TRANSITION"
 
 
+class StructureSignalPolicy(SchemaModel):
+    """Configuration that materially affects deterministic signal extraction."""
+
+    version: str = STRUCTURE_SIGNAL_POLICY_VERSION
+    section_markers: tuple[str, ...] = _DEFAULT_SECTION_MARKERS
+
+    @field_validator("section_markers", mode="before")
+    @classmethod
+    def normalize_markers(cls, value: object) -> object:
+        if isinstance(value, str) or value is None:
+            raise ValueError("section_markers must be a sequence of marker strings")
+        try:
+            markers = tuple(value)
+        except TypeError as exc:
+            raise ValueError("section_markers must be an iterable of strings") from exc
+        if any(not isinstance(marker, str) for marker in markers):
+            raise ValueError("section_markers must contain only strings")
+        return tuple(marker.strip() for marker in markers)
+
+    @model_validator(mode="after")
+    def validate_markers(self) -> "StructureSignalPolicy":
+        if not self.section_markers or any(not marker for marker in self.section_markers):
+            raise ValueError("section_markers must contain non-blank markers")
+        if any(len(marker) > 128 for marker in self.section_markers):
+            raise ValueError("section markers must be <= 128 characters")
+        folded = [marker.casefold() for marker in self.section_markers]
+        if len(folded) != len(set(folded)):
+            raise ValueError("section_markers must be unique case-insensitively")
+        return self
+
+
 class StructureSignal(SchemaModel):
     """One auditable piece of structural evidence attached to one/two elements."""
 
@@ -93,7 +125,7 @@ class StructureSignal(SchemaModel):
     metadata: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_element_refs(self) -> StructureSignal:
+    def validate_element_refs(self) -> "StructureSignal":
         if len(self.element_ids) != len(set(self.element_ids)):
             raise ValueError("structure signal element_ids must be unique")
         return self
@@ -102,6 +134,7 @@ class StructureSignal(SchemaModel):
 class StructureSignalSet(SchemaModel):
     version: str = STRUCTURE_SIGNAL_VERSION
     element_count: int = Field(ge=1)
+    policy: StructureSignalPolicy = Field(default_factory=StructureSignalPolicy)
     signals: tuple[StructureSignal, ...] = Field(default_factory=tuple)
 
 
@@ -110,13 +143,28 @@ class StructureSignalExtractor:
 
     version: str = STRUCTURE_SIGNAL_VERSION
 
-    def __init__(self, *, section_markers: Sequence[str] | None = None) -> None:
-        markers = tuple(section_markers) if section_markers is not None else _DEFAULT_SECTION_MARKERS
-        normalized = tuple(marker.strip() for marker in markers if marker.strip())
-        if not normalized:
-            raise ValueError("section_markers must contain at least one non-blank marker")
-        self._section_markers = normalized
-        escaped = "|".join(re.escape(marker) for marker in sorted(normalized, key=len, reverse=True))
+    def __init__(
+        self,
+        *,
+        section_markers: Sequence[str] | None = None,
+        policy: StructureSignalPolicy | None = None,
+    ) -> None:
+        if section_markers is not None and policy is not None:
+            raise ValueError("provide either section_markers or policy, not both")
+        if policy is None:
+            policy = StructureSignalPolicy(
+                section_markers=(
+                    _DEFAULT_SECTION_MARKERS
+                    if section_markers is None
+                    else tuple(section_markers)
+                )
+            )
+        self._policy = policy
+        self._section_markers = policy.section_markers
+        escaped = "|".join(
+            re.escape(marker)
+            for marker in sorted(self._section_markers, key=len, reverse=True)
+        )
         self._section_marker_re = re.compile(
             rf"^\s*(?P<marker>{escaped})(?=\s|[:.\-]|$)",
             re.IGNORECASE,
@@ -146,6 +194,7 @@ class StructureSignalExtractor:
 
         return StructureSignalSet(
             element_count=len(snapshot),
+            policy=self._policy,
             signals=tuple(signals),
         )
 
