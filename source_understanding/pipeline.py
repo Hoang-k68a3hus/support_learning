@@ -6,19 +6,21 @@ from enum import StrEnum
 from pydantic import Field, model_validator
 
 from source_understanding.assembly import CanonicalDocumentAssembler
-from source_understanding.completion import (
-    UnderstandingCompletionBuilder,
-    UnderstandingCompletionReport,
-)
-from source_understanding.atomic.normalizer import (
-    ElementNormalizationResult,
-    ElementNormalizer,
+from source_understanding.atomic.normalizer import ElementNormalizationResult, ElementNormalizer
+from source_understanding.completion import UnderstandingCompletionBuilder, UnderstandingCompletionReport
+from source_understanding.pipeline_support import (
+    SourceUnderstandingPipelineError,
+    diagnostic_message,
+    processing_with_normalizer_manifest,
+    processing_with_pipeline_manifest,
+    run_stage,
+    validate_processing_manifest,
+    validate_semantic_boundary,
+    validate_source_identity,
+    validate_stage_counts,
 )
 from source_understanding.profiling.content_profiler import ContentProfile, ContentProfiler
-from source_understanding.profiling.regions import (
-    ContentRegionSegmentationResult,
-    ContentRegionSegmenter,
-)
+from source_understanding.profiling.regions import ContentRegionSegmentationResult, ContentRegionSegmenter
 from source_understanding.relations.builder import RelationBuildResult, StructuralRelationBuilder
 from source_understanding.schemas.context import Identifier, SchemaModel
 from source_understanding.schemas.document import (
@@ -31,37 +33,23 @@ from source_understanding.schemas.document import (
 )
 from source_understanding.schemas.element import Element, RawElement
 from source_understanding.schemas.relation import Relation
-from source_understanding.semantics.annotator import (
-    SemanticAnnotationResult,
-    SemanticAnnotator,
-)
-from source_understanding.pipeline_support import (
-    SourceUnderstandingPipelineError,
-    diagnostic_message,
-    processing_with_normalizer_manifest,
-    processing_with_pipeline_manifest,
-    run_stage,
-    validate_semantic_boundary,
-    validate_source_identity,
-    validate_stage_counts,
-)
+from source_understanding.semantics.annotator import SemanticAnnotationResult, SemanticAnnotator
 from source_understanding.structure.boundary import BoundaryScorer, BoundarySet
 from source_understanding.structure.grouping import GroupingResult, LogicalGroupBuilder
 from source_understanding.structure.hierarchy import HierarchyBuilder, HierarchyResult
+from source_understanding.structure.integration import ContextIntegrationResult, ContextIntegrator
 from source_understanding.structure.integrity import (
     IntegrityConsolidationReport,
     IntegrityGroupConsolidator,
 )
-from source_understanding.structure.integration import ContextIntegrationResult, ContextIntegrator
-from source_understanding.structure.quality import (
-    StructureQualityEstimator,
-    StructureQualityReport,
-)
+from source_understanding.structure.quality import StructureQualityEstimator, StructureQualityReport
 from source_understanding.structure.region_routing import RegionRouter
 from source_understanding.structure.signals import StructureSignalExtractor, StructureSignalSet
 
 
-SOURCE_UNDERSTANDING_PIPELINE_VERSION = "1"
+SOURCE_UNDERSTANDING_PIPELINE_VERSION = "2"
+
+
 class SemanticFailureMode(StrEnum):
     KEEP_STRUCTURAL = "KEEP_STRUCTURAL"
     RAISE = "RAISE"
@@ -90,12 +78,12 @@ class SourceUnderstandingResult(SchemaModel):
     signal_set: StructureSignalSet
     boundary_set: BoundarySet
     grouping_result: GroupingResult
+    integrity_report: IntegrityConsolidationReport
     hierarchy_result: HierarchyResult
+    region_result: ContentRegionSegmentationResult | None = None
     integration_result: ContextIntegrationResult
     relation_result: RelationBuildResult
     quality_report: StructureQualityReport
-    integrity_report: IntegrityConsolidationReport
-    region_result: ContentRegionSegmentationResult | None = None
     normalization_result: ElementNormalizationResult | None = None
     structural_document: CanonicalDocument
     document: CanonicalDocument
@@ -111,7 +99,6 @@ class SourceUnderstandingResult(SchemaModel):
                 raise ValueError("normalization_result document_id does not match pipeline result")
             if self.normalization_result.elements != self.structural_document.elements:
                 raise ValueError("normalization_result elements do not match structural document")
-
         if self.structural_document.document_id != self.document_id:
             raise ValueError("structural_document document_id does not match pipeline result")
         if self.document.document_id != self.document_id:
@@ -120,7 +107,6 @@ class SourceUnderstandingResult(SchemaModel):
             raise ValueError("semantic stage cannot change canonical content_hash")
         if self.document.source_revision != self.structural_document.source_revision:
             raise ValueError("semantic stage cannot change canonical source_revision")
-
         if self.semantic_status == SemanticStageStatus.COMPLETED:
             if self.semantic_result is None or self.semantic_error is not None:
                 raise ValueError("completed semantic stage requires result and no error")
@@ -134,16 +120,13 @@ class SourceUnderstandingResult(SchemaModel):
                 raise ValueError("unconfigured semantic stage cannot carry result/error")
             if self.document != self.structural_document:
                 raise ValueError("unconfigured semantic stage must keep structural document")
+        if self.completion_report.document_id != self.document_id:
+            raise ValueError("completion_report document_id does not match pipeline result")
         return self
 
 
 class SourceUnderstandingPipeline:
-    """Orchestrate deterministic document understanding from canonical Elements.
-
-    Retrieval, indexing, embeddings, reranking, generation, and citation are
-    deliberately outside this class. Its terminal artifact is a validated
-    CanonicalDocument with optional semantic enrichment.
-    """
+    """Orchestrate format-agnostic structural understanding with optional semantics."""
 
     version = SOURCE_UNDERSTANDING_PIPELINE_VERSION
 
@@ -155,54 +138,34 @@ class SourceUnderstandingPipeline:
         signal_extractor: StructureSignalExtractor | None = None,
         boundary_scorer: BoundaryScorer | None = None,
         group_builder: LogicalGroupBuilder | None = None,
-        hierarchy_builder: HierarchyBuilder | None = None,
         integrity_consolidator: IntegrityGroupConsolidator | None = None,
+        hierarchy_builder: HierarchyBuilder | None = None,
+        region_segmenter: ContentRegionSegmenter | None = None,
+        region_router: RegionRouter | None = None,
         context_integrator: ContextIntegrator | None = None,
         relation_builder: StructuralRelationBuilder | None = None,
         quality_estimator: StructureQualityEstimator | None = None,
-        region_segmenter: ContentRegionSegmenter | None = None,
-        region_router: RegionRouter | None = None,
         assembler: CanonicalDocumentAssembler | None = None,
         semantic_annotator: SemanticAnnotator | None = None,
         completion_builder: UnderstandingCompletionBuilder | None = None,
         policy: SourceUnderstandingPipelinePolicy | None = None,
     ) -> None:
-        self._normalizer = normalizer if normalizer is not None else ElementNormalizer()
-        self._profiler = profiler if profiler is not None else ContentProfiler()
-        self._signal_extractor = (
-            signal_extractor if signal_extractor is not None else StructureSignalExtractor()
-        )
-        self._boundary_scorer = boundary_scorer if boundary_scorer is not None else BoundaryScorer()
-        self._group_builder = group_builder if group_builder is not None else LogicalGroupBuilder()
-        self._hierarchy_builder = (
-            hierarchy_builder if hierarchy_builder is not None else HierarchyBuilder()
-        )
-        self._integrity_consolidator = (
-            integrity_consolidator
-            if integrity_consolidator is not None
-            else IntegrityGroupConsolidator()
-        )
-        self._context_integrator = (
-            context_integrator if context_integrator is not None else ContextIntegrator()
-        )
-        self._relation_builder = (
-            relation_builder if relation_builder is not None else StructuralRelationBuilder()
-        )
-        self._quality_estimator = (
-            quality_estimator if quality_estimator is not None else StructureQualityEstimator()
-        )
-        self._region_segmenter = (
-            region_segmenter if region_segmenter is not None else ContentRegionSegmenter()
-        )
-        self._region_router = region_router if region_router is not None else RegionRouter()
-        self._assembler = assembler if assembler is not None else CanonicalDocumentAssembler()
+        self._normalizer = normalizer or ElementNormalizer()
+        self._profiler = profiler or ContentProfiler()
+        self._signal_extractor = signal_extractor or StructureSignalExtractor()
+        self._boundary_scorer = boundary_scorer or BoundaryScorer()
+        self._group_builder = group_builder or LogicalGroupBuilder()
+        self._integrity_consolidator = integrity_consolidator or IntegrityGroupConsolidator()
+        self._hierarchy_builder = hierarchy_builder or HierarchyBuilder()
+        self._region_segmenter = region_segmenter or ContentRegionSegmenter()
+        self._region_router = region_router or RegionRouter()
+        self._context_integrator = context_integrator or ContextIntegrator()
+        self._relation_builder = relation_builder or StructuralRelationBuilder()
+        self._quality_estimator = quality_estimator or StructureQualityEstimator()
+        self._assembler = assembler or CanonicalDocumentAssembler()
         self._semantic_annotator = semantic_annotator
-        self._completion_builder = (
-            completion_builder
-            if completion_builder is not None
-            else UnderstandingCompletionBuilder()
-        )
-        self._policy = policy if policy is not None else SourceUnderstandingPipelinePolicy()
+        self._completion_builder = completion_builder or UnderstandingCompletionBuilder()
+        self._policy = policy or SourceUnderstandingPipelinePolicy()
 
     def understand_raw(
         self,
@@ -219,18 +182,18 @@ class SourceUnderstandingPipeline:
         additional_relations: Sequence[Relation] = (),
     ) -> SourceUnderstandingResult:
         validate_source_identity(document_id, content_hash)
+        validate_processing_manifest(processing)
         normalization_result = run_stage(
             "element normalization",
-            lambda: self._normalizer.normalize(
-                tuple(raw_elements),
-                document_id=document_id,
-            ),
+            lambda: self._normalizer.normalize(tuple(raw_elements), document_id=document_id),
         )
-        processing_with_normalizer = processing_with_normalizer_manifest(processing, normalization_result, self._normalizer)
+        processing = processing_with_normalizer_manifest(
+            processing, normalization_result, self._normalizer
+        )
         return self._understand_elements(
             document_id=document_id,
             content_hash=content_hash,
-            processing=processing_with_normalizer,
+            processing=processing,
             elements=normalization_result.elements,
             normalization_result=normalization_result,
             source_revision=source_revision,
@@ -255,6 +218,8 @@ class SourceUnderstandingPipeline:
         assets: Sequence[Asset] = (),
         additional_relations: Sequence[Relation] = (),
     ) -> SourceUnderstandingResult:
+        validate_source_identity(document_id, content_hash)
+        validate_processing_manifest(processing)
         return self._understand_elements(
             document_id=document_id,
             content_hash=content_hash,
@@ -287,21 +252,11 @@ class SourceUnderstandingPipeline:
         element_snapshot = tuple(elements)
         region_snapshot = tuple(regions)
         asset_snapshot = tuple(assets)
-        extra_relation_snapshot = tuple(additional_relations)
-        validate_source_identity(document_id, content_hash)
+        extra_relations = tuple(additional_relations)
 
-        content_profile = run_stage(
-            "content profiling",
-            lambda: self._profiler.analyze(element_snapshot),
-        )
-        signal_set = run_stage(
-            "structure signal extraction",
-            lambda: self._signal_extractor.extract(element_snapshot),
-        )
-        boundary_set = run_stage(
-            "boundary scoring",
-            lambda: self._boundary_scorer.score(element_snapshot, signal_set),
-        )
+        content_profile = run_stage("content profiling", lambda: self._profiler.analyze(element_snapshot))
+        signal_set = run_stage("structure signal extraction", lambda: self._signal_extractor.extract(element_snapshot))
+        boundary_set = run_stage("boundary scoring", lambda: self._boundary_scorer.score(element_snapshot, signal_set))
         grouping_result = run_stage(
             "logical grouping",
             lambda: self._group_builder.build(element_snapshot, signal_set, boundary_set),
@@ -309,9 +264,7 @@ class SourceUnderstandingPipeline:
         grouping_result, integrity_report = run_stage(
             "integrity consolidation",
             lambda: self._integrity_consolidator.consolidate(
-                element_snapshot,
-                boundary_set,
-                grouping_result,
+                element_snapshot, boundary_set, grouping_result
             ),
         )
         hierarchy_result = run_stage(
@@ -320,8 +273,14 @@ class SourceUnderstandingPipeline:
         )
 
         region_result: ContentRegionSegmentationResult | None = None
-        region_source = "CALLER" if region_snapshot else "DISABLED"
-        if not region_snapshot and self._policy.auto_segment_regions:
+        region_source = "NONE"
+        if region_snapshot:
+            region_source = "CALLER"
+            grouping_result = run_stage(
+                "caller region routing",
+                lambda: self._region_router.assign_grouping(grouping_result, region_snapshot),
+            )
+        elif self._policy.auto_segment_regions:
             region_result = run_stage(
                 "content region segmentation",
                 lambda: self._region_segmenter.segment(element_snapshot, hierarchy_result),
@@ -329,9 +288,7 @@ class SourceUnderstandingPipeline:
             grouping_result, hierarchy_result = run_stage(
                 "content region routing",
                 lambda: self._region_router.apply(
-                    grouping_result,
-                    hierarchy_result,
-                    region_result,
+                    grouping_result, hierarchy_result, region_result
                 ),
             )
             region_snapshot = region_result.regions
@@ -352,13 +309,9 @@ class SourceUnderstandingPipeline:
         quality_report = run_stage(
             "structure quality estimation",
             lambda: self._quality_estimator.estimate(
-                element_snapshot,
-                boundary_set,
-                grouping_result,
-                hierarchy_result,
+                element_snapshot, boundary_set, grouping_result, hierarchy_result
             ),
         )
-
         validate_stage_counts(
             len(element_snapshot),
             content_profile,
@@ -372,7 +325,7 @@ class SourceUnderstandingPipeline:
             integrity_report,
             region_result,
         )
-        processing_with_manifest = processing_with_pipeline_manifest(
+        processing = processing_with_pipeline_manifest(
             processing,
             pipeline_version=self.version,
             pipeline_policy=self._policy,
@@ -398,7 +351,7 @@ class SourceUnderstandingPipeline:
                 document_id=document_id,
                 content_hash=content_hash,
                 source_revision=source_revision,
-                processing=processing_with_manifest,
+                processing=processing,
                 metadata=metadata,
                 elements=element_snapshot,
                 grouping_result=grouping_result,
@@ -409,7 +362,7 @@ class SourceUnderstandingPipeline:
                 base_quality=base_quality,
                 regions=region_snapshot,
                 assets=asset_snapshot,
-                additional_relations=extra_relation_snapshot,
+                additional_relations=extra_relations,
             ),
         )
 
@@ -417,7 +370,6 @@ class SourceUnderstandingPipeline:
         semantic_status = SemanticStageStatus.NOT_CONFIGURED
         semantic_result: SemanticAnnotationResult | None = None
         semantic_error: str | None = None
-
         if self._semantic_annotator is not None:
             try:
                 semantic_result = self._semantic_annotator.annotate(structural_document)
@@ -448,19 +400,18 @@ class SourceUnderstandingPipeline:
                 semantic_result=semantic_result,
             ),
         )
-
         return SourceUnderstandingResult(
             document_id=document_id,
             content_profile=content_profile,
             signal_set=signal_set,
             boundary_set=boundary_set,
             grouping_result=grouping_result,
+            integrity_report=integrity_report,
             hierarchy_result=hierarchy_result,
+            region_result=region_result,
             integration_result=integration_result,
             relation_result=relation_result,
             quality_report=quality_report,
-            integrity_report=integrity_report,
-            region_result=region_result,
             normalization_result=normalization_result,
             structural_document=structural_document,
             document=final_document,
@@ -469,3 +420,14 @@ class SourceUnderstandingPipeline:
             semantic_error=semantic_error,
             completion_report=completion_report,
         )
+
+
+__all__ = [
+    "SOURCE_UNDERSTANDING_PIPELINE_VERSION",
+    "SemanticFailureMode",
+    "SemanticStageStatus",
+    "SourceUnderstandingPipeline",
+    "SourceUnderstandingPipelineError",
+    "SourceUnderstandingPipelinePolicy",
+    "SourceUnderstandingResult",
+]
