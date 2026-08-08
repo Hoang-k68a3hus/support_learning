@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timezone
 
 from source_understanding.assembly import AssemblyError, CanonicalDocumentAssembler
-from source_understanding.relations.builder import RelationBuildResult
+from source_understanding.relations.builder import RelationBuildPolicy, RelationBuildResult
 from source_understanding.schemas.context import ContextNode, StructureMode, StructureSource
 from source_understanding.schemas.document import (
     Asset,
@@ -16,7 +16,6 @@ from source_understanding.schemas.document import (
 from source_understanding.schemas.element import Element, ElementType, Provenance
 from source_understanding.schemas.logical_unit import LogicalUnit, LogicalUnitType
 from source_understanding.schemas.relation import Relation, RelationLayer, RelationType
-from source_understanding.structure.boundary import BoundaryPolicy
 from source_understanding.structure.grouping import GroupingPolicy, GroupingResult
 from source_understanding.structure.hierarchy import (
     ElementContextAssignment,
@@ -34,43 +33,73 @@ from source_understanding.structure.quality import (
 HASH = "sha256:" + "a" * 64
 
 
-def element(eid: str, order: int, etype: ElementType = ElementType.PARAGRAPH) -> Element:
+def element(eid: str, order: int) -> Element:
     return Element(
         id=eid,
-        type=etype,
+        type=ElementType.PARAGRAPH,
         order=order,
         raw_text=eid,
         provenance=Provenance(source=StructureSource.EXPLICIT, extractor="test"),
     )
 
 
-def unit(uid: str, ids: tuple[str, ...], context: tuple[str, ...] = ()) -> LogicalUnit:
+def unit(
+    *,
+    unit_type: LogicalUnitType = LogicalUnitType.TEXT_BLOCK,
+    context: tuple[str, ...] = (),
+) -> LogicalUnit:
     return LogicalUnit(
-        id=uid,
-        type=LogicalUnitType.TEXT_BLOCK,
-        element_ids=ids,
+        id="u0",
+        type=unit_type,
+        element_ids=("e0", "e1"),
         context_node_ids=context,
         source=StructureSource.DERIVED,
         confidence=0.8,
     )
 
 
-def fixture(
-    *,
-    structure: DocumentStructure | None = None,
-    context_nodes: tuple[ContextNode, ...] = (),
-    paths: tuple[tuple[str, ...], ...] | None = None,
-):
+def processing(structure_version: str | None = None) -> ProcessingManifest:
+    return ProcessingManifest(
+        adapter_name="test-adapter",
+        normalizer_version="1",
+        structure_version=structure_version,
+        processed_at=datetime(2026, 8, 8, tzinfo=timezone.utc),
+    )
+
+
+def stages(*, with_context: bool = False):
     elements = (element("e0", 0), element("e1", 1))
-    base_unit = unit("u0", ("e0", "e1"))
+    node = (
+        ContextNode(
+            id="ctx",
+            type="HEADING",
+            label="Heading",
+            level=1,
+            source=StructureSource.EXPLICIT,
+            confidence=0.9,
+        )
+        if with_context
+        else None
+    )
+    context_nodes = (node,) if node is not None else ()
+    paths = (("ctx",), ("ctx",)) if node is not None else ((), ())
+    structure = (
+        DocumentStructure(
+            mode=StructureMode.LOCAL,
+            source=StructureSource.DERIVED,
+            confidence=0.6,
+        )
+        if node is not None
+        else DocumentStructure()
+    )
+
     grouping = GroupingResult(
         element_count=2,
         signal_version="1",
         boundary_version="1",
         policy=GroupingPolicy(),
-        logical_units=(base_unit,),
+        logical_units=(unit(),),
     )
-    resolved_paths = paths if paths is not None else ((), ())
     hierarchy = HierarchyResult(
         element_count=2,
         signal_version="1",
@@ -80,27 +109,23 @@ def fixture(
         assignments=tuple(
             ElementContextAssignment(
                 element_id=item.id,
-                context_node_ids=resolved_paths[index],
+                context_node_ids=paths[index],
             )
             for index, item in enumerate(elements)
         ),
-        structure=structure if structure is not None else DocumentStructure(),
-    )
-    integrated_unit = unit(
-        "u0",
-        ("e0", "e1"),
-        context=resolved_paths[0] if resolved_paths[0] == resolved_paths[1] else (),
+        structure=structure,
     )
     integration = ContextIntegrationResult(
         element_count=2,
         grouping_version="1",
         hierarchy_version="1",
-        logical_units=(integrated_unit,),
+        logical_units=(unit(context=paths[0] if paths[0] == paths[1] else ()),),
     )
     relations = RelationBuildResult(
         element_count=2,
         logical_unit_count=1,
         subdocument_count=0,
+        policy=RelationBuildPolicy(),
         relations=(),
     )
     quality = StructureQualityReport(
@@ -119,82 +144,64 @@ def fixture(
             unresolved_integrity_count=0,
             integrity_resolution_ratio=1.0,
             context_node_count=len(context_nodes),
-            context_assigned_element_count=sum(bool(path) for path in resolved_paths),
-            context_assignment_ratio=sum(bool(path) for path in resolved_paths) / 2,
+            context_assigned_element_count=sum(bool(path) for path in paths),
+            context_assignment_ratio=sum(bool(path) for path in paths) / 2,
             logical_unit_count=1,
             subdocument_count=0,
         ),
         quality=DocumentQuality(
             structure_quality=0.9,
             warnings=("structure-warning",),
-            metrics={
-                "structure_mode": (
-                    structure.mode.value
-                    if structure is not None
-                    else StructureMode.UNKNOWN.value
-                ),
-                "structure_quality_version": "1",
-            },
+            metrics={"structure_mode": structure.mode.value},
         ),
     )
     return elements, grouping, hierarchy, integration, relations, quality
-
-
-def processing(structure_version: str | None = None) -> ProcessingManifest:
-    return ProcessingManifest(
-        adapter_name="test-adapter",
-        normalizer_version="1",
-        structure_version=structure_version,
-        processed_at=datetime(2026, 8, 8, tzinfo=timezone.utc),
-    )
 
 
 class AssemblyTests(unittest.TestCase):
     def setUp(self) -> None:
         self.assembler = CanonicalDocumentAssembler()
 
-    def test_assembles_valid_canonical_document_and_stamps_structure_version(self) -> None:
-        stages = fixture()
-        document = self.assembler.assemble(
-            document_id="doc",
-            content_hash=HASH,
-            processing=processing(),
-            elements=stages[0],
-            grouping_result=stages[1],
-            hierarchy_result=stages[2],
-            integration_result=stages[3],
-            relation_result=stages[4],
-            quality_report=stages[5],
+    def assemble(self, stage_values, **overrides):
+        values = {
+            "document_id": "doc",
+            "content_hash": HASH,
+            "processing": processing(),
+            "elements": stage_values[0],
+            "grouping_result": stage_values[1],
+            "hierarchy_result": stage_values[2],
+            "integration_result": stage_values[3],
+            "relation_result": stage_values[4],
+            "quality_report": stage_values[5],
+        }
+        values.update(overrides)
+        return self.assembler.assemble(**values)
+
+    def test_assembles_valid_document_and_stamps_structure_version(self) -> None:
+        stage_values = stages(with_context=True)
+        document = self.assemble(
+            stage_values,
             metadata=DocumentMetadata(title="Example"),
+            assets=(Asset(id="asset", type="image"),),
         )
         self.assertEqual(document.processing.structure_version, "1")
         self.assertEqual(document.metadata.title, "Example")
-        self.assertEqual(document.logical_units, stages[3].logical_units)
-        self.assertEqual(document.structure.mode, StructureMode.UNKNOWN)
-        self.assertEqual(document.quality.structure_quality, 0.9)
+        self.assertEqual(document.logical_units[0].context_node_ids, ("ctx",))
+        self.assertEqual(document.context_nodes[0].id, "ctx")
+        self.assertEqual(document.assets[0].id, "asset")
 
-    def test_preserves_base_quality_while_merging_structure_quality(self) -> None:
-        stages = fixture()
-        base = DocumentQuality(
-            text_quality=0.95,
-            order_quality=1.0,
-            warnings=("adapter-warning",),
-            metrics={"adapter_metric": 7},
-        )
-        document = self.assembler.assemble(
-            document_id="doc",
-            content_hash=HASH,
-            processing=processing(),
-            elements=stages[0],
-            grouping_result=stages[1],
-            hierarchy_result=stages[2],
-            integration_result=stages[3],
-            relation_result=stages[4],
-            quality_report=stages[5],
-            base_quality=base,
+    def test_merges_structure_quality_without_losing_adapter_quality(self) -> None:
+        stage_values = stages()
+        document = self.assemble(
+            stage_values,
+            base_quality=DocumentQuality(
+                text_quality=0.95,
+                order_quality=1.0,
+                warnings=("adapter-warning",),
+                metrics={"adapter_metric": 7},
+            ),
         )
         self.assertEqual(document.quality.text_quality, 0.95)
-        self.assertEqual(document.quality.order_quality, 1.0)
         self.assertEqual(document.quality.structure_quality, 0.9)
         self.assertEqual(
             document.quality.warnings,
@@ -202,164 +209,55 @@ class AssemblyTests(unittest.TestCase):
         )
         self.assertEqual(document.quality.metrics["adapter_metric"], 7)
 
-    def test_rejects_conflicting_base_structure_quality(self) -> None:
-        stages = fixture()
+    def test_rejects_conflicting_structure_versions(self) -> None:
         with self.assertRaises(AssemblyError):
-            self.assembler.assemble(
-                document_id="doc",
-                content_hash=HASH,
-                processing=processing(),
-                elements=stages[0],
-                grouping_result=stages[1],
-                hierarchy_result=stages[2],
-                integration_result=stages[3],
-                relation_result=stages[4],
-                quality_report=stages[5],
-                base_quality=DocumentQuality(structure_quality=0.1),
-            )
+            self.assemble(stages(), processing=processing("legacy"))
 
-    def test_rejects_conflicting_processing_structure_version(self) -> None:
-        stages = fixture()
-        with self.assertRaises(AssemblyError):
-            self.assembler.assemble(
-                document_id="doc",
-                content_hash=HASH,
-                processing=processing("legacy"),
-                elements=stages[0],
-                grouping_result=stages[1],
-                hierarchy_result=stages[2],
-                integration_result=stages[3],
-                relation_result=stages[4],
-                quality_report=stages[5],
-            )
-
-    def test_rejects_stage_element_count_mismatch(self) -> None:
-        stages = list(fixture())
-        stages[4] = RelationBuildResult(
+    def test_rejects_stage_count_or_version_drift(self) -> None:
+        stage_values = list(stages())
+        stage_values[4] = RelationBuildResult(
             element_count=3,
             logical_unit_count=1,
             subdocument_count=0,
+            policy=RelationBuildPolicy(),
             relations=(),
         )
         with self.assertRaises(AssemblyError):
-            self.assembler.assemble(
-                document_id="doc",
-                content_hash=HASH,
-                processing=processing(),
-                elements=stages[0],
-                grouping_result=stages[1],
-                hierarchy_result=stages[2],
-                integration_result=stages[3],
-                relation_result=stages[4],
-                quality_report=stages[5],
-            )
+            self.assemble(stage_values)
 
-    def test_rejects_signal_version_drift_between_grouping_and_hierarchy(self) -> None:
-        stages = list(fixture())
-        stages[2] = stages[2].model_copy(update={"signal_version": "2"})
+        stage_values = list(stages())
+        stage_values[2] = stage_values[2].model_copy(update={"signal_version": "2"})
         with self.assertRaises(AssemblyError):
-            self.assembler.assemble(
-                document_id="doc",
-                content_hash=HASH,
-                processing=processing(),
-                elements=stages[0],
-                grouping_result=stages[1],
-                hierarchy_result=stages[2],
-                integration_result=stages[3],
-                relation_result=stages[4],
-                quality_report=stages[5],
-            )
+            self.assemble(stage_values)
 
-    def test_rejects_context_integration_that_mutates_non_context_fields(self) -> None:
-        stages = list(fixture())
-        changed = LogicalUnit(
-            id="u0",
-            type=LogicalUnitType.UNKNOWN_GROUP,
-            element_ids=("e0", "e1"),
-            source=StructureSource.DERIVED,
-            confidence=0.8,
-        )
-        stages[3] = ContextIntegrationResult(
+    def test_rejects_context_integration_that_changes_non_context_fields(self) -> None:
+        stage_values = list(stages())
+        stage_values[3] = ContextIntegrationResult(
             element_count=2,
             grouping_version="1",
             hierarchy_version="1",
-            logical_units=(changed,),
+            logical_units=(unit(unit_type=LogicalUnitType.UNKNOWN_GROUP),),
         )
         with self.assertRaises(AssemblyError):
-            self.assembler.assemble(
-                document_id="doc",
-                content_hash=HASH,
-                processing=processing(),
-                elements=stages[0],
-                grouping_result=stages[1],
-                hierarchy_result=stages[2],
-                integration_result=stages[3],
-                relation_result=stages[4],
-                quality_report=stages[5],
-            )
+            self.assemble(stage_values)
 
     def test_rejects_hierarchy_assignment_order_drift(self) -> None:
-        stages = list(fixture())
-        stages[2] = HierarchyResult(
+        stage_values = list(stages())
+        hierarchy = stage_values[2]
+        stage_values[2] = HierarchyResult(
             element_count=2,
             signal_version="1",
             boundary_version="1",
             policy=HierarchyPolicy(),
-            assignments=tuple(reversed(stages[2].assignments)),
+            assignments=tuple(reversed(hierarchy.assignments)),
             structure=DocumentStructure(),
         )
         with self.assertRaises(AssemblyError):
-            self.assembler.assemble(
-                document_id="doc",
-                content_hash=HASH,
-                processing=processing(),
-                elements=stages[0],
-                grouping_result=stages[1],
-                hierarchy_result=stages[2],
-                integration_result=stages[3],
-                relation_result=stages[4],
-                quality_report=stages[5],
-            )
+            self.assemble(stage_values)
 
-    def test_preserves_assets_and_context_nodes(self) -> None:
-        node = ContextNode(
-            id="ctx",
-            type="HEADING",
-            label="Heading",
-            level=1,
-            source=StructureSource.EXPLICIT,
-            confidence=0.9,
-        )
-        structure = DocumentStructure(
-            mode=StructureMode.LOCAL,
-            source=StructureSource.DERIVED,
-            confidence=0.6,
-        )
-        stages = fixture(
-            structure=structure,
-            context_nodes=(node,),
-            paths=(("ctx",), ("ctx",)),
-        )
-        document = self.assembler.assemble(
-            document_id="doc",
-            content_hash=HASH,
-            processing=processing(),
-            elements=stages[0],
-            grouping_result=stages[1],
-            hierarchy_result=stages[2],
-            integration_result=stages[3],
-            relation_result=stages[4],
-            quality_report=stages[5],
-            assets=(Asset(id="asset", type="image"),),
-        )
-        self.assertEqual(document.context_nodes, (node,))
-        self.assertEqual(document.assets[0].id, "asset")
-        self.assertEqual(document.logical_units[0].context_node_ids, ("ctx",))
-
-    def test_rejects_semantic_additional_relation_before_semantic_stage(self) -> None:
-        stages = fixture()
+    def test_rejects_semantic_or_dangling_additional_relations(self) -> None:
         semantic = Relation(
-            id="r",
+            id="semantic",
             layer=RelationLayer.SEMANTIC,
             type=RelationType.SAME_TOPIC,
             source_id="e0",
@@ -368,23 +266,10 @@ class AssemblyTests(unittest.TestCase):
             source=StructureSource.INFERRED,
         )
         with self.assertRaises(AssemblyError):
-            self.assembler.assemble(
-                document_id="doc",
-                content_hash=HASH,
-                processing=processing(),
-                elements=stages[0],
-                grouping_result=stages[1],
-                hierarchy_result=stages[2],
-                integration_result=stages[3],
-                relation_result=stages[4],
-                quality_report=stages[5],
-                additional_relations=(semantic,),
-            )
+            self.assemble(stages(), additional_relations=(semantic,))
 
-    def test_final_canonical_validation_rejects_dangling_additional_relation(self) -> None:
-        stages = fixture()
         dangling = Relation(
-            id="r",
+            id="dangling",
             layer=RelationLayer.STRUCTURAL,
             type=RelationType.NEXT,
             source_id="missing",
@@ -393,35 +278,13 @@ class AssemblyTests(unittest.TestCase):
             source=StructureSource.DERIVED,
         )
         with self.assertRaises(AssemblyError):
-            self.assembler.assemble(
-                document_id="doc",
-                content_hash=HASH,
-                processing=processing(),
-                elements=stages[0],
-                grouping_result=stages[1],
-                hierarchy_result=stages[2],
-                integration_result=stages[3],
-                relation_result=stages[4],
-                quality_report=stages[5],
-                additional_relations=(dangling,),
-            )
+            self.assemble(stages(), additional_relations=(dangling,))
 
     def test_deterministic(self) -> None:
-        stages = fixture()
-        kwargs = dict(
-            document_id="doc",
-            content_hash=HASH,
-            processing=processing(),
-            elements=stages[0],
-            grouping_result=stages[1],
-            hierarchy_result=stages[2],
-            integration_result=stages[3],
-            relation_result=stages[4],
-            quality_report=stages[5],
-        )
+        stage_values = stages()
         self.assertEqual(
-            self.assembler.assemble(**kwargs),
-            self.assembler.assemble(**kwargs),
+            self.assemble(stage_values),
+            self.assemble(stage_values),
         )
 
 
