@@ -12,6 +12,7 @@ from source_understanding.structure.boundary import BoundarySet
 from source_understanding.structure.grouping import GroupingResult
 from source_understanding.structure.hierarchy import HierarchyResult
 from source_understanding.structure.integration import ContextIntegrationResult
+from source_understanding.structure.integrity import IntegrityConsolidationReport
 from source_understanding.structure.quality import StructureQualityReport
 from source_understanding.structure.signals import StructureSignalSet
 
@@ -64,6 +65,7 @@ def processing_with_pipeline_manifest(
     integration_result: ContextIntegrationResult,
     relation_result: RelationBuildResult,
     quality_report: StructureQualityReport,
+    integrity_report: IntegrityConsolidationReport,
     region_result: ContentRegionSegmentationResult | None,
     region_source: str,
     region_count: int,
@@ -96,6 +98,13 @@ def processing_with_pipeline_manifest(
         "boundary_policy": boundary_set.policy.model_dump(mode="json"),
         "grouping_version": grouping_result.version,
         "grouping_policy": grouping_result.policy.model_dump(mode="json"),
+        "integrity_consolidation": {
+            "version": integrity_report.version,
+            "policy": integrity_report.policy.model_dump(mode="json"),
+            "consolidated_unit_count": len(integrity_report.consolidated_unit_ids),
+            "family_counts": dict(integrity_report.family_counts),
+            "replaced_unit_count": len(integrity_report.replaced_unit_ids),
+        },
         "hierarchy_version": hierarchy_result.version,
         "hierarchy_policy": hierarchy_result.policy.model_dump(mode="json"),
         "context_integration_version": integration_result.version,
@@ -120,6 +129,7 @@ def validate_stage_counts(
     integration_result: ContextIntegrationResult,
     relation_result: RelationBuildResult,
     quality_report: StructureQualityReport,
+    integrity_report: IntegrityConsolidationReport,
     region_result: ContentRegionSegmentationResult | None,
 ) -> None:
     counts = {
@@ -131,6 +141,7 @@ def validate_stage_counts(
         "integration": integration_result.element_count,
         "relations": relation_result.element_count,
         "quality": quality_report.metrics.element_count,
+        "integrity": integrity_report.element_count,
     }
     if region_result is not None:
         counts["regions"] = region_result.element_count
