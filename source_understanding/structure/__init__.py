@@ -48,11 +48,13 @@ from .quality import (
     StructureQualityReport,
 )
 from .signals import (
+    STRUCTURE_SIGNAL_POLICY_VERSION,
     STRUCTURE_SIGNAL_VERSION,
     StructureSignal,
     StructureSignalError,
     StructureSignalExtractor,
     StructureSignalKind,
+    StructureSignalPolicy,
     StructureSignalSet,
 )
 from .subdocument import SubDocumentDetector
@@ -94,6 +96,7 @@ __all__ = [
     "QAPairCandidate",
     "QAPairRule",
     "STRUCTURE_QUALITY_VERSION",
+    "STRUCTURE_SIGNAL_POLICY_VERSION",
     "STRUCTURE_SIGNAL_VERSION",
     "StructureQualityError",
     "StructureQualityEstimator",
@@ -104,6 +107,7 @@ __all__ = [
     "StructureSignalError",
     "StructureSignalExtractor",
     "StructureSignalKind",
+    "StructureSignalPolicy",
     "StructureSignalSet",
     "SubDocumentDetector",
 ]
