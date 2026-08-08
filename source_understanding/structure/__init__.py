@@ -31,6 +31,17 @@ from .hierarchy import (
     HierarchyPolicy,
     HierarchyResult,
 )
+from .integrity import (
+    INTEGRITY_CONSOLIDATION_POLICY_VERSION,
+    INTEGRITY_CONSOLIDATION_VERSION,
+    IntegrityConsolidationError,
+    IntegrityConsolidationPolicy,
+    IntegrityConsolidationReport,
+    IntegrityGroupConsolidator,
+    native_integrity_group_id,
+    native_integrity_parent_group_id,
+    unresolved_integrity_boundary_ids,
+)
 from .integration import (
     CONTEXT_INTEGRATION_VERSION,
     ContextIntegrationError,
@@ -47,6 +58,7 @@ from .quality import (
     StructureQualityPolicy,
     StructureQualityReport,
 )
+from .region_routing import REGION_ROUTING_VERSION, RegionRouter, RegionRoutingError
 from .signals import (
     STRUCTURE_SIGNAL_POLICY_VERSION,
     STRUCTURE_SIGNAL_VERSION,
@@ -89,12 +101,21 @@ __all__ = [
     "HierarchyError",
     "HierarchyPolicy",
     "HierarchyResult",
+    "INTEGRITY_CONSOLIDATION_POLICY_VERSION",
+    "INTEGRITY_CONSOLIDATION_VERSION",
+    "IntegrityConsolidationError",
+    "IntegrityConsolidationPolicy",
+    "IntegrityConsolidationReport",
+    "IntegrityGroupConsolidator",
     "LogicalGroupBuilder",
     "LogWindowBuilder",
     "LogWindowCandidate",
     "QAPairBuilder",
     "QAPairCandidate",
     "QAPairRule",
+    "REGION_ROUTING_VERSION",
+    "RegionRouter",
+    "RegionRoutingError",
     "STRUCTURE_QUALITY_VERSION",
     "STRUCTURE_SIGNAL_POLICY_VERSION",
     "STRUCTURE_SIGNAL_VERSION",
@@ -110,4 +131,7 @@ __all__ = [
     "StructureSignalPolicy",
     "StructureSignalSet",
     "SubDocumentDetector",
+    "native_integrity_group_id",
+    "native_integrity_parent_group_id",
+    "unresolved_integrity_boundary_ids",
 ]
