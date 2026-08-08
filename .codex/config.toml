@@ -1,0 +1,16 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+# Shared project defaults for Codex CLI / IDE.
+# Codex loads project-local config only after the repository is trusted.
+# The model is intentionally NOT pinned here so each developer can choose it.
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+model_reasoning_effort = "high"
+model_verbosity = "medium"
+web_search = "live"
+
+[sandbox_workspace_write]
+# Keep generated shell commands offline by default. Codex web search is a
+# separate tool and remains available for current library/docs research.
+network_access = false
