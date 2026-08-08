@@ -70,6 +70,7 @@ def processing_with_pipeline_manifest(
     region_source: str,
     region_count: int,
     region_router: object,
+    completion_builder: object,
     assembler: object,
 ) -> ProcessingManifest:
     configuration = dict(processing.configuration)
@@ -112,6 +113,7 @@ def processing_with_pipeline_manifest(
         "relation_policy": relation_result.policy.model_dump(mode="json"),
         "structure_quality_version": quality_report.version,
         "structure_quality_policy": quality_report.policy.model_dump(mode="json"),
+        "completion_report_version": getattr(completion_builder, "version", "unknown"),
         "assembly_version": getattr(assembler, "version", "unknown"),
     }
     data = processing.model_dump(mode="python")
