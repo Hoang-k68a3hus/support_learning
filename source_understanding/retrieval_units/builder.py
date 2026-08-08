@@ -19,7 +19,7 @@ from source_understanding.schemas.logical_unit import LogicalUnit, LogicalUnitTy
 from source_understanding.schemas.retrieval_unit import RetrievalUnit, RetrievalUnitType, SourceAnchor
 
 
-RETRIEVAL_UNIT_BUILDER_VERSION = "1"
+RETRIEVAL_UNIT_BUILDER_VERSION = "2"
 
 
 class RetrievalUnitBuildError(ValueError):
@@ -39,6 +39,7 @@ class RetrievalUnitBuildPolicy(SchemaModel):
 
     version: str = Field(default=RETRIEVAL_UNIT_BUILDER_VERSION, min_length=1, max_length=128)
     max_tokens: int | None = Field(default=None, ge=1)
+    adaptive_text_partitioning: bool = True
     include_document_title: bool = True
     include_context_labels: bool = True
     display_separator: str = "\n\n"
@@ -63,6 +64,7 @@ class RetrievalUnitBuildResult(SchemaModel):
     policy: RetrievalUnitBuildPolicy
     units: tuple[RetrievalUnit, ...] = Field(default_factory=tuple)
     oversized_unit_ids: tuple[str, ...] = Field(default_factory=tuple)
+    partitioned_logical_unit_ids: tuple[str, ...] = Field(default_factory=tuple)
     skipped_excluded_element_ids: tuple[str, ...] = Field(default_factory=tuple)
     skipped_blank_element_ids: tuple[str, ...] = Field(default_factory=tuple)
     unresolved_integrity_element_ids: tuple[str, ...] = Field(default_factory=tuple)
@@ -76,6 +78,8 @@ class RetrievalUnitBuildResult(SchemaModel):
             raise ValueError("oversized_unit_ids must be unique")
         if set(self.oversized_unit_ids) - set(unit_ids):
             raise ValueError("oversized_unit_ids must reference emitted retrieval units")
+        if len(self.partitioned_logical_unit_ids) != len(set(self.partitioned_logical_unit_ids)):
+            raise ValueError("partitioned_logical_unit_ids must be unique")
         return self
 
 
@@ -149,6 +153,7 @@ class RetrievalUnitBuilder:
         oversized: list[str] = []
         skipped_blank: list[str] = []
         unresolved_integrity: list[str] = []
+        partitioned_logical_units: list[str] = []
 
         units = sorted(
             document.logical_units,
@@ -166,7 +171,7 @@ class RetrievalUnitBuilder:
                 covered.update(element.id for element in members)
                 continue
 
-            retrieval_unit = self._from_logical_unit(
+            retrieval_units = self._from_logical_unit(
                 document,
                 logical_unit,
                 members,
@@ -174,15 +179,18 @@ class RetrievalUnitBuilder:
                 regions,
                 subdocuments,
             )
-            if retrieval_unit is None:
+            if not retrieval_units:
                 skipped_blank.extend(element.id for element in members)
                 covered.update(element.id for element in members)
                 continue
 
-            emitted.append(retrieval_unit)
-            covered.update(retrieval_unit.element_ids)
-            if self._is_oversized(retrieval_unit):
-                oversized.append(retrieval_unit.id)
+            if len(retrieval_units) > 1:
+                partitioned_logical_units.append(logical_unit.id)
+            for retrieval_unit in retrieval_units:
+                emitted.append(retrieval_unit)
+                covered.update(retrieval_unit.element_ids)
+                if self._is_oversized(retrieval_unit):
+                    oversized.append(retrieval_unit.id)
 
         for element in elements:
             if element.id in covered or element.exclude_from_retrieval:
@@ -233,6 +241,7 @@ class RetrievalUnitBuilder:
             covered_element_count=len(emitted_element_ids),
             units=tuple(emitted),
             oversized_unit_ids=tuple(oversized),
+            partitioned_logical_unit_ids=tuple(partitioned_logical_units),
             skipped_excluded_element_ids=excluded_ids,
             skipped_blank_element_ids=tuple(dict.fromkeys(skipped_blank)),
             unresolved_integrity_element_ids=tuple(unresolved_integrity),
@@ -246,13 +255,110 @@ class RetrievalUnitBuilder:
         nodes: dict[str, ContextNode],
         regions: dict[str, ContentRegion],
         subdocuments: tuple[SubDocument, ...],
+    ) -> tuple[RetrievalUnit, ...]:
+        # Validate the complete structural owner before partitioning. Otherwise a
+        # malformed LogicalUnit that crosses source boundaries could be split into
+        # individually valid fragments and silently hide the upstream error.
+        self._resolve_subdocument(
+            logical_unit.element_ids,
+            subdocuments,
+            owner=f"logical unit {logical_unit.id!r}",
+        )
+        self._unit_strategy(
+            document,
+            logical_unit.region_id,
+            logical_unit.element_ids,
+            regions,
+        )
+
+        context_path = self._context_refs(logical_unit.context_node_ids, nodes)
+        partitions = self._partition_logical_elements(
+            document,
+            logical_unit,
+            elements,
+            context_path,
+        )
+        part_count = len(partitions)
+        emitted: list[RetrievalUnit] = []
+        for part_index, part_elements in enumerate(partitions):
+            unit = self._make_logical_retrieval_unit(
+                document,
+                logical_unit,
+                part_elements,
+                context_path,
+                regions,
+                subdocuments,
+                part_index=part_index,
+                part_count=part_count,
+            )
+            if unit is not None:
+                emitted.append(unit)
+        return tuple(emitted)
+
+    def _partition_logical_elements(
+        self,
+        document: CanonicalDocument,
+        logical_unit: LogicalUnit,
+        elements: tuple[Element, ...],
+        context_path: tuple[ContextNodeRef, ...],
+    ) -> tuple[tuple[Element, ...], ...]:
+        if (
+            self._policy.max_tokens is None
+            or not self._policy.adaptive_text_partitioning
+            or logical_unit.type != LogicalUnitType.TEXT_BLOCK
+            or len(elements) <= 1
+        ):
+            return (elements,)
+
+        partitions: list[tuple[Element, ...]] = []
+        current: list[Element] = []
+
+        for element in elements:
+            candidate = tuple((*current, element))
+            content_text = self._join_retrieval_content(candidate)
+            if not content_text.strip():
+                current.append(element)
+                continue
+
+            retrieval_text = self._build_retrieval_text(
+                document,
+                content_text,
+                context_path,
+            )
+            candidate_count = self._count_tokens(retrieval_text)
+            current_content = self._join_retrieval_content(tuple(current))
+            if (
+                current
+                and current_content.strip()
+                and self._budget_exceeded(candidate_count)
+            ):
+                partitions.append(tuple(current))
+                current = [element]
+            else:
+                current.append(element)
+
+        if current:
+            partitions.append(tuple(current))
+        return tuple(partitions) if partitions else (elements,)
+
+    def _make_logical_retrieval_unit(
+        self,
+        document: CanonicalDocument,
+        logical_unit: LogicalUnit,
+        elements: tuple[Element, ...],
+        context_path: tuple[ContextNodeRef, ...],
+        regions: dict[str, ContentRegion],
+        subdocuments: tuple[SubDocument, ...],
+        *,
+        part_index: int,
+        part_count: int,
     ) -> RetrievalUnit | None:
         display_text = self._join_display_text(elements)
         content_text = self._join_retrieval_content(elements)
         if not display_text.strip() or not content_text.strip():
             return None
 
-        context_path = self._context_refs(logical_unit.context_node_ids, nodes)
+        element_ids = tuple(element.id for element in elements)
         retrieval_text = self._build_retrieval_text(
             document,
             content_text,
@@ -260,19 +366,27 @@ class RetrievalUnitBuilder:
         )
         token_count = self._count_tokens(retrieval_text)
         subdocument_id = self._resolve_subdocument(
-            logical_unit.element_ids,
+            element_ids,
             subdocuments,
             owner=f"logical unit {logical_unit.id!r}",
         )
         strategy = self._unit_strategy(
             document,
             logical_unit.region_id,
-            logical_unit.element_ids,
+            element_ids,
             regions,
         )
+        if part_count == 1:
+            identity = f"logical:{logical_unit.id}"
+        else:
+            element_identity = ",".join(element_ids)
+            identity = (
+                f"logical:{logical_unit.id}:part:{part_index + 1}/{part_count}:"
+                f"{element_identity}"
+            )
         unit_id = self._unit_id(
             document,
-            identity=f"logical:{logical_unit.id}",
+            identity=identity,
             retrieval_text=retrieval_text,
         )
         metadata = {
@@ -283,7 +397,17 @@ class RetrievalUnitBuilder:
             "semantic_enrichment_used": False,
             "location_projection": "element_identity_only",
             "token_budget_exceeded": self._budget_exceeded(token_count),
+            "adaptive_partitioned": part_count > 1,
         }
+        if part_count > 1:
+            metadata.update(
+                {
+                    "partition_index": part_index,
+                    "partition_count": part_count,
+                    "partition_reason": "token_budget",
+                    "source_logical_unit_id": logical_unit.id,
+                }
+            )
         if self._policy.max_tokens is not None:
             metadata["max_tokens"] = self._policy.max_tokens
 
@@ -294,7 +418,7 @@ class RetrievalUnitBuilder:
             source_revision=document.source_revision,
             subdocument_id=subdocument_id,
             logical_unit_ids=(logical_unit.id,),
-            element_ids=logical_unit.element_ids,
+            element_ids=element_ids,
             retrieval_text=retrieval_text,
             display_text=display_text,
             context_path=context_path,
@@ -506,7 +630,7 @@ class RetrievalUnitBuilder:
         document: CanonicalDocument,
         elements: tuple[Element, ...],
     ) -> tuple[SourceAnchor, ...]:
-        # V1 deliberately does not copy canonical page/bbox/range fields because
+        # V2 deliberately does not copy canonical page/bbox/range fields because
         # SourceLocation currently has no dedicated provenance field. The exact
         # document/hash/revision/element identity remains sufficient to resolve
         # the canonical location without fabricating location provenance.
@@ -558,7 +682,7 @@ class RetrievalUnitBuilder:
                 if previous is not None:
                     raise RetrievalUnitBuildError(
                         f"element {element_id!r} belongs to multiple logical units "
-                        f"({previous!r}, {unit.id!r}); V1 projection requires one "
+                        f"({previous!r}, {unit.id!r}); retrieval projection requires one "
                         "structural owner per element"
                     )
                 owners[element_id] = unit.id
