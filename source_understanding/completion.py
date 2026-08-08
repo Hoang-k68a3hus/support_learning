@@ -4,7 +4,6 @@ from collections.abc import Sequence
 
 from pydantic import Field
 
-from source_understanding.adapters.base import AdapterDiagnostic, AdapterDiagnosticLevel
 from source_understanding.profiling.regions import ContentRegionSegmentationResult
 from source_understanding.schemas.context import Confidence, Identifier, JsonObject, SchemaModel, StructureMode
 from source_understanding.schemas.document import CanonicalDocument
@@ -77,7 +76,13 @@ class UnderstandingCompletionReport(SchemaModel):
 
 
 class UnderstandingCompletionBuilder:
-    """Summarize pipeline completion without pretending coverage is model accuracy."""
+    """Summarize pipeline completion without pretending coverage is model accuracy.
+
+    Adapter diagnostics are intentionally accepted structurally rather than via a
+    concrete adapter type. The core understanding package must not depend back on
+    optional source-adapter packages; diagnostics only need ``code``, ``level``
+    and ``affects_structural_completeness`` attributes.
+    """
 
     version = UNDERSTANDING_COMPLETION_VERSION
 
@@ -93,7 +98,7 @@ class UnderstandingCompletionBuilder:
         region_result: ContentRegionSegmentationResult | None,
         semantic_status: str,
         semantic_result: SemanticAnnotationResult | None,
-        adapter_diagnostics: Sequence[AdapterDiagnostic] = (),
+        adapter_diagnostics: Sequence[object] = (),
     ) -> UnderstandingCompletionReport:
         self._validate_counts(
             document,
@@ -156,13 +161,13 @@ class UnderstandingCompletionBuilder:
 
         adapter_diagnostic_snapshot = tuple(adapter_diagnostics)
         adapter_warning_count = sum(
-            diagnostic.level == AdapterDiagnosticLevel.WARNING
+            self._diagnostic_level(diagnostic) == "WARNING"
             for diagnostic in adapter_diagnostic_snapshot
         )
         adapter_structural_issues = tuple(
             diagnostic
             for diagnostic in adapter_diagnostic_snapshot
-            if diagnostic.affects_structural_completeness
+            if bool(getattr(diagnostic, "affects_structural_completeness", False))
         )
 
         mixed_region_ready = (
@@ -232,10 +237,22 @@ class UnderstandingCompletionBuilder:
                     region_result.version if region_result is not None else None
                 ),
                 "adapter_structural_issue_codes": [
-                    diagnostic.code for diagnostic in adapter_structural_issues
+                    self._diagnostic_code(diagnostic)
+                    for diagnostic in adapter_structural_issues
                 ],
             },
         )
+
+    @staticmethod
+    def _diagnostic_level(diagnostic: object) -> str | None:
+        level = getattr(diagnostic, "level", None)
+        value = getattr(level, "value", level)
+        return value if isinstance(value, str) else None
+
+    @staticmethod
+    def _diagnostic_code(diagnostic: object) -> str:
+        code = getattr(diagnostic, "code", None)
+        return code if isinstance(code, str) and code else type(diagnostic).__name__
 
     @staticmethod
     def _validate_counts(
