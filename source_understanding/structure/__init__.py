@@ -47,6 +47,7 @@ from .quality import (
     StructureQualityPolicy,
     StructureQualityReport,
 )
+from .region_routing import REGION_ROUTING_VERSION, RegionRouter, RegionRoutingError
 from .signals import (
     STRUCTURE_SIGNAL_POLICY_VERSION,
     STRUCTURE_SIGNAL_VERSION,
@@ -95,6 +96,9 @@ __all__ = [
     "QAPairBuilder",
     "QAPairCandidate",
     "QAPairRule",
+    "REGION_ROUTING_VERSION",
+    "RegionRouter",
+    "RegionRoutingError",
     "STRUCTURE_QUALITY_VERSION",
     "STRUCTURE_SIGNAL_POLICY_VERSION",
     "STRUCTURE_SIGNAL_VERSION",
