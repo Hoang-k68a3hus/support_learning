@@ -22,7 +22,7 @@ from .boundary import BoundaryClass, BoundaryDecision, BoundaryReason, BoundaryS
 from .signals import StructureSignal, StructureSignalKind, StructureSignalSet
 
 
-HIERARCHY_VERSION = "1"
+HIERARCHY_VERSION = "2"
 HIERARCHY_POLICY_VERSION = "1"
 
 _HIERARCHICAL_NUMBERING_RE = re.compile(r"^\d+(?:\.\d+)+$")
@@ -71,12 +71,10 @@ class HierarchyResult(SchemaModel):
     def validate_result(self) -> "HierarchyResult":
         if len(self.assignments) != self.element_count:
             raise ValueError("hierarchy assignments must cover every input element")
-
         node_ids = [node.id for node in self.context_nodes]
         if len(node_ids) != len(set(node_ids)):
             raise ValueError("hierarchy context node ids must be unique")
         valid_nodes = set(node_ids)
-
         assignment_ids = [assignment.element_id for assignment in self.assignments]
         if len(assignment_ids) != len(set(assignment_ids)):
             raise ValueError("hierarchy assignments must use unique element ids")
@@ -86,7 +84,6 @@ class HierarchyResult(SchemaModel):
                 raise ValueError(
                     f"hierarchy assignment references unknown context nodes: {sorted(missing)}"
                 )
-
         by_id = {node.id: node for node in self.context_nodes}
         for node in self.context_nodes:
             if node.parent_id is not None:
@@ -133,12 +130,10 @@ class HierarchyBuilder:
     ) -> HierarchyResult:
         snapshot = tuple(elements)
         self._validate_inputs(snapshot, signal_set, boundary_set)
-
         signals_by_element = self._signals_by_element(snapshot, signal_set)
         boundary_before = {
             boundary.right_element_id: boundary for boundary in boundary_set.boundaries
         }
-
         candidates: dict[str, _ContextCandidate] = {}
         for element in snapshot:
             candidate = self._candidate(
@@ -152,7 +147,6 @@ class HierarchyBuilder:
         nodes: list[ContextNode] = []
         assignments: list[ElementContextAssignment] = []
         stack: list[ContextNode] = []
-
         for element in snapshot:
             candidate = candidates.get(element.id)
             if candidate is not None:
@@ -162,12 +156,10 @@ class HierarchyBuilder:
                     and stack[-1].level >= candidate.level
                 ):
                     stack.pop()
-
                 parent_id = stack[-1].id if stack else None
                 node = self._make_node(candidate, parent_id)
                 nodes.append(node)
                 stack.append(node)
-
             assignments.append(
                 ElementContextAssignment(
                     element_id=element.id,
@@ -194,13 +186,9 @@ class HierarchyBuilder:
     ) -> _ContextCandidate | None:
         if element.type not in {ElementType.TITLE, ElementType.HEADING}:
             return None
-
         type_signal = next(
-            signal
-            for signal in signals
-            if signal.kind == StructureSignalKind.ELEMENT_TYPE
+            signal for signal in signals if signal.kind == StructureSignalKind.ELEMENT_TYPE
         )
-
         if incoming_boundary is not None:
             if type_signal.source == StructureSource.EXPLICIT:
                 if (
@@ -224,11 +212,18 @@ class HierarchyBuilder:
         text = element.text
         if text is None or not text.strip():
             return None
-
         stripped = text.strip()
         label_truncated = len(stripped) > self._policy.max_label_length
         label = stripped[: self._policy.max_label_length]
 
+        heading_level_signal = next(
+            (
+                signal
+                for signal in signals
+                if signal.kind == StructureSignalKind.HEADING_LEVEL
+            ),
+            None,
+        )
         numbering_signal = next(
             (
                 signal
@@ -241,6 +236,14 @@ class HierarchyBuilder:
         if element.type == ElementType.TITLE:
             level = 0
             level_source = "ELEMENT_TYPE"
+        elif heading_level_signal is not None:
+            numeric = heading_level_signal.numeric_value
+            if numeric is None or int(numeric) != numeric or not (1 <= numeric <= 64):
+                raise HierarchyError(
+                    f"HEADING_LEVEL signal for {element.id!r} must be an integer in [1, 64]"
+                )
+            level = int(numeric)
+            level_source = "HEADING_LEVEL"
         elif numbering_signal is not None:
             parsed = self._numbering_level(numbering_signal.text_value)
             level = 1 if parsed is None else parsed
@@ -255,14 +258,14 @@ class HierarchyBuilder:
             StructureSource.DERIVED: self._policy.derived_node_confidence,
         }[type_signal.source]
         confidence_values = [base_confidence]
-        if type_signal.confidence is not None:
-            confidence_values.append(type_signal.confidence)
-        if numbering_signal is not None and numbering_signal.confidence is not None:
-            confidence_values.append(numbering_signal.confidence)
+        for signal in (type_signal, heading_level_signal, numbering_signal):
+            if signal is not None and signal.confidence is not None:
+                confidence_values.append(signal.confidence)
 
         supporting_signal_ids = [type_signal.id]
-        if numbering_signal is not None:
-            supporting_signal_ids.append(numbering_signal.id)
+        for signal in (heading_level_signal, numbering_signal):
+            if signal is not None and signal.id not in supporting_signal_ids:
+                supporting_signal_ids.append(signal.id)
         supporting_signal_ids.extend(
             signal.id
             for signal in signals
@@ -275,7 +278,6 @@ class HierarchyBuilder:
             }
             and signal.id not in supporting_signal_ids
         )
-
         return _ContextCandidate(
             element=element,
             node_type=element.type.value,
@@ -302,10 +304,7 @@ class HierarchyBuilder:
         return None
 
     @staticmethod
-    def _make_node(
-        candidate: _ContextCandidate,
-        parent_id: str | None,
-    ) -> ContextNode:
+    def _make_node(candidate: _ContextCandidate, parent_id: str | None) -> ContextNode:
         identity = (
             f"{candidate.element.id}|{candidate.node_type}|{candidate.level}|"
             f"{candidate.label}"
@@ -335,33 +334,19 @@ class HierarchyBuilder:
     ) -> DocumentStructure:
         if not nodes:
             return DocumentStructure()
-
-        explicit_ratio = sum(
-            node.source == StructureSource.EXPLICIT for node in nodes
-        ) / len(nodes)
+        explicit_ratio = sum(node.source == StructureSource.EXPLICIT for node in nodes) / len(nodes)
         nested_ratio = sum(node.parent_id is not None for node in nodes) / len(nodes)
         context_ratio = len(nodes) / element_count
         average_confidence = sum(node.confidence for node in nodes) / len(nodes)
-
         if len(nodes) == 1:
             mode = StructureMode.LOCAL
-            confidence = min(
-                self._policy.local_structure_confidence,
-                average_confidence,
-            )
+            confidence = min(self._policy.local_structure_confidence, average_confidence)
         elif any(node.parent_id is not None for node in nodes):
             mode = StructureMode.HIERARCHICAL
-            confidence = min(
-                self._policy.hierarchical_structure_confidence,
-                average_confidence,
-            )
+            confidence = min(self._policy.hierarchical_structure_confidence, average_confidence)
         else:
             mode = StructureMode.GROUPED
-            confidence = min(
-                self._policy.grouped_structure_confidence,
-                average_confidence,
-            )
-
+            confidence = min(self._policy.grouped_structure_confidence, average_confidence)
         return DocumentStructure(
             mode=mode,
             source=StructureSource.DERIVED,
@@ -375,8 +360,7 @@ class HierarchyBuilder:
 
     @staticmethod
     def _signals_by_element(
-        elements: tuple[Element, ...],
-        signal_set: StructureSignalSet,
+        elements: tuple[Element, ...], signal_set: StructureSignalSet
     ) -> dict[str, tuple[StructureSignal, ...]]:
         by_element: dict[str, list[StructureSignal]] = {
             element.id: [] for element in elements
@@ -384,10 +368,7 @@ class HierarchyBuilder:
         for signal in signal_set.signals:
             for element_id in signal.element_ids:
                 by_element[element_id].append(signal)
-        return {
-            element_id: tuple(signals)
-            for element_id, signals in by_element.items()
-        }
+        return {element_id: tuple(signals) for element_id, signals in by_element.items()}
 
     @staticmethod
     def _validate_inputs(
@@ -397,19 +378,14 @@ class HierarchyBuilder:
     ) -> None:
         if not elements:
             raise HierarchyError("cannot build hierarchy from empty elements")
-
         ids = [element.id for element in elements]
         if len(ids) != len(set(ids)):
             raise HierarchyError("hierarchy requires unique element ids")
-
         orders = [element.order for element in elements]
         if len(orders) != len(set(orders)):
             raise HierarchyError("hierarchy requires unique element order values")
         if orders != sorted(orders):
-            raise HierarchyError(
-                "hierarchy requires elements in ascending canonical source order"
-            )
-
+            raise HierarchyError("hierarchy requires elements in ascending canonical source order")
         if signal_set.element_count != len(elements):
             raise HierarchyError(
                 "structure signal element_count does not match hierarchy input elements"
@@ -422,29 +398,30 @@ class HierarchyBuilder:
             raise HierarchyError(
                 "boundary signal_version does not match supplied structure signals"
             )
-
         positions = {element.id: index for index, element in enumerate(elements)}
         signal_ids = [signal.id for signal in signal_set.signals]
         if len(signal_ids) != len(set(signal_ids)):
             raise HierarchyError("structure signal ids must be unique")
-
         type_signals: dict[str, list[StructureSignal]] = {
+            element.id: [] for element in elements
+        }
+        heading_levels: dict[str, list[StructureSignal]] = {
             element.id: [] for element in elements
         }
         for signal in signal_set.signals:
             unknown = set(signal.element_ids) - positions.keys()
             if unknown:
                 raise HierarchyError(
-                    f"structure signal {signal.id!r} references unknown elements: "
-                    f"{sorted(unknown)}"
+                    f"structure signal {signal.id!r} references unknown elements: {sorted(unknown)}"
                 )
             if signal.kind == StructureSignalKind.ELEMENT_TYPE:
                 if len(signal.element_ids) != 1:
-                    raise HierarchyError(
-                        "ELEMENT_TYPE signals must reference exactly one element"
-                    )
+                    raise HierarchyError("ELEMENT_TYPE signals must reference exactly one element")
                 type_signals[signal.element_ids[0]].append(signal)
-
+            if signal.kind == StructureSignalKind.HEADING_LEVEL:
+                if len(signal.element_ids) != 1:
+                    raise HierarchyError("HEADING_LEVEL signals must reference exactly one element")
+                heading_levels[signal.element_ids[0]].append(signal)
         for element in elements:
             matches = type_signals[element.id]
             if len(matches) != 1:
@@ -457,14 +434,16 @@ class HierarchyBuilder:
                     f"ELEMENT_TYPE signal disagrees with canonical type for {element.id!r}"
                 )
             if signal.source != element.provenance.source:
-                raise HierarchyError(
-                    f"ELEMENT_TYPE signal provenance disagrees for {element.id!r}"
-                )
+                raise HierarchyError(f"ELEMENT_TYPE signal provenance disagrees for {element.id!r}")
             if signal.confidence != element.confidence.type:
+                raise HierarchyError(f"ELEMENT_TYPE signal confidence disagrees for {element.id!r}")
+            levels = heading_levels[element.id]
+            if len(levels) > 1:
                 raise HierarchyError(
-                    f"ELEMENT_TYPE signal confidence disagrees for {element.id!r}"
+                    f"element {element.id!r} has multiple HEADING_LEVEL signals"
                 )
-
+            if levels and element.type != ElementType.HEADING:
+                raise HierarchyError("HEADING_LEVEL signal may only target HEADING elements")
         if len(boundary_set.boundaries) != max(0, len(elements) - 1):
             raise HierarchyError("boundary count does not match adjacent element pairs")
         for index, boundary in enumerate(boundary_set.boundaries):
