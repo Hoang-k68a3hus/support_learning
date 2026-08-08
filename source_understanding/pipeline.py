@@ -7,6 +7,10 @@ from typing import TypeVar
 from pydantic import Field, model_validator
 
 from source_understanding.assembly import CanonicalDocumentAssembler
+from source_understanding.atomic.normalizer import (
+    ElementNormalizationResult,
+    ElementNormalizer,
+)
 from source_understanding.profiling.content_profiler import ContentProfile, ContentProfiler
 from source_understanding.relations.builder import RelationBuildResult, StructuralRelationBuilder
 from source_understanding.schemas.context import Identifier, SchemaModel
@@ -18,7 +22,7 @@ from source_understanding.schemas.document import (
     DocumentQuality,
     ProcessingManifest,
 )
-from source_understanding.schemas.element import Element
+from source_understanding.schemas.element import Element, RawElement
 from source_understanding.schemas.relation import Relation
 from source_understanding.semantics.annotator import (
     SemanticAnnotationResult,
@@ -74,6 +78,7 @@ class SourceUnderstandingResult(SchemaModel):
     integration_result: ContextIntegrationResult
     relation_result: RelationBuildResult
     quality_report: StructureQualityReport
+    normalization_result: ElementNormalizationResult | None = None
     structural_document: CanonicalDocument
     document: CanonicalDocument
     semantic_status: SemanticStageStatus
@@ -82,6 +87,12 @@ class SourceUnderstandingResult(SchemaModel):
 
     @model_validator(mode="after")
     def validate_result(self) -> "SourceUnderstandingResult":
+        if self.normalization_result is not None:
+            if self.normalization_result.document_id != self.document_id:
+                raise ValueError("normalization_result document_id does not match pipeline result")
+            if self.normalization_result.elements != self.structural_document.elements:
+                raise ValueError("normalization_result elements do not match structural document")
+
         if self.structural_document.document_id != self.document_id:
             raise ValueError("structural_document document_id does not match pipeline result")
         if self.document.document_id != self.document_id:
@@ -120,6 +131,7 @@ class SourceUnderstandingPipeline:
     def __init__(
         self,
         *,
+        normalizer: ElementNormalizer | None = None,
         profiler: ContentProfiler | None = None,
         signal_extractor: StructureSignalExtractor | None = None,
         boundary_scorer: BoundaryScorer | None = None,
@@ -132,6 +144,7 @@ class SourceUnderstandingPipeline:
         semantic_annotator: SemanticAnnotator | None = None,
         policy: SourceUnderstandingPipelinePolicy | None = None,
     ) -> None:
+        self._normalizer = normalizer if normalizer is not None else ElementNormalizer()
         self._profiler = profiler if profiler is not None else ContentProfiler()
         self._signal_extractor = (
             signal_extractor if signal_extractor is not None else StructureSignalExtractor()
@@ -154,6 +167,46 @@ class SourceUnderstandingPipeline:
         self._semantic_annotator = semantic_annotator
         self._policy = policy if policy is not None else SourceUnderstandingPipelinePolicy()
 
+    def understand_raw(
+        self,
+        *,
+        document_id: str,
+        content_hash: str,
+        processing: ProcessingManifest,
+        raw_elements: Sequence[RawElement],
+        source_revision: str | None = None,
+        metadata: DocumentMetadata | None = None,
+        base_quality: DocumentQuality | None = None,
+        regions: Sequence[ContentRegion] = (),
+        assets: Sequence[Asset] = (),
+        additional_relations: Sequence[Relation] = (),
+    ) -> SourceUnderstandingResult:
+        self._validate_source_identity(document_id, content_hash)
+        normalization_result = self._stage(
+            "element normalization",
+            lambda: self._normalizer.normalize(
+                tuple(raw_elements),
+                document_id=document_id,
+            ),
+        )
+        processing_with_normalizer = self._processing_with_normalizer_manifest(
+            processing,
+            normalization_result,
+        )
+        return self._understand_elements(
+            document_id=document_id,
+            content_hash=content_hash,
+            processing=processing_with_normalizer,
+            elements=normalization_result.elements,
+            normalization_result=normalization_result,
+            source_revision=source_revision,
+            metadata=metadata,
+            base_quality=base_quality,
+            regions=regions,
+            assets=assets,
+            additional_relations=additional_relations,
+        )
+
     def understand(
         self,
         *,
@@ -167,6 +220,35 @@ class SourceUnderstandingPipeline:
         regions: Sequence[ContentRegion] = (),
         assets: Sequence[Asset] = (),
         additional_relations: Sequence[Relation] = (),
+    ) -> SourceUnderstandingResult:
+        return self._understand_elements(
+            document_id=document_id,
+            content_hash=content_hash,
+            processing=processing,
+            elements=elements,
+            normalization_result=None,
+            source_revision=source_revision,
+            metadata=metadata,
+            base_quality=base_quality,
+            regions=regions,
+            assets=assets,
+            additional_relations=additional_relations,
+        )
+
+    def _understand_elements(
+        self,
+        *,
+        document_id: str,
+        content_hash: str,
+        processing: ProcessingManifest,
+        elements: Sequence[Element],
+        normalization_result: ElementNormalizationResult | None,
+        source_revision: str | None,
+        metadata: DocumentMetadata | None,
+        base_quality: DocumentQuality | None,
+        regions: Sequence[ContentRegion],
+        assets: Sequence[Asset],
+        additional_relations: Sequence[Relation],
     ) -> SourceUnderstandingResult:
         element_snapshot = tuple(elements)
         region_snapshot = tuple(regions)
@@ -293,12 +375,42 @@ class SourceUnderstandingPipeline:
             integration_result=integration_result,
             relation_result=relation_result,
             quality_report=quality_report,
+            normalization_result=normalization_result,
             structural_document=structural_document,
             document=final_document,
             semantic_status=semantic_status,
             semantic_result=semantic_result,
             semantic_error=semantic_error,
         )
+
+    def _processing_with_normalizer_manifest(
+        self,
+        processing: ProcessingManifest,
+        normalization_result: ElementNormalizationResult,
+    ) -> ProcessingManifest:
+        normalizer_version = getattr(self._normalizer, "version", None)
+        if not isinstance(normalizer_version, str) or not normalizer_version:
+            raise SourceUnderstandingPipelineError(
+                "element normalizer must expose a non-blank version"
+            )
+        if (
+            processing.normalizer_version is not None
+            and processing.normalizer_version != normalizer_version
+        ):
+            raise SourceUnderstandingPipelineError(
+                "processing.normalizer_version conflicts with active normalizer: "
+                f"{processing.normalizer_version!r} != {normalizer_version!r}"
+            )
+
+        configuration = dict(processing.configuration)
+        configuration["element_normalization"] = {
+            "normalizer_version": normalizer_version,
+            "policy": normalization_result.policy.model_dump(mode="json"),
+        }
+        data = processing.model_dump(mode="python")
+        data["normalizer_version"] = normalizer_version
+        data["configuration"] = configuration
+        return ProcessingManifest.model_validate(data)
 
     def _processing_with_pipeline_manifest(
         self,
