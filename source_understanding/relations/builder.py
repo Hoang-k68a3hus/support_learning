@@ -10,9 +10,16 @@ from source_understanding.schemas.document import SubDocument
 from source_understanding.schemas.element import Element
 from source_understanding.schemas.logical_unit import LogicalUnit, LogicalUnitType
 from source_understanding.schemas.relation import Relation, RelationLayer, RelationType
+from source_understanding.source_attributes import (
+    INTEGRITY_GROUP_ID_ATTRIBUTE,
+    INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE,
+    SourceAttributeError,
+    source_anchor,
+    source_references,
+)
 
 
-RELATION_BUILDER_VERSION = "1"
+RELATION_BUILDER_VERSION = "2"
 
 
 class RelationBuildError(ValueError):
@@ -25,6 +32,8 @@ class RelationBuildPolicy(SchemaModel):
     include_element_membership: bool = True
     include_question_answer: bool = True
     include_subdocument_membership: bool = True
+    include_integrity_nesting: bool = True
+    include_explicit_source_references: bool = True
     deterministic_confidence: Confidence = 1.0
 
 
@@ -68,7 +77,6 @@ class StructuralRelationBuilder:
         unit_snapshot = tuple(logical_units)
         subdoc_snapshot = tuple(subdocuments)
         self._validate_inputs(element_snapshot, unit_snapshot, subdoc_snapshot)
-
         relations: list[Relation] = []
 
         if self._policy.include_element_next:
@@ -104,6 +112,93 @@ class StructuralRelationBuilder:
                             },
                         )
                     )
+
+        if self._policy.include_integrity_nesting:
+            by_native_group: dict[str, LogicalUnit] = {}
+            for unit in unit_snapshot:
+                group_id = unit.metadata.get(INTEGRITY_GROUP_ID_ATTRIBUTE)
+                if group_id is None:
+                    continue
+                if not isinstance(group_id, str) or not group_id:
+                    raise RelationBuildError(
+                        f"logical unit {unit.id!r} has invalid native integrity group id"
+                    )
+                previous = by_native_group.get(group_id)
+                if previous is not None and previous.id != unit.id:
+                    raise RelationBuildError(
+                        f"native integrity group {group_id!r} maps to multiple logical units"
+                    )
+                by_native_group[group_id] = unit
+            for unit in unit_snapshot:
+                parent_group = unit.metadata.get(INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE)
+                if parent_group is None:
+                    continue
+                if not isinstance(parent_group, str) or not parent_group:
+                    raise RelationBuildError(
+                        f"logical unit {unit.id!r} has invalid native integrity parent id"
+                    )
+                parent = by_native_group.get(parent_group)
+                if parent is None:
+                    raise RelationBuildError(
+                        f"logical unit {unit.id!r} references missing native integrity "
+                        f"parent group {parent_group!r}"
+                    )
+                relations.append(
+                    self._make_relation(
+                        RelationType.PART_OF,
+                        unit.id,
+                        parent.id,
+                        source=StructureSource.DERIVED,
+                        confidence=min(unit.confidence, parent.confidence),
+                        metadata={
+                            "membership": "native_integrity_parent",
+                            "child_group_id": unit.metadata.get(INTEGRITY_GROUP_ID_ATTRIBUTE),
+                            "parent_group_id": parent_group,
+                        },
+                    )
+                )
+
+        if self._policy.include_explicit_source_references:
+            anchors: dict[tuple[str, str], str] = {}
+            try:
+                for element in element_snapshot:
+                    anchor = source_anchor(element)
+                    if anchor is None:
+                        continue
+                    previous = anchors.get(anchor)
+                    if previous is not None and previous != element.id:
+                        raise RelationBuildError(
+                            f"source anchor {anchor!r} maps to multiple elements"
+                        )
+                    anchors[anchor] = element.id
+
+                for referring in element_snapshot:
+                    seen_refs: set[tuple[str, str]] = set()
+                    for kind, reference_id in source_references(referring):
+                        key = (kind, reference_id)
+                        if key in seen_refs:
+                            continue
+                        seen_refs.add(key)
+                        anchored_id = anchors.get(key)
+                        if anchored_id is None:
+                            continue
+                        if kind in {"footnote", "endnote"}:
+                            relations.append(
+                                self._make_relation(
+                                    RelationType.FOOTNOTE_OF,
+                                    anchored_id,
+                                    referring.id,
+                                    source=StructureSource.EXPLICIT,
+                                    confidence=self._policy.deterministic_confidence,
+                                    metadata={
+                                        "basis": "explicit_source_reference",
+                                        "reference_kind": kind,
+                                        "reference_id": reference_id,
+                                    },
+                                )
+                            )
+            except SourceAttributeError as exc:
+                raise RelationBuildError(str(exc)) from exc
 
         if self._policy.include_question_answer:
             for unit in unit_snapshot:
@@ -203,7 +298,6 @@ class StructuralRelationBuilder:
     ) -> None:
         if not elements:
             raise RelationBuildError("cannot build structural relations for an empty source")
-
         element_ids = [element.id for element in elements]
         if len(element_ids) != len(set(element_ids)):
             raise RelationBuildError("elements must have unique ids")
@@ -212,7 +306,6 @@ class StructuralRelationBuilder:
             raise RelationBuildError("elements must have unique order values")
         if orders != sorted(orders):
             raise RelationBuildError("elements must follow canonical source order")
-
         unit_ids = [unit.id for unit in logical_units]
         subdoc_ids = [subdoc.id for subdoc in subdocuments]
         namespaces = (set(element_ids), set(unit_ids), set(subdoc_ids))
@@ -222,7 +315,6 @@ class StructuralRelationBuilder:
             raise RelationBuildError("subdocuments must have unique ids")
         if namespaces[0] & namespaces[1] or namespaces[0] & namespaces[2] or namespaces[1] & namespaces[2]:
             raise RelationBuildError("element/logical-unit/subdocument ids must not collide")
-
         order_by_id = {element.id: index for index, element in enumerate(elements)}
         valid_elements = set(element_ids)
         for unit in logical_units:
@@ -236,7 +328,6 @@ class StructuralRelationBuilder:
                 raise RelationBuildError(
                     f"logical unit {unit.id!r} does not follow canonical element order"
                 )
-
         seen_subdoc_elements: set[str] = set()
         for subdoc in subdocuments:
             missing = set(subdoc.element_ids) - valid_elements
