@@ -10,7 +10,7 @@ from .grouping import GroupingResult
 from .hierarchy import HierarchyResult
 
 
-REGION_ROUTING_VERSION = "1"
+REGION_ROUTING_VERSION = "2"
 
 
 class RegionRoutingError(ValueError):
@@ -52,6 +52,24 @@ class RegionRouter:
                         f"element {element_id!r} belongs to multiple content regions"
                     )
                 owner[element_id] = region.id
+
+        known_elements = {
+            element_id
+            for unit in grouping_result.logical_units
+            for element_id in unit.element_ids
+        } | set(grouping_result.ungrouped_element_ids)
+        unknown_region_elements = set(owner) - known_elements
+        if unknown_region_elements:
+            raise RegionRoutingError(
+                "content regions reference elements outside grouping result: "
+                f"{sorted(unknown_region_elements)}"
+            )
+        missing_region_elements = known_elements - set(owner)
+        if missing_region_elements:
+            raise RegionRoutingError(
+                "content regions must cover every canonical element exactly once; "
+                f"missing {sorted(missing_region_elements)}"
+            )
 
         updated_units: list[LogicalUnit] = []
         for unit in grouping_result.logical_units:
