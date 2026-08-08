@@ -11,11 +11,16 @@ from source_understanding.schemas.relation import RelationType
 from source_understanding.structure.boundary import (
     BoundaryClass,
     BoundaryDecision,
+    BoundaryPolicy,
     BoundaryReason,
     BoundarySet,
 )
-from source_understanding.structure.grouping import GroupingResult
-from source_understanding.structure.hierarchy import ElementContextAssignment, HierarchyResult
+from source_understanding.structure.grouping import GroupingPolicy, GroupingResult
+from source_understanding.structure.hierarchy import (
+    ElementContextAssignment,
+    HierarchyPolicy,
+    HierarchyResult,
+)
 from source_understanding.structure.integration import ContextIntegrationError, ContextIntegrator
 from source_understanding.structure.quality import StructureQualityError, StructureQualityEstimator
 
@@ -58,6 +63,9 @@ def grouping(
 ) -> GroupingResult:
     return GroupingResult(
         element_count=len(elements),
+        signal_version="1",
+        boundary_version="1",
+        policy=GroupingPolicy(),
         logical_units=units,
         subdocuments=subdocs,
         ungrouped_element_ids=ungrouped,
@@ -77,6 +85,9 @@ def hierarchy(
     )
     return HierarchyResult(
         element_count=len(elements),
+        signal_version="1",
+        boundary_version="1",
+        policy=HierarchyPolicy(),
         context_nodes=nodes,
         assignments=tuple(
             ElementContextAssignment(
@@ -97,6 +108,8 @@ def boundaries(
     resolved = classes or (BoundaryClass.SOFT,) * max(0, len(elements) - 1)
     return BoundarySet(
         element_count=len(elements),
+        signal_version="1",
+        policy=BoundaryPolicy(),
         boundaries=tuple(
             BoundaryDecision(
                 id=f"b{index}",
@@ -354,7 +367,7 @@ class StructureQualityTests(unittest.TestCase):
             element_count=1,
             signal_version="1",
             boundary_version="1",
-            policy=grouping(elements, (), ungrouped=elements[0:0]).policy,
+            policy=GroupingPolicy(),
             logical_units=(),
             subdocuments=(),
             ungrouped_element_ids=("e0",),
