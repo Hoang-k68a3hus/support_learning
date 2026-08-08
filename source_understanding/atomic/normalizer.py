@@ -19,7 +19,7 @@ from source_understanding.schemas.element import (
 )
 
 
-ELEMENT_NORMALIZER_VERSION = "1"
+ELEMENT_NORMALIZER_VERSION = "2"
 ELEMENT_NORMALIZER_POLICY_VERSION = "1"
 
 
@@ -189,9 +189,30 @@ class ElementNormalizer:
 
     @staticmethod
     def _element_id(document_id: str, raw: RawElement) -> str:
+        # Element identity belongs to the source-near observation, not to the
+        # software version that happened to extract it.  Extractor/version,
+        # confidence and transformation bookkeeping remain in provenance but
+        # must not churn every downstream reference when an adapter is upgraded
+        # without changing its observed source output.
         payload = {
             "document_id": document_id,
-            "raw_element": raw.model_dump(mode="json"),
+            "source_observation": {
+                "text": raw.text,
+                "type_hint": raw.type_hint,
+                "order": raw.order,
+                "location": (
+                    raw.location.model_dump(mode="json")
+                    if raw.location is not None
+                    else None
+                ),
+                "style": (
+                    raw.style.model_dump(mode="json")
+                    if raw.style is not None
+                    else None
+                ),
+                "attributes": raw.attributes,
+                "source": raw.provenance.source.value,
+            },
         }
         digest = hashlib.sha256(
             json.dumps(
@@ -205,8 +226,14 @@ class ElementNormalizer:
 
     @staticmethod
     def _validate_inputs(raw_elements: tuple[RawElement, ...], document_id: str) -> None:
-        if not isinstance(document_id, str) or not document_id.strip():
-            raise ElementNormalizationError("document_id must be a non-blank string")
+        if (
+            not isinstance(document_id, str)
+            or not document_id
+            or document_id.strip() != document_id
+        ):
+            raise ElementNormalizationError(
+                "document_id must be a trimmed non-blank string"
+            )
         if not raw_elements:
             raise ElementNormalizationError("cannot normalize an empty RawElement sequence")
 
