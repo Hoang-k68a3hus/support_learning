@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from pydantic import Field
 
+from source_understanding.adapters.base import AdapterDiagnostic, AdapterDiagnosticLevel
 from source_understanding.profiling.regions import ContentRegionSegmentationResult
 from source_understanding.schemas.context import Confidence, Identifier, JsonObject, SchemaModel, StructureMode
 from source_understanding.schemas.document import CanonicalDocument
@@ -17,7 +20,7 @@ from source_understanding.structure.integrity import (
 from source_understanding.structure.quality import StructureQualityReport
 
 
-UNDERSTANDING_COMPLETION_VERSION = "1"
+UNDERSTANDING_COMPLETION_VERSION = "2"
 
 
 _INTEGRITY_SENSITIVE_TYPES = frozenset(
@@ -54,6 +57,9 @@ class UnderstandingCompletionMetrics(SchemaModel):
     unknown_region_structure_count: int = Field(ge=0)
     semantic_annotation_count: int = Field(ge=0)
     semantic_target_coverage: Confidence | None = None
+    adapter_diagnostic_count: int = Field(default=0, ge=0)
+    adapter_warning_count: int = Field(default=0, ge=0)
+    adapter_structural_issue_count: int = Field(default=0, ge=0)
 
 
 class UnderstandingCompletionReport(SchemaModel):
@@ -87,6 +93,7 @@ class UnderstandingCompletionBuilder:
         region_result: ContentRegionSegmentationResult | None,
         semantic_status: str,
         semantic_result: SemanticAnnotationResult | None,
+        adapter_diagnostics: Sequence[AdapterDiagnostic] = (),
     ) -> UnderstandingCompletionReport:
         self._validate_counts(
             document,
@@ -147,6 +154,17 @@ class UnderstandingCompletionBuilder:
         if semantic_result is not None:
             semantic_target_coverage = semantic_result.coverage.coverage
 
+        adapter_diagnostic_snapshot = tuple(adapter_diagnostics)
+        adapter_warning_count = sum(
+            diagnostic.level == AdapterDiagnosticLevel.WARNING
+            for diagnostic in adapter_diagnostic_snapshot
+        )
+        adapter_structural_issues = tuple(
+            diagnostic
+            for diagnostic in adapter_diagnostic_snapshot
+            if diagnostic.affects_structural_completeness
+        )
+
         mixed_region_ready = (
             document.structure.mode != StructureMode.MIXED
             or (region_count > 0 and region_coverage_ratio == 1.0)
@@ -155,6 +173,7 @@ class UnderstandingCompletionBuilder:
             not unresolved_integrity
             and not integrity_sensitive_ungrouped
             and mixed_region_ready
+            and not adapter_structural_issues
         )
 
         warnings = list(quality_report.quality.warnings)
@@ -162,6 +181,10 @@ class UnderstandingCompletionBuilder:
             warnings.append("integrity-sensitive elements remain ungrouped")
         if document.structure.mode == StructureMode.MIXED and not mixed_region_ready:
             warnings.append("MIXED structure does not have complete region routing")
+        if adapter_structural_issues:
+            warnings.append(
+                "source adapter reported unresolved structural source constructs"
+            )
         if semantic_status == "FAILED_OPTIONAL":
             warnings.append("optional semantic enrichment failed; structural document remains valid")
         warnings = list(dict.fromkeys(warnings))
@@ -188,6 +211,9 @@ class UnderstandingCompletionBuilder:
             unknown_region_structure_count=unknown_region_structure_count,
             semantic_annotation_count=len(document.semantic_annotations),
             semantic_target_coverage=semantic_target_coverage,
+            adapter_diagnostic_count=len(adapter_diagnostic_snapshot),
+            adapter_warning_count=adapter_warning_count,
+            adapter_structural_issue_count=len(adapter_structural_issues),
         )
         return UnderstandingCompletionReport(
             document_id=document.document_id,
@@ -205,6 +231,9 @@ class UnderstandingCompletionBuilder:
                 "region_segmentation_version": (
                     region_result.version if region_result is not None else None
                 ),
+                "adapter_structural_issue_codes": [
+                    diagnostic.code for diagnostic in adapter_structural_issues
+                ],
             },
         )
 
