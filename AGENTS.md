@@ -84,6 +84,30 @@ Before changing schemas, inspect the implementation and tests in this branch. In
 - A retrieval unit must pass `validate_against_document()` before it is considered safe for indexing/use.
 - Unmeasured confidence/quality must remain unknown (`None`), not silently default to perfect confidence.
 
+## Repository-local Codex skills
+
+Codex discovers project skills from `.agents/skills/`.
+
+Use `$rag-source-understanding` whenever a task touches any of these areas:
+
+- source adapters or atomic extraction;
+- canonical source representation, structure, provenance, or citations;
+- logical/retrieval unit design and chunking policy;
+- dense/sparse retrieval, fusion, filtering, or reranking;
+- evidence construction or grounded generation;
+- RAG/source-understanding debugging or evaluation.
+
+The skill is a task workflow, not a replacement for this file. `AGENTS.md` remains authoritative for repository scope, architecture, Git safety, and publishing rules.
+
+If the `Superpowers` Codex plugin is installed, its engineering skills may complement this repository skill:
+
+- use systematic debugging for bugs or unexpected behavior;
+- use test-driven development for bug fixes and foundation invariants;
+- use verification-before-completion before claiming a fix or implementation is complete;
+- use requesting-code-review before publishing a substantial change.
+
+If a generic or third-party skill conflicts with this repository's source-understanding invariants, follow `AGENTS.md` and `$rag-source-understanding`.
+
 ## Design priority
 
 When several implementation choices are possible, prioritize:
