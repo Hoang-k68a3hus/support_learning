@@ -17,9 +17,14 @@ from source_understanding.schemas.context import (
     StructureSource,
 )
 from source_understanding.schemas.element import Element, ElementType
+from source_understanding.source_attributes import (
+    HEADING_LEVEL_ATTRIBUTE,
+    SourceAttributeError,
+    source_heading_level,
+)
 
 
-STRUCTURE_SIGNAL_VERSION = "1"
+STRUCTURE_SIGNAL_VERSION = "2"
 STRUCTURE_SIGNAL_POLICY_VERSION = "1"
 
 _DEFAULT_SECTION_MARKERS = (
@@ -72,6 +77,7 @@ class StructureSignalKind(StrEnum):
     STYLE_BOLD = "STYLE_BOLD"
     STYLE_FONT_SIZE = "STYLE_FONT_SIZE"
     STYLE_INDENTATION = "STYLE_INDENTATION"
+    HEADING_LEVEL = "HEADING_LEVEL"
     NUMBERING_MARKER = "NUMBERING_MARKER"
     SECTION_MARKER = "SECTION_MARKER"
     QUESTION_MARKER = "QUESTION_MARKER"
@@ -208,6 +214,23 @@ class StructureSignalExtractor:
                 text_value=element.type.value,
             )
         ]
+
+        if element.type == ElementType.HEADING and HEADING_LEVEL_ATTRIBUTE in element.attributes:
+            try:
+                heading_level = source_heading_level(element)
+            except SourceAttributeError as exc:
+                raise StructureSignalError(str(exc)) from exc
+            if heading_level is not None:
+                signals.append(
+                    self._signal(
+                        StructureSignalKind.HEADING_LEVEL,
+                        (element.id,),
+                        source=element.provenance.source,
+                        confidence=element.confidence.type,
+                        numeric_value=float(heading_level),
+                        metadata={"attribute_key": HEADING_LEVEL_ATTRIBUTE},
+                    )
+                )
 
         if element.style is not None:
             if element.style.bold is True:
