@@ -49,3 +49,7 @@ jobs:
           do
             python -m benchmarks.docx_structure_real_v0_1.summary --source "$source"
           done
+      - name: Diagnose real-world structural failures
+        run: |
+          python -m benchmarks.docx_structure_real_v0_1.diagnose --source real-docx-04-eps-guidance
+          python -m benchmarks.docx_structure_real_v0_1.diagnose --source real-docx-05-contractor-licence
