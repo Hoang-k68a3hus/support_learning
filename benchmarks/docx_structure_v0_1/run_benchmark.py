@@ -14,7 +14,7 @@ from source_understanding.evaluation import (
     load_materialized_benchmark,
 )
 
-from benchmarks.docx_structure_v0_1.generate_pilot import materialize
+from benchmarks.docx_structure_v0_1.adjudicated_pilot import materialize
 
 
 FIXED_EVALUATION_TIME = datetime(2026, 8, 9, tzinfo=timezone.utc)
@@ -23,9 +23,9 @@ FIXED_EVALUATION_TIME = datetime(2026, 8, 9, tzinfo=timezone.utc)
 def run_pilot() -> object:
     """Materialize, reload, and evaluate the deterministic pilot benchmark.
 
-    Reloading the materialized bundle is intentional: it exercises the same
-    strict path/hash/identity validation that will be used for future real-world
-    benchmark bundles instead of evaluating only in-memory generator objects.
+    Reloading the adjudicated materialized bundle is intentional: it exercises
+    the same strict path/hash/identity validation that will be used for future
+    real-world benchmark bundles instead of evaluating only in-memory objects.
     """
 
     with tempfile.TemporaryDirectory(prefix="docx-structure-v0-1-") as tmp:
