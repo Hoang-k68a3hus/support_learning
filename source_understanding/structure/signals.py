@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from enum import StrEnum
 
 from pydantic import Field, field_validator, model_validator
@@ -98,13 +98,12 @@ class StructureSignalPolicy(SchemaModel):
     def normalize_markers(cls, value: object) -> object:
         if isinstance(value, str) or value is None:
             raise ValueError("section_markers must be a sequence of marker strings")
-        try:
-            markers = tuple(value)
-        except TypeError as exc:
-            raise ValueError("section_markers must be an iterable of strings") from exc
+        if not isinstance(value, Iterable):
+            raise ValueError("section_markers must be an iterable of strings")
+        markers = tuple(value)
         if any(not isinstance(marker, str) for marker in markers):
             raise ValueError("section_markers must contain only strings")
-        return tuple(marker.strip() for marker in markers)
+        return tuple(marker.strip() for marker in markers if isinstance(marker, str))
 
     @model_validator(mode="after")
     def validate_markers(self) -> "StructureSignalPolicy":
