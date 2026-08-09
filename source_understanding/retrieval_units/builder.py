@@ -769,26 +769,31 @@ class RetrievalUnitBuilder:
         anchors: list[SourceAnchor] = []
         for element in elements:
             location = element.location
-            location_kwargs: dict[str, object] = {}
             if location is not None and location.source is not None:
-                location_kwargs = {
-                    "location_source": location.source,
-                    "page": location.page,
-                    "bbox": location.bbox,
-                    "start_char": location.start_char,
-                    "end_char": location.end_char,
-                    "line_start": location.line_start,
-                    "line_end": location.line_end,
-                }
-            anchors.append(
-                SourceAnchor(
-                    source_id=document.document_id,
-                    content_hash=document.content_hash,
-                    source_revision=document.source_revision,
-                    element_id=element.id,
-                    **location_kwargs,
+                anchors.append(
+                    SourceAnchor(
+                        source_id=document.document_id,
+                        content_hash=document.content_hash,
+                        source_revision=document.source_revision,
+                        element_id=element.id,
+                        location_source=location.source,
+                        page=location.page,
+                        bbox=location.bbox,
+                        start_char=location.start_char,
+                        end_char=location.end_char,
+                        line_start=location.line_start,
+                        line_end=location.line_end,
+                    )
                 )
-            )
+            else:
+                anchors.append(
+                    SourceAnchor(
+                        source_id=document.document_id,
+                        content_hash=document.content_hash,
+                        source_revision=document.source_revision,
+                        element_id=element.id,
+                    )
+                )
         return tuple(anchors)
 
     @staticmethod
