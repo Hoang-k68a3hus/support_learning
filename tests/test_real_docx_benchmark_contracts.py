@@ -58,17 +58,17 @@ class RealDocxBenchmarkContractTests(unittest.TestCase):
             item["text"] for item in contract["L1_element_understanding"]["headings"]
         }
         self.assertNotIn("Contents", heading_texts)
-        self.assertEqual(
-            contract["L1_element_understanding"]["navigation"],
-            [
-                {
-                    "text": "Contents",
-                    "role": "toc_title",
-                    "style_id": "TOCHeading",
-                    "count": 1,
-                }
-            ],
+        navigation = contract["L1_element_understanding"]["navigation"]
+        self.assertIn(
+            {
+                "text": "Contents",
+                "role": "toc_title",
+                "style_id": "TOCHeading",
+                "count": 1,
+            },
+            navigation,
         )
+        self.assertTrue(any(item["role"] == "toc_entry" for item in navigation))
 
     def test_independent_audit_classifies_word_toc_styles_as_navigation(self) -> None:
         styles = {
