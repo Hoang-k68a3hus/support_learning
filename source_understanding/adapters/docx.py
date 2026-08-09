@@ -1,36 +1,24 @@
 from __future__ import annotations
 
-import hashlib
 import io
-import re
 import zipfile
-from collections import defaultdict
-from xml.etree import ElementTree as ET
 
-from source_understanding.schemas.context import StructureSource
 from source_understanding.schemas.document import Asset
-from source_understanding.schemas.element import StyleInfo
-from source_understanding.source_attributes import (
-    HEADING_LEVEL_ATTRIBUTE,
-    INTEGRITY_GROUP_ID_ATTRIBUTE,
-    INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE,
-    SOURCE_ANCHOR_ATTRIBUTE,
-    SOURCE_REFERENCES_ATTRIBUTE,
-)
 
-from .base import AdapterDiagnostic, AdapterDiagnosticLevel, AdapterError, SourceAdapterResult
 from ._docx_common import (
-    A, M, NS, R, W, WP,
-    DOCX_ADAPTER_VERSION, DOCX_MEDIA_TYPE, DOCX_POLICY_VERSION,
-    DocxAdapterPolicy, Emitter, RevisionView,
-    half_points, int_attr, local_name, on_off, stable_group_id,
+    DOCX_ADAPTER_VERSION,
+    DOCX_MEDIA_TYPE,
+    DocxAdapterPolicy,
+    Emitter,
 )
-from ._docx_styles import DocxStyleMixin
+from ._docx_extract import DocxExtractMixin
+from ._docx_fixups import DocxFixupMixin
 from ._docx_package import DocxPackageMixin
 from ._docx_postprocess import DocxPostprocessMixin
-from ._docx_fixups import DocxFixupMixin
-from ._docx_extract import DocxExtractMixin
+from ._docx_preservation import DocxPreservationMixin
+from ._docx_styles import DocxStyleMixin
 from ._docx_text import DocxTextMixin
+from .base import AdapterDiagnostic, AdapterError, SourceAdapterResult
 
 
 class DocxAdapter(
@@ -38,6 +26,7 @@ class DocxAdapter(
     DocxPackageMixin,
     DocxPostprocessMixin,
     DocxFixupMixin,
+    DocxPreservationMixin,
     DocxExtractMixin,
     DocxTextMixin,
 ):
@@ -86,7 +75,9 @@ class DocxAdapter(
                         package, emitter, content_hash, content_types
                     )
                 self._normalize_list_integrity(emitter)
-                assets = tuple(self._assets_by_part[key] for key in sorted(self._assets_by_part))
+                assets = tuple(
+                    self._assets_by_part[key] for key in sorted(self._assets_by_part)
+                )
         except zipfile.BadZipFile as exc:
             raise AdapterError("input is not a valid DOCX/ZIP package") from exc
         if not emitter.elements:
