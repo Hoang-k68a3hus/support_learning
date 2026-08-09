@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import re
 from xml.etree import ElementTree as ET
 
-from source_understanding.source_attributes import SOURCE_ANCHOR_ATTRIBUTE
+from source_understanding.source_attributes import (
+    HEADING_LEVEL_ATTRIBUTE,
+    INTEGRITY_GROUP_ID_ATTRIBUTE,
+    INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE,
+    SOURCE_ANCHOR_ATTRIBUTE,
+)
 
 from .base import AdapterDiagnostic, AdapterError
-from ._docx_common import NS, W, Emitter, local_name, stable_group_id
+from ._docx_common import NS, W, Emitter, int_attr, local_name, stable_group_id
 
 
 class DocxFixupMixin:
@@ -29,6 +35,8 @@ class DocxFixupMixin:
             rels=rels,
             wrappers=wrappers,
         )
+        self._normalize_navigation_paragraph(emitter, paragraph)
+
         math_nodes = [
             node
             for node in paragraph.iter()
@@ -60,6 +68,72 @@ class DocxFixupMixin:
                     **self._section_properties(sect, rels),
                 },
             )
+
+    def _normalize_navigation_paragraph(
+        self,
+        emitter: Emitter,
+        paragraph: ET.Element,
+    ) -> None:
+        """Keep Word TOC/navigation styles out of canonical content hierarchy.
+
+        Word's built-in TOC styles can carry outline-level metadata even though
+        they describe navigation material rather than document-content headings.
+        Preserve that source fact explicitly while keeping the source element a
+        paragraph, so TOC entries cannot become canonical hierarchy nodes merely
+        because of Word formatting metadata.
+        """
+
+        if not emitter.elements:
+            return
+        last = emitter.elements[-1]
+        attributes = dict(last.attributes)
+        style_id = attributes.get("paragraph_style_id")
+        style_name = attributes.get("paragraph_style_name")
+        role = self._toc_navigation_role(style_id, style_name)
+        if role is None:
+            return
+
+        ppr = paragraph.find("w:pPr", NS)
+        direct_outline = ppr.find("w:outlineLvl", NS) if ppr is not None else None
+        outline_level = int_attr(direct_outline, "val")
+        if outline_level is None and isinstance(style_id, str):
+            style_def = self._styles.get(style_id)
+            if style_def is not None:
+                outline_level = style_def.outline_level
+
+        attributes["docx_navigation_role"] = role
+        if outline_level is not None:
+            attributes["docx_outline_level"] = outline_level
+        attributes.pop(HEADING_LEVEL_ATTRIBUTE, None)
+        attributes.pop(INTEGRITY_GROUP_ID_ATTRIBUTE, None)
+        attributes.pop(INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE, None)
+        emitter.elements[-1] = last.model_copy(
+            update={"type_hint": "PARAGRAPH", "attributes": attributes}
+        )
+
+    @staticmethod
+    def _toc_navigation_role(
+        style_id: object,
+        style_name: object,
+    ) -> str | None:
+        def normalize(value: object) -> str:
+            if not isinstance(value, str):
+                return ""
+            return re.sub(r"[\s_-]+", "", value).casefold()
+
+        style_id_key = normalize(style_id)
+        style_name_key = normalize(style_name)
+        keys = {style_id_key, style_name_key}
+        if keys & {"tocheading", "tableofcontentsheading"}:
+            return "toc_title"
+        if any(
+            re.fullmatch(r"toc[1-9]", key)
+            or re.fullmatch(r"tableofcontents[1-9]", key)
+            for key in keys
+            if key
+        ):
+            return "toc_entry"
+        return None
 
     def _emit_table(
         self,
