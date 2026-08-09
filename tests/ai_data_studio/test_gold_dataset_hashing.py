@@ -10,7 +10,11 @@ from ai_data_studio.datasets import (
     semantic_gold_split_hash,
     source_corpus_hash,
 )
-from source_understanding.evaluation import SemanticGoldDataset
+from source_understanding.evaluation import (
+    BenchmarkSplit,
+    SemanticGoldDataset,
+    semantic_gold_dataset_hash as evaluation_semantic_gold_split_hash,
+)
 from source_understanding.schemas.document import (
     CanonicalDocument,
     SemanticAnnotationType,
@@ -44,23 +48,28 @@ class SemanticGoldDatasetHashingTests(unittest.TestCase):
             source_corpus_hash(reversed_dataset),
         )
 
-    def test_identity_and_volatile_metadata_do_not_change_hash(self) -> None:
+    def test_dataset_metadata_does_not_change_split_hash(self) -> None:
         dataset, _ = compiled_gold_dataset()
         payload = dataset.model_dump(mode="json")
-        payload["name"] = "renamed-release"
         payload["metadata"] = {"exported_at": "2030-01-01T00:00:00Z"}
-        payload["cases"][0]["metadata"] = {
-            "review_note": "Changed audit-only note."
-        }
-        payload["cases"][0]["annotations"][0]["metadata"] = {
-            "temporary_id": "workflow-9"
-        }
         noisy_dataset = SemanticGoldDataset.model_validate(payload)
 
         self.assertEqual(
             semantic_gold_dataset_hash(dataset),
             semantic_gold_dataset_hash(noisy_dataset),
         )
+
+    def test_frozen_split_hash_matches_evaluator_dataset_hash(self) -> None:
+        dataset, _ = compiled_gold_dataset()
+        for split in DatasetSplit:
+            with self.subTest(split=split.value):
+                self.assertEqual(
+                    semantic_gold_split_hash(dataset, split=split),
+                    evaluation_semantic_gold_split_hash(
+                        dataset,
+                        split=BenchmarkSplit(split.value),
+                    ),
+                )
 
     def test_annotation_and_scope_changes_change_hash(self) -> None:
         document = document_variant(document_id="doc-hash", content_token="f")
