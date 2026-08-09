@@ -7,6 +7,7 @@ on:
       - "benchmarks/docx_structure_v0_1/**"
       - "benchmarks/docx_structure_real_v0_1/**"
       - "tests/test_*.py"
+      - "pyrightconfig.json"
       - ".github/workflows/source-understanding-ci.yml"
       - ".github/workflows/source-understanding-real-docx.yml"
   pull_request:
@@ -15,6 +16,7 @@ on:
       - "benchmarks/docx_structure_v0_1/**"
       - "benchmarks/docx_structure_real_v0_1/**"
       - "tests/test_*.py"
+      - "pyrightconfig.json"
       - ".github/workflows/source-understanding-ci.yml"
       - ".github/workflows/source-understanding-real-docx.yml"
 
@@ -30,10 +32,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install minimal test dependency
-        run: python -m pip install --disable-pip-version-check "pydantic>=2,<3"
+      - name: Install test and static-check dependencies
+        run: >-
+          python -m pip install --disable-pip-version-check
+          "pydantic>=2,<3" "ruff>=0.9,<1" "pyright>=1.1,<2"
       - name: Compile source tests and benchmarks
         run: python -m compileall -q source_understanding tests benchmarks/docx_structure_v0_1 benchmarks/docx_structure_real_v0_1
+      - name: Run high-signal Ruff checks
+        run: python -m ruff check source_understanding tests benchmarks --select E9,F63,F7,F82
+      - name: Run Pyright on format-agnostic core
+        run: python -m pyright
       - name: Run source-understanding unittest suite
         run: python -m unittest discover -s tests -p "test_*.py" -v
       - name: Run reproducible synthetic DOCX benchmark
