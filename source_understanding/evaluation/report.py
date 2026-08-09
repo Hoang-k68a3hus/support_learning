@@ -56,7 +56,6 @@ class DocumentEvaluationMetrics(SchemaModel):
 
     heading_detection: PRFScore
     heading_level_accuracy: AccuracyScore
-
     hierarchy_parent_edges: PRFScore
 
     logical_unit_pairwise: PRFScore
@@ -69,6 +68,8 @@ class DocumentEvaluationMetrics(SchemaModel):
     relation_per_label: tuple[LabelPRF, ...] = Field(default_factory=tuple)
 
     source_text_exact: AccuracyScore
+    source_text_gold_char_count: int = Field(ge=0)
+    source_text_preserved_char_count: int = Field(ge=0)
     source_text_preservation_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
 
     expected_diagnostic_recall: AccuracyScore
@@ -100,10 +101,28 @@ class AggregateMetric(SchemaModel):
     document_count: int = Field(ge=0)
 
 
+class BenchmarkPooledMetrics(SchemaModel):
+    element_detection: PRFScore
+    element_type_accuracy: AccuracyScore
+    heading_detection: PRFScore
+    heading_level_accuracy: AccuracyScore
+    hierarchy_parent_edges: PRFScore
+    logical_unit_pairwise: PRFScore
+    integrity_exact_match: PRFScore
+    region_boundary: PRFScore
+    region_category_accuracy: AccuracyScore
+    structural_relations: PRFScore
+    source_text_exact: AccuracyScore
+    source_text_preservation_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
+    expected_diagnostic_recall: AccuracyScore
+    unexpected_structural_diagnostic_count: int = Field(ge=0)
+
+
 class BenchmarkEvaluationReport(SchemaModel):
     benchmark_name: str = Field(min_length=1, max_length=256)
     benchmark_version: str = Field(min_length=1, max_length=64)
     document_reports: tuple[DocumentEvaluationReport, ...]
+    pooled: BenchmarkPooledMetrics
     aggregate: tuple[AggregateMetric, ...] = Field(default_factory=tuple)
     total_error_count: int = Field(ge=0)
     error_type_counts: JsonObject = Field(default_factory=dict)
