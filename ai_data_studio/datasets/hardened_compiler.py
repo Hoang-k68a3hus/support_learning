@@ -89,9 +89,9 @@ class SemanticGoldCompiler(_BaseSemanticGoldCompiler):
         guideline_versions = tuple(
             sorted(
                 {
-                    case.metadata["guideline_version"]
-                    for case in dataset.cases
-                    if "guideline_version" in case.metadata
+                    record.reviews[-1].guideline_version
+                    for record in records
+                    if record.reviews
                 }
             )
         )
