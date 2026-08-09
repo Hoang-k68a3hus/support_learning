@@ -96,25 +96,25 @@ class SemanticAnnotator:
                 text = self._join_element_text(members)
                 if text is None:
                     continue
-                context_labels = tuple((contexts[context_id].label for context_id in logical_unit.context_node_ids))
-                requests.append(SemanticRequest(target_id=logical_unit.id, target_kind=SemanticTargetKind.LOGICAL_UNIT, text=self._limit_request(text), language=document.metadata.language, element_ids=logical_unit.element_ids, logical_unit_type=logical_unit.type.value, unit_label=logical_unit.label, context_labels=context_labels, metadata={'structure_source': logical_unit.source.value, 'structure_confidence': logical_unit.confidence}))
+                unit_context_labels = tuple((contexts[context_id].label for context_id in logical_unit.context_node_ids))
+                requests.append(SemanticRequest(target_id=logical_unit.id, target_kind=SemanticTargetKind.LOGICAL_UNIT, text=self._limit_request(text), language=document.metadata.language, element_ids=logical_unit.element_ids, logical_unit_type=logical_unit.type.value, unit_label=logical_unit.label, context_labels=unit_context_labels, metadata={'structure_source': logical_unit.source.value, 'structure_confidence': logical_unit.confidence}))
         if self._policy.annotate_elements:
             for element in document.elements:
                 text = self._element_text(element)
                 if text is None:
                     continue
                 owners = tuple(units_by_element.get(element.id, ()))
-                context_labels: list[str] = []
+                element_context_labels: list[str] = []
                 seen_contexts: set[str] = set()
                 for owner in owners:
                     for context_id in owner.context_node_ids:
                         if context_id in seen_contexts:
                             continue
                         seen_contexts.add(context_id)
-                        context_labels.append(contexts[context_id].label)
+                        element_context_labels.append(contexts[context_id].label)
                 logical_unit_type = owners[0].type.value if len(owners) == 1 else None
                 unit_label = owners[0].label if len(owners) == 1 else None
-                requests.append(SemanticRequest(target_id=element.id, target_kind=SemanticTargetKind.ELEMENT, text=self._limit_request(text), language=document.metadata.language, element_ids=(element.id,), logical_unit_type=logical_unit_type, unit_label=unit_label, context_labels=tuple(context_labels), metadata={'element_type': element.type.value, 'logical_unit_ids': [owner.id for owner in owners]}))
+                requests.append(SemanticRequest(target_id=element.id, target_kind=SemanticTargetKind.ELEMENT, text=self._limit_request(text), language=document.metadata.language, element_ids=(element.id,), logical_unit_type=logical_unit_type, unit_label=unit_label, context_labels=tuple(element_context_labels), metadata={'element_type': element.type.value, 'logical_unit_ids': [owner.id for owner in owners]}))
         return tuple((request for request in requests if self._provider_capabilities.supports_target_kind(request.target_kind)))
 
     def _select_candidates(self, requests: tuple[SemanticRequest, ...], candidates: tuple[SemanticCandidate, ...]) -> tuple[tuple[tuple[SemanticTargetKind, SemanticCandidate], ...], dict[str, int]]:
