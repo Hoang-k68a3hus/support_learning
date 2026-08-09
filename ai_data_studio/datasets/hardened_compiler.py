@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Mapping, Sequence
 
 from ai_data_studio.schemas import (
@@ -10,32 +8,21 @@ from ai_data_studio.schemas import (
 )
 from ai_data_studio.validation.review import validate_review_chain
 from source_understanding.evaluation import GoldSemanticDocument, SemanticGoldDataset
-from source_understanding.schemas.context import ContentHash, Identifier
+from source_understanding.schemas.context import Identifier
 from source_understanding.schemas.document import CanonicalDocument
 from source_understanding.semantics.provider import SemanticTargetKind
 
 from .compiler import SemanticGoldCompiler as _BaseSemanticGoldCompiler
-from .eligibility import GoldEligibilityPolicy
+from .eligibility import (
+    GOLD_ELIGIBILITY_POLICY_HASH_VERSION,
+    GoldEligibilityPolicy,
+    gold_eligibility_policy_hash,
+)
 from .errors import GoldEligibilityError, GoldSourceResolutionError
 from .splits import DatasetSplit, DatasetSplitManifest
 
 
 SEMANTIC_GOLD_COMPILER_VERSION = "2"
-GOLD_ELIGIBILITY_POLICY_HASH_VERSION = "1"
-
-
-def gold_eligibility_policy_hash(policy: GoldEligibilityPolicy) -> ContentHash:
-    payload = {
-        "hash_version": GOLD_ELIGIBILITY_POLICY_HASH_VERSION,
-        "policy": policy.model_dump(mode="json"),
-    }
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
 class SemanticGoldCompiler(_BaseSemanticGoldCompiler):
@@ -225,3 +212,11 @@ def _validate_gold_target_topology(
                 f"{target.logical_unit_type!r} does not match canonical type "
                 f"{expected_logical_type!r}"
             )
+
+
+__all__ = [
+    "GOLD_ELIGIBILITY_POLICY_HASH_VERSION",
+    "SEMANTIC_GOLD_COMPILER_VERSION",
+    "SemanticGoldCompiler",
+    "gold_eligibility_policy_hash",
+]
