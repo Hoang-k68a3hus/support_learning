@@ -12,6 +12,7 @@ from ai_data_studio.datasets import (
 )
 from source_understanding.evaluation import SemanticGoldDataset
 from source_understanding.schemas.document import SemanticAnnotationType
+from source_understanding.semantics import SemanticTargetKind
 
 from ._gold_compiler_fixtures import (
     adjudicated_record,
@@ -110,7 +111,7 @@ class SemanticGoldCompilerHardeningTests(unittest.TestCase):
             record_id="record-b",
             source_family_id="family-b",
             target_id="e-1",
-            target_kind=first.target.target_kind.ELEMENT,
+            target_kind=SemanticTargetKind.ELEMENT,
         )
 
         with self.assertRaisesRegex(
