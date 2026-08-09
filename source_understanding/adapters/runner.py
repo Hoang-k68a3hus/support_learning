@@ -20,7 +20,7 @@ from .base import (
 )
 
 
-SOURCE_ADAPTER_RUNNER_VERSION = "1"
+SOURCE_ADAPTER_RUNNER_VERSION = "2"
 
 
 class AdaptedSourceUnderstandingResult(SchemaModel):
@@ -35,7 +35,8 @@ class SourceAdapterRunner:
 
     The adapter remains responsible only for source-near extraction. The runner
     verifies adapter identity/hash/protocol, then delegates normalization and all
-    structural interpretation to ``SourceUnderstandingPipeline``.
+    structural interpretation, including completion reporting, to one
+    ``SourceUnderstandingPipeline`` instance.
     """
 
     version = SOURCE_ADAPTER_RUNNER_VERSION
@@ -46,9 +47,15 @@ class SourceAdapterRunner:
         *,
         completion_builder: UnderstandingCompletionBuilder | None = None,
     ) -> None:
-        self._pipeline = pipeline if pipeline is not None else SourceUnderstandingPipeline()
-        self._completion_builder = (
-            completion_builder if completion_builder is not None else UnderstandingCompletionBuilder()
+        if pipeline is not None and completion_builder is not None:
+            raise ValueError(
+                "completion_builder cannot be supplied with an existing pipeline; "
+                "configure completion ownership on the pipeline instead"
+            )
+        self._pipeline = (
+            pipeline
+            if pipeline is not None
+            else SourceUnderstandingPipeline(completion_builder=completion_builder)
         )
 
     def understand_bytes(
@@ -89,20 +96,8 @@ class SourceAdapterRunner:
             regions=regions,
             assets=adapted.assets,
             additional_relations=additional_relations,
-        )
-        completion = self._completion_builder.build(
-            document=understanding.document,
-            boundary_set=understanding.boundary_set,
-            grouping_result=understanding.grouping_result,
-            hierarchy_result=understanding.hierarchy_result,
-            integrity_report=understanding.integrity_report,
-            quality_report=understanding.quality_report,
-            region_result=understanding.region_result,
-            semantic_status=understanding.semantic_status.value,
-            semantic_result=understanding.semantic_result,
             adapter_diagnostics=adapted.diagnostics,
         )
-        understanding = understanding.model_copy(update={"completion_report": completion})
         return AdaptedSourceUnderstandingResult(
             document_id=document_id,
             adapter_result=adapted,
