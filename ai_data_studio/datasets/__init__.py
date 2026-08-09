@@ -29,7 +29,7 @@ from .errors import (
     GoldSplitResolutionError,
     GoldUnsupportedDecisionError,
 )
-from .freeze import (
+from .hardened_freeze import (
     MANIFEST_FILENAME,
     SemanticGoldFreezer,
     verify_frozen_dataset,
