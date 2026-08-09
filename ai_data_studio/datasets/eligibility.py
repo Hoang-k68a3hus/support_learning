@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from ai_data_studio.schemas import (
     AdjudicationConfidence,
@@ -28,6 +28,18 @@ class GoldIneligibilityReason(StrEnum):
 
 
 class GoldEligibilityPolicy(SchemaModel):
+    name: str = Field(
+        default="semantic-gold-strict",
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
+    version: str = Field(
+        default="1",
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
     allowed_statuses: tuple[WorkingRecordStatus, ...] = (
         WorkingRecordStatus.PASS,
     )
