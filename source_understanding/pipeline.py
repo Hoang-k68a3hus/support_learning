@@ -47,7 +47,7 @@ from source_understanding.structure.region_routing import RegionRouter
 from source_understanding.structure.signals import StructureSignalExtractor, StructureSignalSet
 
 
-SOURCE_UNDERSTANDING_PIPELINE_VERSION = "2"
+SOURCE_UNDERSTANDING_PIPELINE_VERSION = "3"
 
 
 class SemanticFailureMode(StrEnum):
@@ -283,7 +283,11 @@ class SourceUnderstandingPipeline:
         elif self._policy.auto_segment_regions:
             region_result = run_stage(
                 "content region segmentation",
-                lambda: self._region_segmenter.segment(element_snapshot, hierarchy_result),
+                lambda: self._region_segmenter.segment(
+                    element_snapshot,
+                    hierarchy_result,
+                    grouping_result,
+                ),
             )
             grouping_result, hierarchy_result = run_stage(
                 "content region routing",
