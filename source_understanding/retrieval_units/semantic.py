@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import cast
 
 from pydantic import Field, model_validator
 
@@ -363,13 +364,13 @@ def quality_gate_from_semantic_benchmark(
                 f"{item.key}"
             )
         declared = validated_capabilities.get(provider_name)
-        matches = tuple(
+        matches: list[object] = [
             capability
             for capability in (declared.capabilities if declared is not None else ())
             if capability.name == capability_name
             and item.target_kind in capability.target_kinds
             and item.annotation_type in capability.annotation_types
-        )
+        ]
         if not matches:
             raise SemanticRetrievalEnrichmentError(
                 "semantic benchmark slice has no matching declared provider capability: "
@@ -381,6 +382,8 @@ def quality_gate_from_semantic_benchmark(
                 f"{item.key}"
             )
         capability = matches[0]
+        if not hasattr(capability, "name"):
+            raise AssertionError("validated semantic capability is unavailable")
         reasons: list[str] = []
         if item.role.support == 0:
             reasons.append("NO_GOLD_SUPPORT")
@@ -417,7 +420,7 @@ def quality_gate_from_semantic_benchmark(
             SemanticCapabilityQualityDecision(
                 provider_name=provider_name,
                 provider_version=provider_versions[provider_name],
-                capability_name=capability.name,
+                capability_name=cast(str, getattr(capability, "name")),
                 annotation_type=item.annotation_type,
                 payload_mode=item.payload_mode,
                 target_kind=item.target_kind,
@@ -447,6 +450,9 @@ def quality_gate_from_semantic_benchmark(
         raise SemanticRetrievalEnrichmentError(
             "semantic benchmark has no capability slice with gold or predicted support"
         )
+    provider_versions_payload: dict[str, object] = {
+        name: provider_versions[name] for name in sorted(provider_names)
+    }
     return SemanticRetrievalQualityGate(
         evaluator_version=validated.version,
         benchmark_name=validated.dataset_name,
@@ -456,7 +462,7 @@ def quality_gate_from_semantic_benchmark(
         report_hash=semantic_benchmark_report_hash(validated),
         semantic_version=semantic_version,
         configuration_fingerprint_version=SEMANTIC_CONFIGURATION_FINGERPRINT_VERSION,
-        provider_versions=provider_versions,
+        provider_versions=provider_versions_payload,
         provider_capability_hashes={
             name: semantic_provider_capabilities_hash(validated_capabilities[name])
             for name in sorted(provider_names)
@@ -619,6 +625,7 @@ class SemanticRetrievalEnricher:
                 document,
                 unit,
                 selected,
+                quality_gate,
             )
             output.append(enriched)
             enriched_count += 1
@@ -773,6 +780,7 @@ class SemanticRetrievalEnricher:
         document: CanonicalDocument,
         unit: RetrievalUnit,
         selected: tuple[_Candidate, ...],
+        quality_gate: SemanticRetrievalQualityGate,
     ) -> tuple[RetrievalUnit, tuple[str, ...], tuple[str, ...]]:
         rendered_candidates: list[_Candidate] = []
         budget_skipped: list[str] = []
@@ -825,9 +833,9 @@ class SemanticRetrievalEnricher:
                 "semantic_rendered_annotation_ids": list(rendered_ids),
                 "semantic_skipped_budget_annotation_ids": list(budget_skipped),
                 "semantic_annotation_target_scopes": target_scopes,
-                "semantic_quality_benchmark": self._quality_gate.benchmark_name,
-                "semantic_quality_benchmark_version": self._quality_gate.benchmark_version,
-                "semantic_quality_report_hash": self._quality_gate.report_hash,
+                "semantic_quality_benchmark": quality_gate.benchmark_name,
+                "semantic_quality_benchmark_version": quality_gate.benchmark_version,
+                "semantic_quality_report_hash": quality_gate.report_hash,
                 "semantic_context_is_source_fact": False,
                 "base_retrieval_unit_id": unit.id,
             }
@@ -839,6 +847,7 @@ class SemanticRetrievalEnricher:
             selected_ids,
             rendered_ids,
             retrieval_text,
+            quality_gate,
         )
         version = f"{unit.version}+sem{self.version}"
         payload = unit.model_dump(mode="python")
@@ -876,12 +885,12 @@ class SemanticRetrievalEnricher:
                 AnnotationRef(
                     id=annotation.id,
                     type=annotation.type.value,
-                value=(
-                    annotation.value
-                    if annotation.payload_mode != SemanticPayloadMode.GENERATIVE
-                    and len(annotation.value) <= 2048
-                    else None
-                ),
+                    value=(
+                        annotation.value
+                        if annotation.payload_mode != SemanticPayloadMode.GENERATIVE
+                        and len(annotation.value) <= 2048
+                        else None
+                    ),
                     source=annotation.source,
                     confidence=annotation.confidence,
                 )
@@ -931,11 +940,12 @@ class SemanticRetrievalEnricher:
         annotation_ids: tuple[str, ...],
         rendered_ids: tuple[str, ...],
         retrieval_text: str,
+        quality_gate: SemanticRetrievalQualityGate,
     ) -> str:
         payload = {
             "enricher_version": self.version,
             "policy": self._policy.model_dump(mode="json"),
-            "quality_gate": self._quality_gate.model_dump(mode="json"),
+            "quality_gate": quality_gate.model_dump(mode="json"),
             "document_id": document.document_id,
             "content_hash": document.content_hash,
             "source_revision": document.source_revision,
@@ -957,6 +967,16 @@ class SemanticRetrievalEnricher:
     def _unique(values: list[str]) -> tuple[str, ...]:
         return tuple(dict.fromkeys(values))
 
+    @staticmethod
+    def _require_manifest_mapping(value: object, name: str) -> dict[str, object]:
+        if not isinstance(value, dict) or not all(
+            isinstance(key, str) for key in value
+        ):
+            raise SemanticRetrievalEnrichmentError(
+                f"canonical semantic manifest lacks {name} required by quality gate"
+            )
+        return cast(dict[str, object], value)
+
     def _validate_quality_gate(
         self,
         document: CanonicalDocument,
@@ -970,18 +990,14 @@ class SemanticRetrievalEnricher:
             raise SemanticRetrievalEnrichmentError(
                 "quality gate semantic_version does not match canonical document"
             )
-        semantic_configuration = document.processing.configuration.get(
-            "semantic_understanding"
+        semantic_configuration = self._require_manifest_mapping(
+            document.processing.configuration.get("semantic_understanding"),
+            "semantic_understanding",
         )
-        providers = (
-            semantic_configuration.get("providers")
-            if isinstance(semantic_configuration, dict)
-            else None
+        providers = self._require_manifest_mapping(
+            semantic_configuration.get("providers"),
+            "providers",
         )
-        if not isinstance(providers, dict):
-            raise SemanticRetrievalEnrichmentError(
-                "canonical document lacks semantic provider manifest required by quality gate"
-            )
         fingerprint_version = semantic_configuration.get(
             "configuration_fingerprint_version"
         )
@@ -990,34 +1006,30 @@ class SemanticRetrievalEnricher:
                 "quality gate configuration fingerprint version does not match "
                 "canonical semantic manifest"
             )
-        provider_configurations = semantic_configuration.get(
-            "provider_configurations"
+        provider_configurations = self._require_manifest_mapping(
+            semantic_configuration.get("provider_configurations"),
+            "provider_configurations",
         )
-        provider_capabilities = semantic_configuration.get("provider_capabilities")
-        provider_capability_hashes = semantic_configuration.get(
-            "provider_capability_hashes"
+        provider_capabilities = self._require_manifest_mapping(
+            semantic_configuration.get("provider_capabilities"),
+            "provider_capabilities",
         )
-        provider_configuration_hashes = semantic_configuration.get(
-            "provider_configuration_hashes"
+        provider_capability_hashes = self._require_manifest_mapping(
+            semantic_configuration.get("provider_capability_hashes"),
+            "provider_capability_hashes",
         )
-        provider_annotator_policies = semantic_configuration.get(
-            "provider_annotator_policies"
+        provider_configuration_hashes = self._require_manifest_mapping(
+            semantic_configuration.get("provider_configuration_hashes"),
+            "provider_configuration_hashes",
         )
-        provider_annotator_policy_hashes = semantic_configuration.get(
-            "provider_annotator_policy_hashes"
+        provider_annotator_policies = self._require_manifest_mapping(
+            semantic_configuration.get("provider_annotator_policies"),
+            "provider_annotator_policies",
         )
-        for name, value in (
-            ("provider_capabilities", provider_capabilities),
-            ("provider_capability_hashes", provider_capability_hashes),
-            ("provider_configurations", provider_configurations),
-            ("provider_configuration_hashes", provider_configuration_hashes),
-            ("provider_annotator_policies", provider_annotator_policies),
-            ("provider_annotator_policy_hashes", provider_annotator_policy_hashes),
-        ):
-            if not isinstance(value, dict):
-                raise SemanticRetrievalEnrichmentError(
-                    f"canonical semantic manifest lacks {name} required by quality gate"
-                )
+        provider_annotator_policy_hashes = self._require_manifest_mapping(
+            semantic_configuration.get("provider_annotator_policy_hashes"),
+            "provider_annotator_policy_hashes",
+        )
         for provider_name, provider_version in gate.provider_versions.items():
             if providers.get(provider_name) != provider_version:
                 raise SemanticRetrievalEnrichmentError(
