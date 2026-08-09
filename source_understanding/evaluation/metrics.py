@@ -31,7 +31,14 @@ class LabelPRF(SchemaModel):
 def prf_counts(tp: int, fp: int, fn: int) -> PRFScore:
     precision = tp / (tp + fp) if tp + fp else None
     recall = tp / (tp + fn) if tp + fn else None
-    if precision is None or recall is None:
+
+    # A complete miss is a real zero-F1 result, not an undefined metric. This is
+    # important for document-level macro averages: a system that predicts no
+    # positive boundary for a document containing gold boundaries must not vanish
+    # from the aggregate merely because precision has a zero denominator.
+    if tp == 0 and (fp > 0 or fn > 0):
+        f1 = 0.0
+    elif precision is None or recall is None:
         f1 = None
     elif precision + recall == 0:
         f1 = 0.0
