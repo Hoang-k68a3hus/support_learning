@@ -25,13 +25,24 @@ V0.1 is a schema/evaluator pilot. Generated OOXML gives us exact source truth, d
 
 Generated data must not be reported as a real-world benchmark. The next benchmark milestone should add human-reviewed real DOCX files while preserving the same gold schema and evaluator.
 
+## Source generation versus gold adjudication
+
+The benchmark intentionally separates two steps:
+
+1. `generate_pilot.py` deterministically creates the DOCX **source bytes** and an initial source-derived annotation draft.
+2. `adjudicated_pilot.py` applies reviewed **gold decisions** without modifying those source bytes or hashes.
+
+This mirrors the later human-annotation workflow: source creation/collection and gold interpretation are different responsibilities. Gold corrections are not allowed to rewrite a source file simply to improve the parser score.
+
+V0.1 adjudication currently records one explicit correction in case 03: referenced footer/header stories are preceded by deliberate `source_zone_boundary` elements, and boilerplate/separator material follows the core bridge policy by attaching to the adjacent material region rather than creating a standalone routing region.
+
 ## Pilot cases
 
 | Case | Split | Structural focus |
 | --- | --- | --- |
 | `docx-pilot-01` | dev | inherited heading styles, heading hierarchy, numbered list integrity |
 | `docx-pilot-02` | dev | outer/nested tables, content-control wrapper, native `PART_OF` |
-| `docx-pilot-03` | dev | footnote/endnote, paragraph section break, header/footer source stories |
+| `docx-pilot-03` | dev | footnote/endnote, paragraph section break, source-story boundaries, header/footer |
 | `docx-pilot-04` | dev | narrative + lexical Q/A, QA pairing, grouping-aware mixed-region gap |
 | `docx-pilot-05` | test | tracked revisions, content control, valid comment id 0, opaque `altChunk` |
 
@@ -50,10 +61,10 @@ The generator uses:
 
 Run commands from the repository root so imports resolve exactly as they do in CI.
 
-Generate the materialized files:
+Generate the materialized source + **adjudicated** gold bundle:
 
 ```bash
-python -m benchmarks.docx_structure_v0_1.generate_pilot \
+python -m benchmarks.docx_structure_v0_1.adjudicated_pilot \
   --output benchmarks/docx_structure_v0_1/materialized
 ```
 
@@ -64,7 +75,7 @@ python -m benchmarks.docx_structure_v0_1.run_benchmark \
   --report /tmp/docx-structure-v0.1-report.json
 ```
 
-The generator is the V0.1 pilot source of truth. `materialize(...)` writes reviewable gold JSON plus reproducible `.docx` files into an output directory. The generated bundle is then reloaded through the strict hash/path validator before scoring.
+The generator + adjudication layer are the V0.1 pilot source of truth. `materialize(...)` writes reviewable gold JSON plus reproducible `.docx` files into an output directory. The generated bundle is then reloaded through the strict hash/path validator before scoring.
 
 ## Gold stability
 
