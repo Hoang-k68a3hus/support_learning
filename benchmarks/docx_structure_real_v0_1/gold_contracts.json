@@ -39,7 +39,17 @@
           {"text": "Types of flexible working", "level": 1, "count": 1}
         ],
         "navigation": [
-          {"text": "Contents", "role": "toc_title", "style_id": "TOCHeading", "count": 1}
+          {"text": "Contents", "role": "toc_title", "style_id": "TOCHeading", "count": 1},
+          {"text": "Introduction 2", "role": "toc_entry", "style_id": "TOC1", "count": 1},
+          {"text": "Guiding principles underpinning this policy 3", "role": "toc_entry", "style_id": "TOC1", "count": 1},
+          {"text": "Types of flexible working 4", "role": "toc_entry", "style_id": "TOC1", "count": 1},
+          {"text": "How we encourage conversations about flexible working 5", "role": "toc_entry", "style_id": "TOC1", "count": 1},
+          {"text": "Requesting flexible working 6", "role": "toc_entry", "style_id": "TOC1", "count": 1},
+          {"text": "Making a formal application for a flexible working arrangement in our school 6", "role": "toc_entry", "style_id": "TOC2", "count": 1},
+          {"text": "Considering a request and communicating the outcome 8", "role": "toc_entry", "style_id": "TOC1", "count": 1},
+          {"text": "Trialling a new arrangement 10", "role": "toc_entry", "style_id": "TOC1", "count": 1},
+          {"text": "Right to appeal 11", "role": "toc_entry", "style_id": "TOC1", "count": 1},
+          {"text": "Review and monitoring 12", "role": "toc_entry", "style_id": "TOC1", "count": 1}
         ]
       },
       "L2_structural_grouping": {"status": "NOT_YET_FULLY_ADJUDICATED"},
@@ -68,7 +78,16 @@
           {"text": "Section C – Confirming identity", "level": 2, "count": 1},
           {"text": "Submitting this form", "level": 2, "count": 1}
         ],
-        "navigation": []
+        "navigation": [
+          {"text": "Table of Contents", "role": "toc_title", "style_id": "TOCHeading", "count": 1},
+          {"text": "Application form 3", "role": "toc_entry", "style_id": "TOC1", "count": 1},
+          {"text": "Section A - Personal details 3", "role": "toc_entry", "style_id": "TOC2", "count": 1},
+          {"text": "Section B – Right to work and barred list 4", "role": "toc_entry", "style_id": "TOC2", "count": 1},
+          {"text": "Section C – Confirming identity 5", "role": "toc_entry", "style_id": "TOC2", "count": 1},
+          {"text": "Option 1 - Digital identity check 5", "role": "toc_entry", "style_id": "TOC3", "count": 1},
+          {"text": "Option 2 – Department identity check 6", "role": "toc_entry", "style_id": "TOC3", "count": 1},
+          {"text": "Submitting this form 7", "role": "toc_entry", "style_id": "TOC2", "count": 1}
+        ]
       },
       "L2_structural_grouping": {"status": "NOT_YET_FULLY_ADJUDICATED"},
       "L3_document_structure": {"status": "PARTIAL", "structural_ready": true}
