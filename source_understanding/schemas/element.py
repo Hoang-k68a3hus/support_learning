@@ -53,7 +53,7 @@ class BoundingBox(SchemaModel):
     y1: NormalizedCoordinate
 
     @model_validator(mode="after")
-    def validate_extents(self) -> BoundingBox:
+    def validate_extents(self) -> "BoundingBox":
         if self.x1 < self.x0:
             raise ValueError("bbox x1 must be >= x0")
         if self.y1 < self.y0:
@@ -62,15 +62,22 @@ class BoundingBox(SchemaModel):
 
 
 class SourceLocation(SchemaModel):
-    """Canonical source location.
+    """Canonical source location with optional dedicated provenance.
 
     ``page`` is 1-based and only valid for a stable fixed/rendered page view.
     ``bbox`` is normalized to that page with top-left origin. Character offsets
     use the adapter source-text view before canonical normalization, are 0-based,
     and follow the half-open interval ``[start_char, end_char)``. Line ranges are
     1-based and inclusive.
+
+    ``source`` records how the *location itself* was obtained. It is deliberately
+    separate from Element provenance because text/type extraction and location
+    extraction may have different provenance. Legacy/unknown location provenance
+    may remain ``None``; downstream citation projection must then keep only the
+    exact element identity rather than invent a provenance class.
     """
 
+    source: StructureSource | None = None
     page: int | None = Field(default=None, ge=1)
     bbox: BoundingBox | None = None
     start_char: int | None = Field(default=None, ge=0)
@@ -79,7 +86,20 @@ class SourceLocation(SchemaModel):
     line_end: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
-    def validate_ranges(self) -> SourceLocation:
+    def validate_ranges(self) -> "SourceLocation":
+        has_location = any(
+            value is not None
+            for value in (
+                self.page,
+                self.bbox,
+                self.start_char,
+                self.end_char,
+                self.line_start,
+                self.line_end,
+            )
+        )
+        if self.source is not None and not has_location:
+            raise ValueError("location source requires source location data")
         if self.bbox is not None and self.page is None:
             raise ValueError("bbox requires page")
         if (self.start_char is None) != (self.end_char is None):
