@@ -1,15 +1,19 @@
 from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
-from source_understanding.semantics import HeuristicSemanticProvider, SemanticAnnotationError, SemanticAnnotationPolicy, SemanticAnnotator, SemanticCandidate, SemanticCapability, SemanticOntologyLabel, SemanticProviderCapabilities, SemanticTargetKind
+from source_understanding.semantics import SEMANTIC_CONFIGURATION_FINGERPRINT_VERSION, HeuristicSemanticPolicy, HeuristicSemanticProvider, LanguageRoutingMode, SemanticAnnotationError, SemanticAnnotationPolicy, SemanticAnnotator, SemanticCandidate, SemanticCapability, SemanticOntologyLabel, SemanticProviderCapabilities, SemanticTargetKind, semantic_configuration_hash
 from source_understanding.schemas.context import ContextNode, StructureSource
-from source_understanding.schemas.document import CanonicalDocument, DocumentMetadata, ProcessingManifest, SemanticAnnotation, SemanticAnnotationType
+from source_understanding.schemas.document import CanonicalDocument, DocumentMetadata, ProcessingManifest, SemanticAnnotation, SemanticAnnotationType, SemanticEvidenceSpan, SemanticTextView
 from source_understanding.schemas.element import Element, ElementType, Provenance
 from source_understanding.schemas.logical_unit import LogicalUnit, LogicalUnitType
 CONTENT_HASH = 'sha256:' + '4' * 64
 
 def element(element_id: str, order: int, text: str, *, element_type: ElementType=ElementType.PARAGRAPH, excluded: bool=False) -> Element:
     return Element(id=element_id, type=element_type, order=order, raw_text=text, normalized_text=text, provenance=Provenance(source=StructureSource.EXPLICIT, extractor='test'), exclude_from_retrieval=excluded)
+
+def evidence(element_id: str, source_text: str, quoted_text: str) -> tuple[SemanticEvidenceSpan, ...]:
+    start = source_text.index(quoted_text)
+    return (SemanticEvidenceSpan(element_id=element_id, start_char=start, end_char=start + len(quoted_text), quoted_text=quoted_text, text_view=SemanticTextView.RAW_TEXT),)
 
 def make_document(*, elements: tuple[Element, ...] | None=None, logical_units: tuple[LogicalUnit, ...] | None=None, annotations: tuple[SemanticAnnotation, ...]=()) -> CanonicalDocument:
     if elements is None:
@@ -54,6 +58,33 @@ class SemanticAnnotationTests(unittest.TestCase):
         self.assertEqual(annotation.source, StructureSource.DERIVED)
         self.assertEqual(result.document.elements, elements)
 
+    def test_language_policy_can_route_rules_by_request_primary_language(self) -> None:
+        elements = (
+            element('e1', 0, 'Definition: English role.'),
+            element('e2', 1, 'Định nghĩa: Vai trò tiếng Việt.'),
+        )
+        policy = HeuristicSemanticPolicy(
+            language_routing=LanguageRoutingMode.REQUEST_PRIMARY,
+        )
+        provider = HeuristicSemanticProvider(policy=policy)
+
+        result = SemanticAnnotator(provider).annotate(
+            make_document(elements=elements, logical_units=())
+        )
+
+        self.assertEqual(
+            tuple(annotation.target_id for annotation in result.document.semantic_annotations),
+            ('e2',),
+        )
+        self.assertEqual(provider.configuration['language_routing'], 'REQUEST_PRIMARY')
+        semantic_manifest = result.document.processing.configuration['semantic_understanding']
+        self.assertEqual(
+            semantic_manifest['provider_configurations']['heuristic-semantic'][
+                'language_routing'
+            ],
+            'REQUEST_PRIMARY',
+        )
+
     def test_requests_are_source_grounded_and_context_aware(self) -> None:
         provider = RecordingProvider()
         doc = make_document()
@@ -65,8 +96,28 @@ class SemanticAnnotationTests(unittest.TestCase):
         self.assertEqual(logical_request.element_ids, ('e1', 'e2'))
         self.assertEqual(logical_request.context_labels, ('Data Structures',))
         self.assertIn('Definition: A queue follows FIFO.', logical_request.text)
+        for segment in logical_request.target_segments:
+            self.assertEqual(
+                logical_request.text[segment.request_start:segment.request_end],
+                segment.text,
+            )
         self.assertEqual(element_requests['e1'].context_labels, ('Data Structures',))
         self.assertEqual(element_requests['e3'].target_id, 'e3')
+
+    def test_evidence_outside_truncated_request_segment_is_rejected(self) -> None:
+        source_text = 'x' * 128 + 'entity'
+        provider = RecordingProvider((SemanticCandidate(target_id='e1', type=SemanticAnnotationType.ENTITY, value='entity', confidence=0.9, evidence=evidence('e1', source_text, 'entity')),))
+        policy = SemanticAnnotationPolicy(
+            annotate_logical_units=False,
+            max_request_chars=128,
+        )
+        doc = make_document(
+            elements=(element('e1', 0, source_text),),
+            logical_units=(),
+        )
+
+        with self.assertRaisesRegex(SemanticAnnotationError, 'outside the segmented request'):
+            SemanticAnnotator(provider, policy).annotate(doc)
 
     def test_provider_capabilities_filter_unsupported_target_kinds(self) -> None:
         class ElementOnlyProvider(RecordingProvider):
@@ -86,7 +137,8 @@ class SemanticAnnotationTests(unittest.TestCase):
     def test_namespaced_specialized_label_is_preserved_in_metadata(self) -> None:
         class NerProvider(RecordingProvider):
             capabilities = SemanticProviderCapabilities(capabilities=(SemanticCapability(name='named-entities', target_kinds=(SemanticTargetKind.ELEMENT,), annotation_types=(SemanticAnnotationType.ENTITY,), ontology_namespaces=('ner',)),))
-        provider = NerProvider((SemanticCandidate(target_id='e1', type=SemanticAnnotationType.ENTITY, value='queue', confidence=0.9, ontology=SemanticOntologyLabel(namespace='ner', label='DATA_STRUCTURE', version='1')),))
+        source_text = 'Definition: A queue follows FIFO.'
+        provider = NerProvider((SemanticCandidate(target_id='e1', type=SemanticAnnotationType.ENTITY, value='queue', confidence=0.9, ontology=SemanticOntologyLabel(namespace='ner', label='DATA_STRUCTURE', version='1'), evidence=evidence('e1', source_text, 'queue')),))
         result = SemanticAnnotator(provider).annotate(make_document())
         annotation = result.document.semantic_annotations[0]
         self.assertEqual(annotation.type, SemanticAnnotationType.ENTITY)
@@ -94,12 +146,13 @@ class SemanticAnnotationTests(unittest.TestCase):
         self.assertEqual(annotation.metadata['semantic_ontology_label'], 'DATA_STRUCTURE')
         self.assertEqual(annotation.metadata['semantic_ontology_version'], '1')
         manifest = result.document.processing.configuration['semantic_understanding']
-        self.assertEqual(manifest['provider_capabilities']['recording']['protocol_version'], '2')
+        self.assertEqual(manifest['provider_capabilities']['recording']['protocol_version'], '3')
 
     def test_provider_cannot_emit_undeclared_ontology_namespace(self) -> None:
         class NerProvider(RecordingProvider):
             capabilities = SemanticProviderCapabilities(capabilities=(SemanticCapability(name='named-entities', target_kinds=(SemanticTargetKind.ELEMENT,), annotation_types=(SemanticAnnotationType.ENTITY,), ontology_namespaces=('ner',)),))
-        provider = NerProvider((SemanticCandidate(target_id='e1', type=SemanticAnnotationType.ENTITY, value='2026', confidence=0.9, ontology=SemanticOntologyLabel(namespace='temporal', label='TIMEX')),))
+        source_text = 'Definition: A queue follows FIFO.'
+        provider = NerProvider((SemanticCandidate(target_id='e1', type=SemanticAnnotationType.ENTITY, value='queue', confidence=0.9, ontology=SemanticOntologyLabel(namespace='temporal', label='TIMEX'), evidence=evidence('e1', source_text, 'queue')),))
         with self.assertRaisesRegex(SemanticAnnotationError, 'undeclared capability'):
             SemanticAnnotator(provider).annotate(make_document())
 
@@ -111,6 +164,11 @@ class SemanticAnnotationTests(unittest.TestCase):
     def test_provider_candidate_cannot_claim_explicit_source(self) -> None:
         with self.assertRaisesRegex(ValueError, 'cannot promote.*EXPLICIT'):
             SemanticCandidate(target_id='lu1', type=SemanticAnnotationType.TOPIC, value='Queue', confidence=0.9, source=StructureSource.EXPLICIT)
+
+    def test_extractive_candidate_value_must_match_grounded_evidence(self) -> None:
+        source_text = 'Definition: A queue follows FIFO.'
+        with self.assertRaisesRegex(ValueError, 'value must match an evidence quote'):
+            SemanticCandidate(target_id='e1', type=SemanticAnnotationType.CONCEPT, value='stack', confidence=0.9, evidence=evidence('e1', source_text, 'queue'))
 
     def test_low_confidence_and_disallowed_types_are_filtered(self) -> None:
         provider = RecordingProvider((SemanticCandidate(target_id='lu1', type=SemanticAnnotationType.TOPIC, value='weak', confidence=0.2), SemanticCandidate(target_id='lu1', type=SemanticAnnotationType.CUSTOM, value='custom', confidence=0.99, ontology=SemanticOntologyLabel(namespace='test', label='CUSTOM'))))
@@ -127,7 +185,7 @@ class SemanticAnnotationTests(unittest.TestCase):
         self.assertEqual(result.document.semantic_annotations[0].confidence, 0.95)
 
     def test_per_target_limit_is_policy_not_silent_overflow(self) -> None:
-        provider = RecordingProvider(tuple((SemanticCandidate(target_id='lu1', type=SemanticAnnotationType.KEYWORD, value=f'k{index}', confidence=0.99 - index * 0.01) for index in range(4))))
+        provider = RecordingProvider(tuple((SemanticCandidate(target_id='lu1', type=SemanticAnnotationType.TOPIC, value=f'k{index}', confidence=0.99 - index * 0.01) for index in range(4))))
         policy = SemanticAnnotationPolicy(max_annotations_per_target=2)
         result = SemanticAnnotator(provider, policy).annotate(make_document())
         self.assertEqual(result.accepted_annotation_count, 2)
@@ -152,9 +210,27 @@ class SemanticAnnotationTests(unittest.TestCase):
         self.assertEqual(enriched.elements, doc.elements)
         self.assertEqual(enriched.logical_units, doc.logical_units)
         self.assertEqual(enriched.context_nodes, doc.context_nodes)
-        self.assertEqual(enriched.processing.semantic_version, 'semantic-annotations:1')
+        self.assertEqual(enriched.processing.semantic_version, 'semantic-annotations:3')
         config = enriched.processing.configuration['semantic_understanding']
         self.assertEqual(config['providers']['recording'], '1')
+        self.assertEqual(
+            config['configuration_fingerprint_version'],
+            SEMANTIC_CONFIGURATION_FINGERPRINT_VERSION,
+        )
+        self.assertEqual(config['provider_configurations']['recording'], {})
+        self.assertEqual(
+            config['provider_configuration_hashes']['recording'],
+            semantic_configuration_hash({}),
+        )
+        annotation = enriched.semantic_annotations[0]
+        self.assertEqual(
+            annotation.metadata['semantic_provider_configuration_hash'],
+            config['provider_configuration_hashes']['recording'],
+        )
+        self.assertEqual(
+            annotation.metadata['semantic_annotator_policy_hash'],
+            config['provider_annotator_policy_hashes']['recording'],
+        )
 
     def test_output_is_deterministic_for_same_document_provider_and_policy(self) -> None:
         candidates = (SemanticCandidate(target_id='lu1', type=SemanticAnnotationType.TOPIC, value='Queue', confidence=0.9),)

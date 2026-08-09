@@ -4,69 +4,13 @@ import hashlib
 import json
 import zipfile
 from collections import Counter
-from datetime import datetime, timezone
 from io import BytesIO
-from urllib.request import Request, urlopen
 from xml.etree import ElementTree as ET
 
 from source_understanding.adapters.docx import DocxAdapter
 from source_understanding.adapters.runner import SourceAdapterRunner
 
-
-FIXED_EVALUATION_TIME = datetime(2026, 8, 9, tzinfo=timezone.utc)
-USER_AGENT = "support-learning-structure-benchmark/0.1 (+https://github.com/Hoang-k68a3hus/support_learning)"
-
-SOURCES = (
-    {
-        "id": "real-docx-01-flexible-policy",
-        "file_name": "example-flexible-working-policy.docx",
-        "document_class": "policy_template",
-        "url": "https://improve-workload-and-wellbeing-for-school-staff.education.gov.uk/assets/files/example-flexible-working-policy.docx",
-        "source_page": "https://improve-workload-and-wellbeing-for-school-staff.education.gov.uk/flexible-working-toolkit/create-a-flexible-working-strategy/example-flexible-working-policy/",
-        "license": "Open Government Licence v3.0",
-    },
-    {
-        "id": "real-docx-02-academy-form",
-        "file_name": "Academy_trust_chair_suitability_check_application_form_-_July_2025.docx",
-        "document_class": "application_form",
-        "url": "https://assets.publishing.service.gov.uk/media/685e5f6362b2e559cbd75333/Academy_trust_chair_suitability_check_application_form_-_July_2025.docx",
-        "source_page": "https://www.gov.uk/government/publications/academy-trust-chair-suitability-checks/academy-trust-chair-suitability-checks-guidance-for-applicants",
-        "license": "Open Government Licence v3.0",
-    },
-    {
-        "id": "real-docx-03-ivd-tabular",
-        "file_name": "Tabular_Summary_input__template__for_non_marked_IVD_devices_20-8-25.docx",
-        "document_class": "table_heavy_template",
-        "url": "https://assets.publishing.service.gov.uk/media/68a7290d2f18566482155760/Tabular_Summary_input__template__for_non_marked_IVD_devices_20-8-25.docx",
-        "source_page": "https://www.gov.uk/government/publications/clinical-trials-that-include-an-in-vitro-diagnostic-device/clinical-trials-that-include-an-in-vitro-diagnostic-device",
-        "license": "Open Government Licence v3.0",
-    },
-    {
-        "id": "real-docx-04-eps-guidance",
-        "file_name": "ukceps-guidance-note-data-tables.docx",
-        "document_class": "legacy_guidance",
-        "url": "https://assets.publishing.service.gov.uk/media/5a7efc74e5274a2e8ab4971f/ukceps-guidance-note-data-tables.docx",
-        "source_page": "https://www.gov.uk/government/statistics/employer-perspectives-survey-local-data",
-        "license": "Open Government Licence v3.0",
-    },
-    {
-        "id": "real-docx-05-contractor-licence",
-        "file_name": "Public_Sector_Contractor_Licence_Template__1_.docx",
-        "document_class": "legal_template",
-        "url": "https://assets.publishing.service.gov.uk/media/646dde827dd6e70012a9b2b2/Public_Sector_Contractor_Licence_Template__1_.docx",
-        "source_page": "https://www.gov.uk/government/publications/project-gigabit-supporting-document-templates",
-        "license": "Open Government Licence v3.0",
-    },
-)
-
-
-def _download(url: str) -> bytes:
-    request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.openxmlformats-officedocument.wordprocessingml.document,*/*;q=0.8"})
-    with urlopen(request, timeout=45) as response:
-        payload = response.read()
-    if not payload.startswith(b"PK"):
-        raise RuntimeError(f"downloaded payload from {url!r} is not an OPC ZIP package")
-    return payload
+from ._corpus import FIXED_EVALUATION_TIME, SOURCES, _download
 
 
 def _local_name(tag: str) -> str:
@@ -179,13 +123,19 @@ def _relation_record(relation: object) -> dict[str, object]:
     }
 
 
-def discover_source(source: dict[str, str]) -> dict[str, object]:
-    payload = _download(source["url"])
+def discover_payload(
+    source: dict[str, object],
+    payload: bytes,
+) -> dict[str, object]:
+    """Run production discovery against an already-resolved source revision."""
+
     digest = "sha256:" + hashlib.sha256(payload).hexdigest()
     package = _package_inventory(payload)
 
     adapter = DocxAdapter()
-    adapted = adapter.adapt(payload, source_name=source["file_name"])
+    source_id = str(source["id"])
+    source_name = str(source["file_name"])
+    adapted = adapter.adapt(payload, source_name=source_name)
     output: dict[str, object] = {
         **source,
         "bytes": len(payload),
@@ -210,8 +160,8 @@ def discover_source(source: dict[str, str]) -> dict[str, object]:
         result = SourceAdapterRunner().understand_bytes(
             payload,
             adapter=adapter,
-            document_id=source["id"],
-            source_name=source["file_name"],
+            document_id=source_id,
+            source_name=source_name,
             processed_at=FIXED_EVALUATION_TIME,
         )
     except Exception as exc:  # discovery must report pipeline failures rather than hide sources
@@ -237,6 +187,7 @@ def discover_source(source: dict[str, str]) -> dict[str, object]:
         "region_count": len(document.regions),
         "relation_count": len(document.relations),
         "quality": document.quality.model_dump(mode="json"),
+        "processing_manifest": document.processing.model_dump(mode="json"),
     }
     output["elements"] = [_element_record(item) for item in document.elements]
     output["logical_units"] = [_unit_record(item) for item in document.logical_units]
@@ -245,6 +196,10 @@ def discover_source(source: dict[str, str]) -> dict[str, object]:
     output["relations"] = [_relation_record(item) for item in document.relations]
     output["adapter_diagnostics"] = [item.model_dump(mode="json") for item in result.adapter_result.diagnostics]
     return output
+
+
+def discover_source(source: dict[str, object]) -> dict[str, object]:
+    return discover_payload(source, _download(str(source["url"])))
 
 
 def main() -> None:

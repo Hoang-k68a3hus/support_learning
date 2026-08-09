@@ -95,6 +95,11 @@ class RealDocxBenchmarkContractTests(unittest.TestCase):
         self.assertEqual(_navigation_role("TOC1", styles), "toc_entry")
         self.assertIsNone(_navigation_role("Heading1", styles))
 
+    def test_independent_audit_has_no_production_adapter_dependency(self) -> None:
+        source = (REAL_BENCHMARK / "source_audit.py").read_text(encoding="utf-8")
+        self.assertNotIn("source_understanding.adapters", source)
+        self.assertNotIn("from .discover", source)
+
     def test_real_benchmark_loads_frozen_gold_without_source_audit_oracle(self) -> None:
         self.assertNotIn("audit_source", run_benchmark.__dict__)
         gold = run_benchmark._load_gold_payload()

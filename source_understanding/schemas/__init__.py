@@ -24,6 +24,11 @@ from .document import (
     ProcessingManifest,
     SemanticAnnotation,
     SemanticAnnotationType,
+    SemanticConfidenceMethod,
+    SemanticEvidenceSpan,
+    SemanticPayloadMode,
+    SemanticTextView,
+    semantic_payload_mode_for_type,
     SubDocument,
 )
 from .element import (
@@ -80,6 +85,11 @@ __all__ = [
     "SchemaModel",
     "SemanticAnnotation",
     "SemanticAnnotationType",
+    "SemanticConfidenceMethod",
+    "SemanticEvidenceSpan",
+    "SemanticPayloadMode",
+    "SemanticTextView",
+    "semantic_payload_mode_for_type",
     "SourceAnchor",
     "SourceLocation",
     "StructureMode",

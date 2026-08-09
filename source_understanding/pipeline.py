@@ -159,22 +159,48 @@ class SourceUnderstandingPipeline:
         completion_builder: UnderstandingCompletionBuilder | None = None,
         policy: SourceUnderstandingPipelinePolicy | None = None,
     ) -> None:
-        self._normalizer = normalizer or ElementNormalizer()
-        self._profiler = profiler or ContentProfiler()
-        self._signal_extractor = signal_extractor or StructureSignalExtractor()
-        self._boundary_scorer = boundary_scorer or BoundaryScorer()
-        self._group_builder = group_builder or LogicalGroupBuilder()
-        self._integrity_consolidator = integrity_consolidator or IntegrityGroupConsolidator()
-        self._hierarchy_builder = hierarchy_builder or HierarchyBuilder()
-        self._region_segmenter = region_segmenter or ContentRegionSegmenter()
-        self._region_router = region_router or RegionRouter()
-        self._context_integrator = context_integrator or ContextIntegrator()
-        self._relation_builder = relation_builder or StructuralRelationBuilder()
-        self._quality_estimator = quality_estimator or StructureQualityEstimator()
-        self._assembler = assembler or CanonicalDocumentAssembler()
+        self._normalizer = normalizer if normalizer is not None else ElementNormalizer()
+        self._profiler = profiler if profiler is not None else ContentProfiler()
+        self._signal_extractor = (
+            signal_extractor
+            if signal_extractor is not None
+            else StructureSignalExtractor()
+        )
+        self._boundary_scorer = (
+            boundary_scorer if boundary_scorer is not None else BoundaryScorer()
+        )
+        self._group_builder = (
+            group_builder if group_builder is not None else LogicalGroupBuilder()
+        )
+        self._integrity_consolidator = (
+            integrity_consolidator
+            if integrity_consolidator is not None
+            else IntegrityGroupConsolidator()
+        )
+        self._hierarchy_builder = (
+            hierarchy_builder if hierarchy_builder is not None else HierarchyBuilder()
+        )
+        self._region_segmenter = (
+            region_segmenter if region_segmenter is not None else ContentRegionSegmenter()
+        )
+        self._region_router = region_router if region_router is not None else RegionRouter()
+        self._context_integrator = (
+            context_integrator if context_integrator is not None else ContextIntegrator()
+        )
+        self._relation_builder = (
+            relation_builder if relation_builder is not None else StructuralRelationBuilder()
+        )
+        self._quality_estimator = (
+            quality_estimator if quality_estimator is not None else StructureQualityEstimator()
+        )
+        self._assembler = assembler if assembler is not None else CanonicalDocumentAssembler()
         self._semantic_annotator = semantic_annotator
-        self._completion_builder = completion_builder or UnderstandingCompletionBuilder()
-        self._policy = policy or SourceUnderstandingPipelinePolicy()
+        self._completion_builder = (
+            completion_builder
+            if completion_builder is not None
+            else UnderstandingCompletionBuilder()
+        )
+        self._policy = policy if policy is not None else SourceUnderstandingPipelinePolicy()
 
     def understand_raw(
         self,

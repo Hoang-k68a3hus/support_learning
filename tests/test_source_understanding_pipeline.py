@@ -49,9 +49,9 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
         self.assertEqual(result.document.elements[0].raw_text, make_raw_elements()[0].text)
         self.assertIn("\ncontinued", result.document.elements[0].normalized_text)
         self.assertNotIn("\r", result.document.elements[0].normalized_text)
-        self.assertEqual(result.document.processing.normalizer_version, "2")
+        self.assertEqual(result.document.processing.normalizer_version, "3")
         config = result.document.processing.configuration["element_normalization"]
-        self.assertEqual(config["normalizer_version"], "2")
+        self.assertEqual(config["normalizer_version"], "3")
         self.assertIn("policy", config)
 
     def test_direct_element_pipeline_has_no_normalization_result(self):
@@ -191,9 +191,9 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
         self.assertEqual(manifest["content_regions"]["segmenter_version"], "3")
         self.assertEqual(manifest["structure_signal_version"], "2")
         self.assertEqual(manifest["boundary_version"], "2")
-        self.assertEqual(manifest["hierarchy_version"], "2")
+        self.assertEqual(manifest["hierarchy_version"], "3")
         self.assertEqual(manifest["relation_builder_version"], "2")
-        self.assertEqual(manifest["source_attribute_contract_version"], "1")
+        self.assertEqual(manifest["source_attribute_contract_version"], "2")
         self.assertIn("integrity_consolidation", manifest)
         self.assertIn("structure_quality_policy", manifest)
 
@@ -203,6 +203,26 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
                 raise ValueError("bad profile")
         with self.assertRaisesRegex(SourceUnderstandingPipelineError, "content profiling failed") as ctx:
             SourceUnderstandingPipeline(profiler=BrokenProfiler()).understand(document_id="doc1", content_hash=HASH, processing=processing(), elements=make_elements())
+        self.assertIsInstance(ctx.exception.__cause__, ValueError)
+
+    def test_explicit_falsey_stage_dependency_is_not_replaced(self):
+        class FalseyProfiler:
+            def __bool__(self):
+                return False
+
+            def analyze(self, elements):
+                raise ValueError("falsey profiler was called")
+
+        with self.assertRaisesRegex(
+            SourceUnderstandingPipelineError,
+            "falsey profiler was called",
+        ) as ctx:
+            SourceUnderstandingPipeline(profiler=FalseyProfiler()).understand(
+                document_id="doc1",
+                content_hash=HASH,
+                processing=processing(),
+                elements=make_elements(),
+            )
         self.assertIsInstance(ctx.exception.__cause__, ValueError)
 
     def test_pipeline_rejects_stage_count_drift_before_assembly(self):

@@ -7,6 +7,9 @@ from source_understanding.retrieval_units.semantic import (
     SemanticRetrievalEnrichmentError,
     SemanticRetrievalEnricher,
     SemanticRetrievalPolicy,
+    SemanticCapabilityQualityDecision,
+    SemanticRetrievalQualityGate,
+    SemanticQualityGateStatus,
 )
 from source_understanding.schemas.context import ContextNode, StructureSource
 from source_understanding.schemas.document import (
@@ -17,14 +20,46 @@ from source_understanding.schemas.document import (
     ProcessingManifest,
     SemanticAnnotation,
     SemanticAnnotationType,
+    SemanticConfidenceMethod,
+    SemanticPayloadMode,
     SubDocument,
 )
 from source_understanding.schemas.element import Element, ElementType, Provenance
 from source_understanding.schemas.logical_unit import LogicalUnit, LogicalUnitType
 from source_understanding.schemas.retrieval_unit import RetrievalUnit, RetrievalUnitType, SourceAnchor
+from source_understanding.semantics.provider import (
+    SemanticCapability,
+    SemanticProviderCapabilities,
+    SemanticTargetKind,
+)
+from source_understanding.semantics import (
+    SEMANTIC_CONFIGURATION_FINGERPRINT_VERSION,
+    SemanticAnnotationPolicy,
+    semantic_configuration_hash,
+    semantic_provider_capabilities_hash,
+)
 
 
 CONTENT_HASH = "sha256:" + "1" * 64
+PROVIDER_CONFIGURATION = {"fixture": "semantic-retrieval"}
+ANNOTATOR_POLICY = SemanticAnnotationPolicy().model_dump(mode="json")
+PROVIDER_CONFIGURATION_HASH = semantic_configuration_hash(PROVIDER_CONFIGURATION)
+ANNOTATOR_POLICY_HASH = semantic_configuration_hash(ANNOTATOR_POLICY)
+PROVIDER_CAPABILITIES = SemanticProviderCapabilities(
+    capabilities=(
+        SemanticCapability(
+            name="test-all",
+            target_kinds=(SemanticTargetKind.ELEMENT, SemanticTargetKind.LOGICAL_UNIT),
+            annotation_types=tuple(
+                annotation_type
+                for annotation_type in SemanticAnnotationType
+                if annotation_type != SemanticAnnotationType.CUSTOM
+            ),
+        ),
+    ),
+    deterministic=True,
+)
+PROVIDER_CAPABILITIES_HASH = semantic_provider_capabilities_hash(PROVIDER_CAPABILITIES)
 
 
 def token_count(text: str) -> int:
@@ -56,7 +91,150 @@ def annotation(
         value=value,
         source=StructureSource.INFERRED,
         confidence=confidence,
+        confidence_method=SemanticConfidenceMethod.RULE_PRIOR,
         model_version="test-semantic-v1",
+        metadata={
+            "semantic_provider": "test-provider",
+            "semantic_provider_version": "1",
+            "semantic_provider_configuration_hash": PROVIDER_CONFIGURATION_HASH,
+            "semantic_annotator_policy_hash": ANNOTATOR_POLICY_HASH,
+            "semantic_capability": "test-all",
+            "semantic_request_language": "en",
+        },
+    )
+
+
+def quality_gate() -> SemanticRetrievalQualityGate:
+    return SemanticRetrievalQualityGate(
+        evaluator_version="1",
+        benchmark_name="semantic-test-gold",
+        benchmark_version="semantic-roles-v0.1",
+        benchmark_split="test",
+        dataset_hash="sha256:" + "8" * 64,
+        report_hash="sha256:" + "9" * 64,
+        semantic_version="test-semantic-v1",
+        configuration_fingerprint_version=(
+            SEMANTIC_CONFIGURATION_FINGERPRINT_VERSION
+        ),
+        provider_versions={"test-provider": "1"},
+        provider_capability_hashes={
+            "test-provider": PROVIDER_CAPABILITIES_HASH,
+        },
+        provider_configuration_hashes={
+            "test-provider": PROVIDER_CONFIGURATION_HASH,
+        },
+        provider_annotator_policy_hashes={
+            "test-provider": ANNOTATOR_POLICY_HASH,
+        },
+        minimum_role_f1=0.8,
+        minimum_grounding_supported_ratio=1.0,
+        maximum_grounding_unsupported_rate=0.0,
+        minimum_extractive_value_f1=0.8,
+        minimum_extractive_span_f1=0.8,
+        decisions=tuple(
+            SemanticCapabilityQualityDecision(
+                provider_name="test-provider",
+                provider_version="1",
+                capability_name="test-all",
+                annotation_type=annotation_type,
+                target_kind=target_kind,
+                language="en",
+                role_support=1,
+                role_f1=1.0,
+                value_support=(
+                    1
+                    if annotation_type
+                    in {
+                        SemanticAnnotationType.CONCEPT,
+                        SemanticAnnotationType.ENTITY,
+                        SemanticAnnotationType.KEYWORD,
+                    }
+                    else 0
+                ),
+                value_normalized_f1=(
+                    1.0
+                    if annotation_type
+                    in {
+                        SemanticAnnotationType.CONCEPT,
+                        SemanticAnnotationType.ENTITY,
+                        SemanticAnnotationType.KEYWORD,
+                    }
+                    else None
+                ),
+                grounding_predicted_count=1,
+                grounding_supported_ratio=1.0,
+                grounding_unsupported_rate=0.0,
+                typed_span_support=(
+                    1
+                    if annotation_type
+                    in {
+                        SemanticAnnotationType.CONCEPT,
+                        SemanticAnnotationType.ENTITY,
+                        SemanticAnnotationType.KEYWORD,
+                    }
+                    else 0
+                ),
+                typed_span_exact_f1=(
+                    1.0
+                    if annotation_type
+                    in {
+                        SemanticAnnotationType.CONCEPT,
+                        SemanticAnnotationType.ENTITY,
+                        SemanticAnnotationType.KEYWORD,
+                    }
+                    else None
+                ),
+                typed_span_overlap_f1=(
+                    1.0
+                    if annotation_type
+                    in {
+                        SemanticAnnotationType.CONCEPT,
+                        SemanticAnnotationType.ENTITY,
+                        SemanticAnnotationType.KEYWORD,
+                    }
+                    else None
+                ),
+                calibration_count=1,
+                brier_score=0.01,
+                expected_calibration_error=0.1,
+                status=(
+                    SemanticQualityGateStatus.REJECTED
+                    if annotation_type
+                    in {
+                        SemanticAnnotationType.SUMMARY,
+                        SemanticAnnotationType.KEY_POINT,
+                        SemanticAnnotationType.LEARNING_OBJECTIVE,
+                    }
+                    else SemanticQualityGateStatus.APPROVED
+                ),
+                reasons=(
+                    ("GENERATIVE_FAITHFULNESS_NOT_EVALUATED",)
+                    if annotation_type
+                    in {
+                        SemanticAnnotationType.SUMMARY,
+                        SemanticAnnotationType.KEY_POINT,
+                        SemanticAnnotationType.LEARNING_OBJECTIVE,
+                    }
+                    else ()
+                ),
+            )
+            for annotation_type in SemanticAnnotationType
+            if annotation_type != SemanticAnnotationType.CUSTOM
+            for target_kind in (
+                SemanticTargetKind.ELEMENT,
+                SemanticTargetKind.LOGICAL_UNIT,
+            )
+        ),
+    )
+
+
+def semantic_enricher(
+    policy: SemanticRetrievalPolicy | None = None,
+) -> SemanticRetrievalEnricher:
+    return SemanticRetrievalEnricher(
+        token_count,
+        policy,
+        quality_gate=quality_gate(),
     )
 
 
@@ -125,6 +303,32 @@ def document_with(
             adapter_name="test",
             processed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
             semantic_version="test-semantic-v1",
+            configuration={
+                "semantic_understanding": {
+                    "configuration_fingerprint_version": (
+                        SEMANTIC_CONFIGURATION_FINGERPRINT_VERSION
+                    ),
+                    "providers": {"test-provider": "1"},
+                    "provider_capabilities": {
+                        "test-provider": PROVIDER_CAPABILITIES.model_dump(mode="json")
+                    },
+                    "provider_capability_hashes": {
+                        "test-provider": PROVIDER_CAPABILITIES_HASH
+                    },
+                    "provider_configurations": {
+                        "test-provider": PROVIDER_CONFIGURATION,
+                    },
+                    "provider_configuration_hashes": {
+                        "test-provider": PROVIDER_CONFIGURATION_HASH,
+                    },
+                    "provider_annotator_policies": {
+                        "test-provider": ANNOTATOR_POLICY,
+                    },
+                    "provider_annotator_policy_hashes": {
+                        "test-provider": ANNOTATOR_POLICY_HASH,
+                    },
+                }
+            },
         ),
         metadata=DocumentMetadata(title="Test document"),
         structure=structure,
@@ -200,11 +404,12 @@ class SemanticRetrievalTests(unittest.TestCase):
             (annotation("a1", "e1", SemanticAnnotationType.TOPIC, "Machine learning"),)
         )
         unit = base_unit(doc)
-        result = SemanticRetrievalEnricher(token_count).enrich(doc, (unit,))
+        result = semantic_enricher().enrich(doc, (unit,))
         enriched = result.units[0]
 
         self.assertEqual(result.enriched_unit_count, 1)
-        self.assertIn("Topic: Machine learning", enriched.retrieval_text)
+        self.assertIn("Topic", enriched.retrieval_text)
+        self.assertNotIn("Machine learning", enriched.retrieval_text)
         self.assertEqual(enriched.display_text, unit.display_text)
         self.assertEqual(enriched.source_anchors, unit.source_anchors)
         self.assertEqual(enriched.semantic_annotations[0].id, "a1")
@@ -218,7 +423,7 @@ class SemanticRetrievalTests(unittest.TestCase):
             (annotation("a1", "e1", SemanticAnnotationType.TOPIC, "Weak topic", 0.4),)
         )
         unit = base_unit(doc)
-        result = SemanticRetrievalEnricher(token_count).enrich(doc, (unit,))
+        result = semantic_enricher().enrich(doc, (unit,))
         self.assertEqual(result.units[0], unit)
         self.assertEqual(result.skipped_low_confidence_annotation_ids, ("a1",))
 
@@ -227,7 +432,7 @@ class SemanticRetrievalTests(unittest.TestCase):
             (annotation("a1", "e1", SemanticAnnotationType.CUSTOM, "opaque"),)
         )
         unit = base_unit(doc)
-        result = SemanticRetrievalEnricher(token_count).enrich(doc, (unit,))
+        result = semantic_enricher().enrich(doc, (unit,))
         self.assertEqual(result.units[0], unit)
         self.assertEqual(result.skipped_disallowed_type_annotation_ids, ("a1",))
 
@@ -238,20 +443,21 @@ class SemanticRetrievalTests(unittest.TestCase):
         first = base_unit(doc, element_ids=("e1",))
         second = base_unit(doc, element_ids=("e2",))
         second = RetrievalUnit(**{**second.model_dump(mode="python"), "id": "ru_base_2"})
-        result = SemanticRetrievalEnricher(token_count).enrich(doc, (first, second))
-        self.assertEqual(result.enriched_unit_count, 2)
-        self.assertTrue(all("Shared key point" in unit.retrieval_text for unit in result.units))
-        self.assertEqual(result.referenced_annotation_ids, ("a1",))
+        result = semantic_enricher().enrich(doc, (first, second))
+        self.assertEqual(result.enriched_unit_count, 0)
+        self.assertTrue(all("Shared key point" not in unit.retrieval_text for unit in result.units))
+        self.assertEqual(result.referenced_annotation_ids, ())
+        self.assertEqual(result.skipped_unevaluated_annotation_ids, ("a1",))
 
     def test_unrelated_annotation_does_not_leak_between_chunks(self) -> None:
         doc = document_with(
             (annotation("a1", "e2", SemanticAnnotationType.TOPIC, "Only beta"),)
         )
         first = base_unit(doc, element_ids=("e1",))
-        result = SemanticRetrievalEnricher(token_count).enrich(doc, (first,))
+        result = semantic_enricher().enrich(doc, (first,))
         self.assertEqual(result.units[0], first)
 
-    def test_context_annotation_is_inherited_but_region_and_subdocument_are_opt_in(self) -> None:
+    def test_unevaluated_context_region_and_subdocument_annotations_are_not_used(self) -> None:
         doc = document_with(
             (
                 annotation("ctx_ann", "ctx1", SemanticAnnotationType.TOPIC, "Context topic"),
@@ -263,11 +469,38 @@ class SemanticRetrievalTests(unittest.TestCase):
             with_subdocument=True,
         )
         unit = base_unit(doc, context=True, subdocument_id="sub1")
-        result = SemanticRetrievalEnricher(token_count).enrich(doc, (unit,))
+        result = semantic_enricher().enrich(doc, (unit,))
         enriched = result.units[0]
-        self.assertIn("Context topic", enriched.retrieval_text)
+        self.assertNotIn("Context topic", enriched.retrieval_text)
         self.assertNotIn("Region topic", enriched.retrieval_text)
         self.assertNotIn("Subdoc topic", enriched.retrieval_text)
+        self.assertEqual(enriched, unit)
+        self.assertEqual(result.skipped_unevaluated_annotation_ids, ("ctx_ann",))
+
+    def test_quality_gate_rejects_metrics_below_threshold(self) -> None:
+        values = quality_gate().model_dump(mode="python")
+        decisions = list(values["decisions"])
+        decisions[0] = {**decisions[0], "role_f1": 0.5}
+        values["decisions"] = tuple(decisions)
+
+        with self.assertRaisesRegex(ValueError, "do not match gate thresholds"):
+            SemanticRetrievalQualityGate(**values)
+
+    def test_uncalibrated_annotation_is_not_retrieval_eligible(self) -> None:
+        item = annotation("a1", "e1", SemanticAnnotationType.TOPIC, "Untrusted")
+        item = item.model_copy(
+            update={"confidence_method": SemanticConfidenceMethod.UNCALIBRATED}
+        )
+        doc = document_with((item,))
+        unit = base_unit(doc)
+
+        result = semantic_enricher().enrich(doc, (unit,))
+
+        self.assertEqual(result.units, (unit,))
+        self.assertEqual(
+            result.skipped_untrusted_confidence_annotation_ids,
+            ("a1",),
+        )
 
     def test_budget_can_attach_annotation_without_rendering_it(self) -> None:
         doc = document_with(
@@ -280,7 +513,7 @@ class SemanticRetrievalTests(unittest.TestCase):
                 "metadata": {**dict(unit.metadata), "max_tokens": unit.token_count},
             }
         )
-        result = SemanticRetrievalEnricher(token_count).enrich(doc, (unit,))
+        result = semantic_enricher().enrich(doc, (unit,))
         enriched = result.units[0]
         self.assertEqual(enriched.retrieval_text, unit.retrieval_text)
         self.assertEqual(enriched.token_count, unit.token_count)
@@ -295,11 +528,10 @@ class SemanticRetrievalTests(unittest.TestCase):
             (annotation("a1", "e1", SemanticAnnotationType.SUMMARY, long_value),)
         )
         unit = base_unit(doc)
-        result = SemanticRetrievalEnricher(token_count).enrich(doc, (unit,))
+        result = semantic_enricher().enrich(doc, (unit,))
         enriched = result.units[0]
-        self.assertIsNone(enriched.semantic_annotations[0].value)
-        self.assertIn("…", enriched.retrieval_text)
-        enriched.validate_against_document(doc)
+        self.assertEqual(enriched, unit)
+        self.assertNotIn(long_value, enriched.retrieval_text)
 
     def test_duplicate_semantic_values_are_deduplicated_deterministically(self) -> None:
         doc = document_with(
@@ -309,7 +541,7 @@ class SemanticRetrievalTests(unittest.TestCase):
             )
         )
         unit = base_unit(doc)
-        enricher = SemanticRetrievalEnricher(token_count)
+        enricher = semantic_enricher()
         first = enricher.enrich(doc, (unit,)).units[0]
         second = enricher.enrich(doc, (unit,)).units[0]
         self.assertEqual(first, second)
@@ -330,7 +562,7 @@ class SemanticRetrievalTests(unittest.TestCase):
             (annotation("a1", "e1", SemanticAnnotationType.TOPIC, "Machine learning"),)
         )
         unit = base_unit(doc)
-        enricher = SemanticRetrievalEnricher(token_count)
+        enricher = semantic_enricher()
         enriched = enricher.enrich(doc, (unit,)).units[0]
         with self.assertRaisesRegex(SemanticRetrievalEnrichmentError, "already semantic-enriched"):
             enricher.enrich(doc, (enriched,))
@@ -344,10 +576,84 @@ class SemanticRetrievalTests(unittest.TestCase):
         )
         unit = base_unit(doc)
         policy = SemanticRetrievalPolicy(max_annotations_per_unit=1)
-        result = SemanticRetrievalEnricher(token_count, policy).enrich(doc, (unit,))
+        result = semantic_enricher(policy).enrich(doc, (unit,))
         enriched = result.units[0]
-        self.assertIn("Direct topic", enriched.retrieval_text)
+        self.assertIn("Topic", enriched.retrieval_text)
+        self.assertNotIn("Direct topic", enriched.retrieval_text)
         self.assertNotIn("Logical topic", enriched.retrieval_text)
+
+    def test_enabled_enrichment_requires_an_evaluation_quality_gate(self) -> None:
+        doc = document_with(
+            (annotation("a1", "e1", SemanticAnnotationType.TOPIC, "Machine learning"),)
+        )
+        unit = base_unit(doc)
+
+        with self.assertRaisesRegex(
+            SemanticRetrievalEnrichmentError,
+            "requires an evaluation quality gate",
+        ):
+            SemanticRetrievalEnricher(token_count).enrich(doc, (unit,))
+
+    def test_gate_rejects_same_provider_version_with_stale_configuration(self) -> None:
+        doc = document_with(
+            (annotation("a1", "e1", SemanticAnnotationType.TOPIC, "Machine learning"),)
+        )
+        semantic_configuration = dict(
+            doc.processing.configuration["semantic_understanding"]
+        )
+        changed_configuration = {"fixture": "changed-without-version-bump"}
+        semantic_configuration["provider_configurations"] = {
+            "test-provider": changed_configuration,
+        }
+        semantic_configuration["provider_configuration_hashes"] = {
+            "test-provider": semantic_configuration_hash(changed_configuration),
+        }
+        processing = doc.processing.model_copy(
+            update={
+                "configuration": {
+                    "semantic_understanding": semantic_configuration,
+                }
+            }
+        )
+        changed = doc.model_copy(update={"processing": processing})
+
+        with self.assertRaisesRegex(
+            SemanticRetrievalEnrichmentError,
+            "configuration does not match",
+        ):
+            semantic_enricher().enrich(changed, (base_unit(changed),))
+
+    def test_gate_rejects_same_annotator_version_with_stale_policy(self) -> None:
+        doc = document_with(
+            (annotation("a1", "e1", SemanticAnnotationType.TOPIC, "Machine learning"),)
+        )
+        semantic_configuration = dict(
+            doc.processing.configuration["semantic_understanding"]
+        )
+        changed_policy = {
+            **ANNOTATOR_POLICY,
+            "min_confidence": 0.99,
+        }
+        semantic_configuration["provider_annotator_policies"] = {
+            "test-provider": changed_policy,
+        }
+        semantic_configuration["provider_annotator_policy_hashes"] = {
+            "test-provider": semantic_configuration_hash(changed_policy),
+        }
+        processing = doc.processing.model_copy(
+            update={
+                "configuration": {
+                    "semantic_understanding": semantic_configuration,
+                }
+            }
+        )
+        changed = doc.model_copy(update={"processing": processing})
+
+        with self.assertRaisesRegex(
+            SemanticRetrievalEnrichmentError,
+            "annotator policy does not match",
+        ):
+            semantic_enricher().enrich(changed, (base_unit(changed),))
 
 
 if __name__ == "__main__":

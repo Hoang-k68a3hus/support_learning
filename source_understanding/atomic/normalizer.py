@@ -19,7 +19,7 @@ from source_understanding.schemas.element import (
 )
 
 
-ELEMENT_NORMALIZER_VERSION = "2"
+ELEMENT_NORMALIZER_VERSION = "3"
 ELEMENT_NORMALIZER_POLICY_VERSION = "1"
 
 
@@ -103,6 +103,7 @@ class ElementNormalizer:
             element = Element(
                 id=element_id,
                 type=element_type,
+                source_type_hint=raw.type_hint,
                 order=raw.order,
                 raw_text=raw.text,
                 normalized_text=normalized_text,

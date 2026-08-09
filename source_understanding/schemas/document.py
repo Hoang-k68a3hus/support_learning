@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+import unicodedata
 
 from pydantic import Field, model_validator
 
@@ -41,6 +42,98 @@ class SemanticAnnotationType(StrEnum):
     KEY_POINT = "KEY_POINT"
     LEARNING_OBJECTIVE = "LEARNING_OBJECTIVE"
     CUSTOM = "CUSTOM"
+
+
+class SemanticPayloadMode(StrEnum):
+    """How an annotation value may be used downstream.
+
+    ``LABEL_ONLY`` is safe with role/evidence evaluation and never treats the
+    provider value as source text. ``EXTRACTIVE`` requires an exact source span.
+    ``GENERATIVE`` requires a separate faithfulness contract before its value can
+    influence retrieval.
+    """
+
+    LABEL_ONLY = "LABEL_ONLY"
+    EXTRACTIVE = "EXTRACTIVE"
+    GENERATIVE = "GENERATIVE"
+
+
+_EXTRACTIVE_PAYLOAD_TYPES = frozenset(
+    {
+        SemanticAnnotationType.CONCEPT,
+        SemanticAnnotationType.ENTITY,
+        SemanticAnnotationType.KEYWORD,
+    }
+)
+_GENERATIVE_PAYLOAD_TYPES = frozenset(
+    {
+        SemanticAnnotationType.SUMMARY,
+        SemanticAnnotationType.KEY_POINT,
+        SemanticAnnotationType.LEARNING_OBJECTIVE,
+    }
+)
+
+
+def semantic_payload_mode_for_type(
+    annotation_type: SemanticAnnotationType,
+) -> SemanticPayloadMode:
+    if annotation_type in _EXTRACTIVE_PAYLOAD_TYPES:
+        return SemanticPayloadMode.EXTRACTIVE
+    if annotation_type in _GENERATIVE_PAYLOAD_TYPES:
+        return SemanticPayloadMode.GENERATIVE
+    return SemanticPayloadMode.LABEL_ONLY
+
+
+class SemanticTextView(StrEnum):
+    """Element-local text view used by semantic evidence offsets."""
+
+    RAW_TEXT = "RAW_TEXT"
+    NORMALIZED_TEXT = "NORMALIZED_TEXT"
+
+
+class SemanticConfidenceMethod(StrEnum):
+    """Meaning of a semantic confidence value.
+
+    A numeric score alone is deliberately not treated as a calibrated
+    probability. Retrieval policy can use this provenance to reject scores that
+    have not been calibrated or measured on held-out data.
+    """
+
+    RULE_PRIOR = "RULE_PRIOR"
+    CALIBRATED_PROBABILITY = "CALIBRATED_PROBABILITY"
+    EMPIRICAL_PROVIDER_SCORE = "EMPIRICAL_PROVIDER_SCORE"
+    UNCALIBRATED = "UNCALIBRATED"
+
+
+class SemanticEvidenceSpan(SchemaModel):
+    """Exact element-local source support for a semantic annotation.
+
+    Offsets are zero-based, start-inclusive/end-exclusive and are evaluated
+    against the selected canonical Element text view. They are not document or
+    adapter source offsets and must never be promoted to SourceLocation.
+    """
+
+    element_id: Identifier
+    start_char: int = Field(ge=0)
+    end_char: int = Field(gt=0)
+    quoted_text: str = Field(min_length=1, max_length=32768)
+    text_view: SemanticTextView = SemanticTextView.RAW_TEXT
+
+    @model_validator(mode="after")
+    def validate_span(self) -> "SemanticEvidenceSpan":
+        if self.end_char <= self.start_char:
+            raise ValueError("semantic evidence end_char must be greater than start_char")
+        if self.end_char - self.start_char != len(self.quoted_text):
+            raise ValueError(
+                "semantic evidence range length must equal quoted_text length"
+            )
+        return self
+
+
+def semantic_extractive_value_key(value: str) -> str:
+    """Normalize an extractive value only for exact source-support validation."""
+
+    return " ".join(unicodedata.normalize("NFKC", value).split()).casefold()
 
 
 class DocumentMetadata(SchemaModel):
@@ -140,10 +233,69 @@ class SemanticAnnotation(SchemaModel):
     target_id: Identifier
     type: SemanticAnnotationType
     value: str = Field(min_length=1, max_length=8192)
+    payload_mode: SemanticPayloadMode | None = None
     source: StructureSource
     confidence: Confidence
+    confidence_method: SemanticConfidenceMethod = SemanticConfidenceMethod.UNCALIBRATED
+    calibration_version: str | None = Field(default=None, min_length=1, max_length=128)
+    evidence: tuple[SemanticEvidenceSpan, ...] = Field(default_factory=tuple)
     model_version: str | None = Field(default=None, max_length=128)
     metadata: JsonObject = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_payload_mode(cls, value: object) -> object:
+        if not isinstance(value, dict) or value.get("payload_mode") is not None:
+            return value
+        annotation_type = value.get("type")
+        if annotation_type is None:
+            return value
+        payload = dict(value)
+        payload["payload_mode"] = semantic_payload_mode_for_type(
+            SemanticAnnotationType(annotation_type)
+        )
+        return payload
+
+    @model_validator(mode="after")
+    def validate_semantic_provenance(self) -> "SemanticAnnotation":
+        if (
+            self.confidence_method == SemanticConfidenceMethod.CALIBRATED_PROBABILITY
+            and self.calibration_version is None
+        ):
+            raise ValueError(
+                "CALIBRATED_PROBABILITY semantic confidence requires calibration_version"
+            )
+        evidence_keys = [
+            (
+                span.element_id,
+                span.text_view,
+                span.start_char,
+                span.end_char,
+                span.quoted_text,
+            )
+            for span in self.evidence
+        ]
+        if len(evidence_keys) != len(set(evidence_keys)):
+            raise ValueError("semantic annotation evidence spans must be unique")
+        if self.type in {
+            SemanticAnnotationType.CONCEPT,
+            SemanticAnnotationType.ENTITY,
+            SemanticAnnotationType.KEYWORD,
+        } and not self.evidence:
+            raise ValueError(
+                f"{self.type.value} semantic annotations require source evidence"
+            )
+        if self.type in {
+            SemanticAnnotationType.CONCEPT,
+            SemanticAnnotationType.ENTITY,
+            SemanticAnnotationType.KEYWORD,
+        } and semantic_extractive_value_key(self.value) not in {
+            semantic_extractive_value_key(item.quoted_text) for item in self.evidence
+        }:
+            raise ValueError(
+                f"{self.type.value} semantic annotation value must match an evidence quote"
+            )
+        return self
 
 
 class CanonicalDocument(SchemaModel):
@@ -283,12 +435,59 @@ class CanonicalDocument(SchemaModel):
                 )
 
         annotation_targets = relation_targets | asset_ids
+        elements_by_id = {element.id: element for element in self.elements}
+        annotation_element_scopes: dict[str, set[str]] = {
+            element_id: {element_id} for element_id in element_ids
+        }
+        annotation_element_scopes.update(
+            {unit.id: set(unit.element_ids) for unit in self.logical_units}
+        )
+        annotation_element_scopes.update(
+            {region.id: set(region.element_ids) for region in self.regions}
+        )
+        annotation_element_scopes.update(
+            {subdoc.id: set(subdoc.element_ids) for subdoc in self.subdocuments}
+        )
         for annotation in self.semantic_annotations:
             if annotation.target_id not in annotation_targets:
                 raise ValueError(
                     f"semantic annotation {annotation.id} targets unknown id "
                     f"{annotation.target_id!r}"
                 )
+            target_scope = annotation_element_scopes.get(annotation.target_id)
+            for evidence in annotation.evidence:
+                element = elements_by_id.get(evidence.element_id)
+                if element is None:
+                    raise ValueError(
+                        f"semantic annotation {annotation.id} evidence references unknown "
+                        f"element {evidence.element_id!r}"
+                    )
+                if target_scope is not None and evidence.element_id not in target_scope:
+                    raise ValueError(
+                        f"semantic annotation {annotation.id} evidence element "
+                        f"{evidence.element_id!r} is outside target {annotation.target_id!r}"
+                    )
+                text = (
+                    element.raw_text
+                    if evidence.text_view == SemanticTextView.RAW_TEXT
+                    else element.normalized_text
+                )
+                if text is None:
+                    raise ValueError(
+                        f"semantic annotation {annotation.id} evidence selects missing "
+                        f"{evidence.text_view.value} on element {evidence.element_id!r}"
+                    )
+                if evidence.end_char > len(text):
+                    raise ValueError(
+                        f"semantic annotation {annotation.id} evidence range exceeds "
+                        f"element {evidence.element_id!r} {evidence.text_view.value}"
+                    )
+                actual_quote = text[evidence.start_char : evidence.end_char]
+                if actual_quote != evidence.quoted_text:
+                    raise ValueError(
+                        f"semantic annotation {annotation.id} evidence quote does not match "
+                        f"element {evidence.element_id!r} {evidence.text_view.value}"
+                    )
 
         self._validate_context_tree(context_ids)
         return self

@@ -4,7 +4,10 @@ import unittest
 
 from source_understanding.schemas.context import StructureMode, StructureSource
 from source_understanding.schemas.element import Element, ElementConfidence, ElementType, Provenance
-from source_understanding.source_attributes import HEADING_LEVEL_ATTRIBUTE
+from source_understanding.source_attributes import (
+    HEADING_LEVEL_ATTRIBUTE,
+    SOURCE_LABEL_ATTRIBUTE,
+)
 from source_understanding.structure.boundary import BoundaryClass, BoundaryDecision, BoundaryPolicy, BoundaryReason, BoundarySet
 from source_understanding.structure.hierarchy import HierarchyBuilder, HierarchyError
 from source_understanding.structure.signals import StructureSignal, StructureSignalExtractor, StructureSignalKind, StructureSignalSet
@@ -109,6 +112,33 @@ class HierarchyBuilderTests(unittest.TestCase):
     def test_blank_heading_does_not_invent_label(self):
         elements = (element("h", 0, ElementType.HEADING, "   "),)
         self.assertEqual(self.builder.build(elements, signal_set(elements), boundary_set(elements)).context_nodes, ())
+
+    def test_explicit_source_label_separates_markup_span_from_context_label(self):
+        elements = (
+            element(
+                "h",
+                0,
+                ElementType.HEADING,
+                "# Source heading\n",
+                attributes={SOURCE_LABEL_ATTRIBUTE: "Source heading"},
+            ),
+        )
+        result = self.builder.build(elements, signal_set(elements), boundary_set(elements))
+        self.assertEqual(result.context_nodes[0].label, "Source heading")
+        self.assertEqual(elements[0].raw_text, "# Source heading\n")
+
+    def test_invalid_explicit_source_label_fails_closed(self):
+        elements = (
+            element(
+                "h",
+                0,
+                ElementType.HEADING,
+                "# Source heading\n",
+                attributes={SOURCE_LABEL_ATTRIBUTE: " Source heading "},
+            ),
+        )
+        with self.assertRaisesRegex(HierarchyError, "source_label"):
+            self.builder.build(elements, signal_set(elements), boundary_set(elements))
 
     def test_long_label_is_bounded_but_source_remains(self):
         elements = (element("h", 0, ElementType.HEADING, "x" * 3000),)

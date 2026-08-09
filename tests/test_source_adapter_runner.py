@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 
 from source_understanding.adapters.base import AdapterError, SourceAdapterResult
 from source_understanding.adapters.runner import SourceAdapterRunner
+from source_understanding.atomic import ElementNormalizer
+from source_understanding.pipeline import SourceUnderstandingPipeline
 from source_understanding.schemas.context import StructureSource
 from source_understanding.schemas.element import Provenance, RawElement
 
@@ -41,6 +43,13 @@ class FakeAdapter:
         )
 
 
+class LossyNormalizer(ElementNormalizer):
+    def normalize(self, raw_elements, *, document_id):
+        result = super().normalize(raw_elements, document_id=document_id)
+        changed = result.elements[0].model_copy(update={"raw_text": "changed"})
+        return result.model_copy(update={"elements": (changed,)})
+
+
 class SourceAdapterRunnerTests(unittest.TestCase):
     def test_runner_recomputes_exact_source_hash(self):
         with self.assertRaisesRegex(AdapterError, "content_hash does not match exact input bytes"):
@@ -70,6 +79,21 @@ class SourceAdapterRunnerTests(unittest.TestCase):
         self.assertEqual(result.adapter_result.content_hash, SourceAdapterResult.hash_bytes(b"hello"))
         self.assertEqual(result.understanding.document.elements[0].raw_text, "hello")
         self.assertEqual(result.understanding.document.processing.adapter_name, "fake")
+        self.assertTrue(result.preservation_report.fully_preserved)
+        self.assertEqual(result.preservation_report.exact_element_ratio, 1.0)
+
+    def test_runner_fails_closed_when_normalization_loses_source_facts(self):
+        runner = SourceAdapterRunner(
+            SourceUnderstandingPipeline(normalizer=LossyNormalizer())
+        )
+
+        with self.assertRaisesRegex(AdapterError, "preservation audit failed"):
+            runner.understand_bytes(
+                b"hello",
+                adapter=FakeAdapter(),
+                document_id="doc",
+                processed_at=datetime(2026, 8, 9, tzinfo=timezone.utc),
+            )
 
 
 if __name__ == "__main__":

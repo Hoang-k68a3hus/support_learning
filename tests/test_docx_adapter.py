@@ -6,6 +6,7 @@ import zipfile
 from datetime import datetime, timezone
 
 from source_understanding.adapters import AdapterError, DocxAdapter, SourceAdapterRunner
+from source_understanding.evaluation import evaluate_parser_preservation
 from source_understanding.profiling import ContentCategory
 from source_understanding.schemas.relation import RelationType
 from source_understanding.source_attributes import (
@@ -115,9 +116,16 @@ class DocxAdapterTests(unittest.TestCase):
         )
         document = adapted.understanding.document
         self.assertEqual(document.processing.adapter_name, "docx-ooxml")
-        self.assertEqual(document.processing.normalizer_version, "2")
+        self.assertEqual(document.processing.normalizer_version, "3")
         self.assertEqual(document.processing.structure_version, "3")
         self.assertTrue(adapted.understanding.completion_report.structural_pipeline_complete)
+        preservation = evaluate_parser_preservation(
+            adapted.adapter_result.raw_elements,
+            document.elements,
+        )
+        self.assertTrue(preservation.fully_preserved)
+        self.assertEqual(preservation.type_hint_preservation_ratio, 1.0)
+        self.assertEqual(adapted.preservation_report, preservation)
 
         footnote_relations = [
             relation for relation in document.relations

@@ -1,0 +1,88 @@
+{
+  "name": "semantic-roles-pilot",
+  "schema_version": "3",
+  "benchmark_version": "semantic-roles-v0.3",
+  "metadata": {
+    "splits": ["dev", "test"],
+    "test_policy": "locked gate split; pilot predates independent test collection",
+    "adjudication": "repository-maintained pilot",
+    "scoring_unit": "role_value_span_ontology_grounding_calibration"
+  },
+  "cases": [
+    {
+      "document_id": "semantic-en-roles",
+      "split": "dev",
+      "content_hash": "sha256:56bbbd7a30c6151ef02fe42aed50ea492ae878fb29dc0201b15052b45e84697a",
+      "element_snapshot_hash": "sha256:d61f8eb78cf7007f109e3e83118e37d47c70b5c82b2bbf9c13c7fd79c6e47dd7",
+      "language": "en",
+      "elements": [
+        {"order": 0, "raw_text": "Definition: A queue follows FIFO.", "normalized_text": "Definition: A queue follows FIFO.", "type": "PARAGRAPH"},
+        {"order": 1, "raw_text": "Example: enqueue A and then B.", "normalized_text": "Example: enqueue A and then B.", "type": "PARAGRAPH"},
+        {"order": 2, "raw_text": "Warning: dequeue on an empty queue fails.", "normalized_text": "Warning: dequeue on an empty queue fails.", "type": "PARAGRAPH"},
+        {"order": 3, "raw_text": "Note: capacity may be bounded.", "normalized_text": "Note: capacity may be bounded.", "type": "PARAGRAPH"},
+        {"order": 4, "raw_text": "This sentence is ordinary explanatory text.", "normalized_text": "This sentence is ordinary explanatory text.", "type": "PARAGRAPH"}
+      ],
+      "annotations": [
+        {"target": {"kind": "ELEMENT", "element_orders": [0]}, "type": "DEFINITION", "value": "A queue follows FIFO.", "evidence": [{"element_order": 0, "start_char": 12, "end_char": 33, "quoted_text": "A queue follows FIFO.", "text_view": "RAW_TEXT"}]},
+        {"target": {"kind": "ELEMENT", "element_orders": [1]}, "type": "EXAMPLE", "value": "enqueue A and then B.", "evidence": [{"element_order": 1, "start_char": 9, "end_char": 30, "quoted_text": "enqueue A and then B.", "text_view": "RAW_TEXT"}]},
+        {"target": {"kind": "ELEMENT", "element_orders": [2]}, "type": "WARNING", "value": "dequeue on an empty queue fails.", "evidence": [{"element_order": 2, "start_char": 9, "end_char": 41, "quoted_text": "dequeue on an empty queue fails.", "text_view": "RAW_TEXT"}]},
+        {"target": {"kind": "ELEMENT", "element_orders": [3]}, "type": "NOTE", "value": "capacity may be bounded.", "evidence": [{"element_order": 3, "start_char": 6, "end_char": 30, "quoted_text": "capacity may be bounded.", "text_view": "RAW_TEXT"}]}
+      ],
+      "evaluation_scopes": [
+        {"target": {"kind": "ELEMENT", "element_orders": [0]}, "evaluated_types": ["DEFINITION", "EXAMPLE", "WARNING", "NOTE"]},
+        {"target": {"kind": "ELEMENT", "element_orders": [1]}, "evaluated_types": ["DEFINITION", "EXAMPLE", "WARNING", "NOTE"]},
+        {"target": {"kind": "ELEMENT", "element_orders": [2]}, "evaluated_types": ["DEFINITION", "EXAMPLE", "WARNING", "NOTE"]},
+        {"target": {"kind": "ELEMENT", "element_orders": [3]}, "evaluated_types": ["DEFINITION", "EXAMPLE", "WARNING", "NOTE"]},
+        {"target": {"kind": "ELEMENT", "element_orders": [4]}, "evaluated_types": ["DEFINITION", "EXAMPLE", "WARNING", "NOTE"]}
+      ]
+    },
+    {
+      "document_id": "semantic-vi-roles",
+      "split": "test",
+      "content_hash": "sha256:03895fde54047edb740de557b2a861b2b37986044a32dbe03df9ccaa6fb9b40a",
+      "element_snapshot_hash": "sha256:4361d457dabdd581c42731565221b4b50345175d0315a47eb79b0e5bb1f3b860",
+      "language": "vi",
+      "elements": [
+        {"order": 0, "raw_text": "Định nghĩa: Hàng đợi tuân theo nguyên tắc FIFO.", "normalized_text": "Định nghĩa: Hàng đợi tuân theo nguyên tắc FIFO.", "type": "PARAGRAPH"},
+        {"order": 1, "raw_text": "Ví dụ: thêm A rồi thêm B.", "normalized_text": "Ví dụ: thêm A rồi thêm B.", "type": "PARAGRAPH"},
+        {"order": 2, "raw_text": "Cảnh báo: không lấy phần tử từ hàng đợi rỗng.", "normalized_text": "Cảnh báo: không lấy phần tử từ hàng đợi rỗng.", "type": "PARAGRAPH"},
+        {"order": 3, "raw_text": "Bài tập: cài đặt hàng đợi bằng mảng.", "normalized_text": "Bài tập: cài đặt hàng đợi bằng mảng.", "type": "PARAGRAPH"},
+        {"order": 4, "raw_text": "Tóm tắt: thêm ở cuối và lấy ở đầu.", "normalized_text": "Tóm tắt: thêm ở cuối và lấy ở đầu.", "type": "PARAGRAPH"}
+      ],
+      "annotations": [
+        {"target": {"kind": "ELEMENT", "element_orders": [0]}, "type": "DEFINITION", "value": "Hàng đợi tuân theo nguyên tắc FIFO.", "evidence": [{"element_order": 0, "start_char": 12, "end_char": 47, "quoted_text": "Hàng đợi tuân theo nguyên tắc FIFO.", "text_view": "RAW_TEXT"}]},
+        {"target": {"kind": "ELEMENT", "element_orders": [1]}, "type": "EXAMPLE", "value": "thêm A rồi thêm B.", "evidence": [{"element_order": 1, "start_char": 7, "end_char": 25, "quoted_text": "thêm A rồi thêm B.", "text_view": "RAW_TEXT"}]},
+        {"target": {"kind": "ELEMENT", "element_orders": [2]}, "type": "WARNING", "value": "không lấy phần tử từ hàng đợi rỗng.", "evidence": [{"element_order": 2, "start_char": 10, "end_char": 45, "quoted_text": "không lấy phần tử từ hàng đợi rỗng.", "text_view": "RAW_TEXT"}]},
+        {"target": {"kind": "ELEMENT", "element_orders": [3]}, "type": "EXERCISE", "value": "cài đặt hàng đợi bằng mảng.", "evidence": [{"element_order": 3, "start_char": 9, "end_char": 36, "quoted_text": "cài đặt hàng đợi bằng mảng.", "text_view": "RAW_TEXT"}]},
+        {"target": {"kind": "ELEMENT", "element_orders": [4]}, "type": "SUMMARY", "value": "thêm ở cuối và lấy ở đầu.", "evidence": [{"element_order": 4, "start_char": 9, "end_char": 34, "quoted_text": "thêm ở cuối và lấy ở đầu.", "text_view": "RAW_TEXT"}]}
+      ],
+      "evaluation_scopes": [
+        {"target": {"kind": "ELEMENT", "element_orders": [0]}, "evaluated_types": ["DEFINITION", "EXAMPLE", "WARNING", "EXERCISE", "SUMMARY"]},
+        {"target": {"kind": "ELEMENT", "element_orders": [1]}, "evaluated_types": ["DEFINITION", "EXAMPLE", "WARNING", "EXERCISE", "SUMMARY"]},
+        {"target": {"kind": "ELEMENT", "element_orders": [2]}, "evaluated_types": ["DEFINITION", "EXAMPLE", "WARNING", "EXERCISE", "SUMMARY"]},
+        {"target": {"kind": "ELEMENT", "element_orders": [3]}, "evaluated_types": ["DEFINITION", "EXAMPLE", "WARNING", "EXERCISE", "SUMMARY"]},
+        {"target": {"kind": "ELEMENT", "element_orders": [4]}, "evaluated_types": ["DEFINITION", "EXAMPLE", "WARNING", "EXERCISE", "SUMMARY"]}
+      ]
+    },
+    {
+      "document_id": "semantic-en-negatives",
+      "split": "test",
+      "content_hash": "sha256:c955a0d36bc3af0b3630042f47e2ccf0362ae83b1bb44178ca27fbc5cb22d450",
+      "element_snapshot_hash": "sha256:cb030e716bce36852bfa7a8ad3405abd4ca6d77d364d7405867e0d0f2d5eca52",
+      "language": "en",
+      "elements": [
+        {"order": 0, "raw_text": "A queue definition can appear in ordinary prose.", "normalized_text": "A queue definition can appear in ordinary prose.", "type": "PARAGRAPH"},
+        {"order": 1, "raw_text": "Definition without a colon is not an explicit marker.", "normalized_text": "Definition without a colon is not an explicit marker.", "type": "PARAGRAPH"},
+        {"order": 2, "raw_text": "Note: this one is explicitly marked.", "normalized_text": "Note: this one is explicitly marked.", "type": "PARAGRAPH"}
+      ],
+      "annotations": [
+        {"target": {"kind": "ELEMENT", "element_orders": [2]}, "type": "NOTE", "value": "this one is explicitly marked.", "evidence": [{"element_order": 2, "start_char": 6, "end_char": 36, "quoted_text": "this one is explicitly marked.", "text_view": "RAW_TEXT"}]}
+      ],
+      "evaluation_scopes": [
+        {"target": {"kind": "ELEMENT", "element_orders": [0]}, "evaluated_types": ["DEFINITION", "NOTE"]},
+        {"target": {"kind": "ELEMENT", "element_orders": [1]}, "evaluated_types": ["DEFINITION", "NOTE"]},
+        {"target": {"kind": "ELEMENT", "element_orders": [2]}, "evaluated_types": ["DEFINITION", "NOTE"]}
+      ]
+    }
+  ]
+}

@@ -10,12 +10,13 @@ from __future__ import annotations
 from source_understanding.schemas.element import Element
 
 
-SOURCE_ATTRIBUTE_CONTRACT_VERSION = "1"
+SOURCE_ATTRIBUTE_CONTRACT_VERSION = "2"
 HEADING_LEVEL_ATTRIBUTE = "heading_level"
 INTEGRITY_GROUP_ID_ATTRIBUTE = "integrity_group_id"
 INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE = "integrity_parent_group_id"
 SOURCE_ANCHOR_ATTRIBUTE = "source_anchor"
 SOURCE_REFERENCES_ATTRIBUTE = "source_references"
+SOURCE_LABEL_ATTRIBUTE = "source_label"
 SOURCE_ZONE_ATTRIBUTE = "source_zone"
 
 
@@ -63,6 +64,25 @@ def source_heading_level(element: Element) -> int | None:
     if value < 1 or value > 64:
         raise SourceAttributeError(
             f"{HEADING_LEVEL_ATTRIBUTE} for element {element.id!r} must be between 1 and 64"
+        )
+    return value
+
+
+def source_label(element: Element) -> str | None:
+    """Return an explicit source-provided structural label when available.
+
+    This is useful for markup sources whose exact raw source span contains block
+    syntax (for example ``# Heading``) while the source also explicitly defines
+    the heading label (``Heading``). It is not a semantic summary.
+    """
+
+    value = element.attributes.get(SOURCE_LABEL_ATTRIBUTE)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value or value.strip() != value:
+        raise SourceAttributeError(
+            f"{SOURCE_LABEL_ATTRIBUTE} for element {element.id!r} must be a "
+            "trimmed non-blank string"
         )
     return value
 

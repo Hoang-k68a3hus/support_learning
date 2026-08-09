@@ -77,6 +77,54 @@ python -m benchmarks.docx_structure_real_v0_1.source_audit \
   --source real-docx-01-flexible-policy
 ```
 
+## L2/L3 adjudication artifacts
+
+Use the adjudication command when preparing full LogicalUnit, hierarchy,
+region, or structural-relation gold. It downloads the pinned revision once,
+verifies its byte length and SHA-256, and then records two deliberately separate
+views of those exact bytes:
+
+1. independent OOXML observations from `source_audit.py`;
+2. the current production parser output, clearly labelled as a prediction.
+
+Create a bundle and an explicitly non-gold review template:
+
+```bash
+python -m benchmarks.docx_structure_real_v0_1.adjudication create \
+  --source real-docx-01-flexible-policy \
+  --bundle /tmp/real-docx-01.bundle.json \
+  --decision-template /tmp/real-docx-01.review.json
+```
+
+The generated review template has `status: DRAFT` and `gold: null`. A reviewer
+must inspect the source document, use benchmark-only ids, fill a valid
+`GoldDocumentStructure`, state the exact L2/L3 coverage, and record decisions.
+The production ids in the bundle are debugging aids and must never be copied
+into gold. See `ADJUDICATION_GUIDELINE.md` for the field-level workflow.
+
+Validate a completed decision:
+
+```bash
+python -m benchmarks.docx_structure_real_v0_1.adjudication validate \
+  --bundle /tmp/real-docx-01.bundle.json \
+  --decision /tmp/real-docx-01.review.json
+```
+
+Export the reviewed per-document annotation to a new file for code review:
+
+```bash
+python -m benchmarks.docx_structure_real_v0_1.adjudication export-reviewed-gold \
+  --bundle /tmp/real-docx-01.bundle.json \
+  --decision /tmp/real-docx-01.review.json \
+  --output /tmp/real-docx-01.gold.json
+```
+
+The command refuses to overwrite files and specifically refuses to write
+`gold_contracts.json`. Export is not benchmark integration: the reviewed file
+must still be inspected, versioned, and wired into evaluation in a separate
+gold-contract change. This prevents a production run or an unreviewed draft from
+silently changing the oracle.
+
 ## CI policy
 
 Network-dependent corpus evaluation is intentionally separated from deterministic required CI.

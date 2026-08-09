@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import zipfile
@@ -8,7 +9,10 @@ from collections import Counter, defaultdict
 from io import BytesIO
 from xml.etree import ElementTree as ET
 
-from .discover import SOURCES, _download
+from ._corpus import SOURCES, _download
+
+
+AUDIT_VERSION = "real-docx-independent-ooxml-audit:2"
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 W = "{" + W_NS + "}"
@@ -18,7 +22,7 @@ RELS_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 REL = "{" + RELS_NS + "}"
 
 
-def _source(source_id: str) -> dict[str, str]:
+def _source(source_id: str) -> dict[str, object]:
     for item in SOURCES:
         if item["id"] == source_id:
             return item
@@ -167,32 +171,77 @@ def _paragraph_record(node: ET.Element, styles: dict[str, dict[str, object]]) ->
 
 def _table_shape(node: ET.Element) -> dict[str, object]:
     rows = [child for child in list(node) if child.tag == W + "tr"]
-    cell_counts = [sum(1 for child in list(row) if child.tag == W + "tc") for row in rows]
+    row_cells = [
+        [_text(child) for child in list(row) if child.tag == W + "tc"]
+        for row in rows
+    ]
+    cell_counts = [len(cells) for cells in row_cells]
     return {
         "rows": len(rows),
         "cells": sum(cell_counts),
         "cells_per_row": cell_counts,
+        "row_cells": row_cells,
     }
 
 
-def _story_audit(root: ET.Element, styles: dict[str, dict[str, object]]) -> dict[str, object]:
+def _story_audit(
+    root: ET.Element,
+    styles: dict[str, dict[str, object]],
+    *,
+    opc_part: str,
+) -> dict[str, object]:
     paragraphs: list[dict[str, object]] = []
     tables: list[dict[str, object]] = []
+    blocks: list[dict[str, object]] = []
     section_count = 0
     alt_chunk_count = 0
-    for block in _iter_blocks(root):
+    for block_index, block in enumerate(_iter_blocks(root)):
         local = block.tag.rsplit("}", 1)[-1]
+        locator = {
+            "opc_part": opc_part,
+            "top_level_block_index": block_index,
+            "provenance": "DERIVED",
+        }
         if local == "p":
-            paragraphs.append(_paragraph_record(block, styles))
+            paragraph = _paragraph_record(block, styles)
+            paragraphs.append(paragraph)
+            blocks.append(
+                {
+                    "kind": "paragraph",
+                    "audit_locator": locator,
+                    **paragraph,
+                }
+            )
             ppr = block.find(W + "pPr")
             if ppr is not None and ppr.find(W + "sectPr") is not None:
                 section_count += 1
         elif local == "tbl":
-            tables.append(_table_shape(block))
+            table = _table_shape(block)
+            tables.append(table)
+            blocks.append(
+                {
+                    "kind": "table",
+                    "audit_locator": locator,
+                    **table,
+                }
+            )
         elif local == "sectPr":
             section_count += 1
+            blocks.append(
+                {
+                    "kind": "section_properties",
+                    "audit_locator": locator,
+                }
+            )
         elif local == "altChunk":
             alt_chunk_count += 1
+            blocks.append(
+                {
+                    "kind": "alt_chunk",
+                    "audit_locator": locator,
+                    "relationship_id": block.attrib.get(R + "id"),
+                }
+            )
     headings = [
         item
         for item in paragraphs
@@ -200,6 +249,8 @@ def _story_audit(root: ET.Element, styles: dict[str, dict[str, object]]) -> dict
     ]
     navigation = [item for item in paragraphs if item["navigation_role"] is not None]
     return {
+        "opc_part": opc_part,
+        "ordered_blocks": blocks,
         "paragraph_count": len(paragraphs),
         "nonempty_paragraph_count": sum(1 for item in paragraphs if str(item["text"]).strip()),
         "headings": headings,
@@ -210,8 +261,13 @@ def _story_audit(root: ET.Element, styles: dict[str, dict[str, object]]) -> dict
     }
 
 
-def audit_source(source: dict[str, str]) -> dict[str, object]:
-    payload = _download(source["url"])
+def audit_payload(
+    source: dict[str, object],
+    payload: bytes,
+) -> dict[str, object]:
+    """Audit one already-resolved source revision without using production code."""
+
+    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
     with zipfile.ZipFile(BytesIO(payload)) as archive:
         styles = _style_catalog(archive)
         document = ET.fromstring(archive.read("word/document.xml"))
@@ -219,8 +275,11 @@ def audit_source(source: dict[str, str]) -> dict[str, object]:
         if body is None:
             raise RuntimeError("word/document.xml has no body")
         result: dict[str, object] = {
+            "audit_version": AUDIT_VERSION,
             "id": source["id"],
-            "body": _story_audit(body, styles),
+            "bytes": len(payload),
+            "sha256": digest,
+            "body": _story_audit(body, styles, opc_part="word/document.xml"),
             "style_duplicate_counts": {
                 key: int(value["definition_count"])
                 for key, value in styles.items()
@@ -243,7 +302,11 @@ def audit_source(source: dict[str, str]) -> dict[str, object]:
         for item in referenced_parts:
             part = item["part"]
             if part in archive.namelist():
-                stories[part] = _story_audit(ET.fromstring(archive.read(part)), styles)
+                stories[part] = _story_audit(
+                    ET.fromstring(archive.read(part)),
+                    styles,
+                    opc_part=part,
+                )
         result["referenced_header_footer_stories"] = stories
 
         notes: dict[str, object] = {}
@@ -252,6 +315,7 @@ def audit_source(source: dict[str, str]) -> dict[str, object]:
                 continue
             root = ET.fromstring(archive.read(part))
             ids: list[str] = []
+            note_stories: list[dict[str, object]] = []
             for node in list(root):
                 note_id = node.attrib.get(W + "id")
                 if note_id is None:
@@ -259,12 +323,30 @@ def audit_source(source: dict[str, str]) -> dict[str, object]:
                 if kind in {"footnote", "endnote"} and note_id in {"-1", "0"}:
                     continue
                 ids.append(note_id)
-            notes[kind] = {"count": len(ids), "ids": ids}
+                note_stories.append(
+                    {
+                        "id": note_id,
+                        "story": _story_audit(
+                            node,
+                            styles,
+                            opc_part=part,
+                        ),
+                    }
+                )
+            notes[kind] = {
+                "count": len(ids),
+                "ids": ids,
+                "stories": note_stories,
+            }
         result["notes"] = notes
         result["raw_tag_counts"] = dict(
             sorted(Counter(node.tag.rsplit("}", 1)[-1] for node in document.iter()).items())
         )
         return result
+
+
+def audit_source(source: dict[str, object]) -> dict[str, object]:
+    return audit_payload(source, _download(str(source["url"])))
 
 
 def main() -> None:

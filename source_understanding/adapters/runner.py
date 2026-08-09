@@ -3,8 +3,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
+from source_understanding.atomic.preservation import (
+    ParserPreservationReport,
+    evaluate_parser_preservation,
+)
 from source_understanding.completion import UnderstandingCompletionBuilder
 from source_understanding.pipeline import SourceUnderstandingPipeline, SourceUnderstandingResult
 from source_understanding.schemas.context import Identifier, SchemaModel
@@ -20,14 +24,35 @@ from .base import (
 )
 
 
-SOURCE_ADAPTER_RUNNER_VERSION = "2"
+SOURCE_ADAPTER_RUNNER_VERSION = "3"
 
 
 class AdaptedSourceUnderstandingResult(SchemaModel):
     version: str = SOURCE_ADAPTER_RUNNER_VERSION
     document_id: Identifier
     adapter_result: SourceAdapterResult
+    preservation_report: ParserPreservationReport
     understanding: SourceUnderstandingResult
+
+    @model_validator(mode="after")
+    def validate_preservation(self) -> "AdaptedSourceUnderstandingResult":
+        if self.preservation_report.raw_element_count != len(
+            self.adapter_result.raw_elements
+        ):
+            raise ValueError(
+                "preservation_report raw count does not match adapter_result"
+            )
+        if self.preservation_report.canonical_element_count != len(
+            self.understanding.structural_document.elements
+        ):
+            raise ValueError(
+                "preservation_report canonical count does not match structural document"
+            )
+        if not self.preservation_report.fully_preserved:
+            raise ValueError(
+                "adapted source result cannot carry a failed preservation audit"
+            )
+        return self
 
 
 class SourceAdapterRunner:
@@ -83,6 +108,18 @@ class SourceAdapterRunner:
             adapter_version=version,
             media_types=media_types,
         )
+        if not adapted.raw_elements:
+            diagnostic_codes = tuple(
+                diagnostic.code for diagnostic in adapted.diagnostics
+            )
+            raise AdapterError(
+                "source adapter produced no raw elements for understanding"
+                + (
+                    f"; diagnostics={diagnostic_codes}"
+                    if diagnostic_codes
+                    else ""
+                )
+            )
         timestamp = processed_at if processed_at is not None else datetime.now(UTC)
         processing = adapted.processing_manifest(processed_at=timestamp)
         understanding = self._pipeline.understand_raw(
@@ -98,9 +135,20 @@ class SourceAdapterRunner:
             additional_relations=additional_relations,
             adapter_diagnostics=adapted.diagnostics,
         )
+        preservation_report = evaluate_parser_preservation(
+            adapted.raw_elements,
+            understanding.structural_document.elements,
+        )
+        if not preservation_report.fully_preserved:
+            details = "; ".join(preservation_report.issues[:5])
+            raise AdapterError(
+                "parser preservation audit failed after normalization"
+                + (f": {details}" if details else "")
+            )
         return AdaptedSourceUnderstandingResult(
             document_id=document_id,
             adapter_result=adapted,
+            preservation_report=preservation_report,
             understanding=understanding,
         )
 

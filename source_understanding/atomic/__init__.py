@@ -9,6 +9,11 @@ from .normalizer import (
     ElementNormalizer,
     UnicodeNormalizationForm,
 )
+from .preservation import (
+    PARSER_PRESERVATION_EVALUATOR_VERSION,
+    ParserPreservationReport,
+    evaluate_parser_preservation,
+)
 
 __all__ = [
     "ELEMENT_NORMALIZER_POLICY_VERSION",
@@ -18,4 +23,7 @@ __all__ = [
     "ElementNormalizationResult",
     "ElementNormalizer",
     "UnicodeNormalizationForm",
+    "PARSER_PRESERVATION_EVALUATOR_VERSION",
+    "ParserPreservationReport",
+    "evaluate_parser_preservation",
 ]

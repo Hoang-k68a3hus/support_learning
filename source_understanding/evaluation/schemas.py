@@ -22,6 +22,7 @@ DOCX_GOLD_BENCHMARK_VERSION = "0.1"
 
 
 class BenchmarkSplit(StrEnum):
+    TRAIN = "train"
     DEV = "dev"
     TEST = "test"
 

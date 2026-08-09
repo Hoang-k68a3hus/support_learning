@@ -173,6 +173,7 @@ class RawElement(SchemaModel):
 class Element(SchemaModel):
     id: Identifier
     type: ElementType = ElementType.UNKNOWN
+    source_type_hint: str | None = Field(default=None, max_length=128)
     order: int = Field(ge=0)
     raw_text: str | None = None
     normalized_text: str | None = None

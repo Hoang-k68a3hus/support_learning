@@ -17,12 +17,13 @@ from source_understanding.schemas.context import (
 )
 from source_understanding.schemas.document import DocumentStructure
 from source_understanding.schemas.element import Element, ElementType
+from source_understanding.source_attributes import SourceAttributeError, source_label
 
 from .boundary import BoundaryClass, BoundaryDecision, BoundaryReason, BoundarySet
 from .signals import StructureSignal, StructureSignalKind, StructureSignalSet
 
 
-HIERARCHY_VERSION = "2"
+HIERARCHY_VERSION = "3"
 HIERARCHY_POLICY_VERSION = "1"
 
 _HIERARCHICAL_NUMBERING_RE = re.compile(r"^\d+(?:\.\d+)+$")
@@ -209,7 +210,15 @@ class HierarchyBuilder:
                     "a SOFT incoming boundary"
                 )
 
-        text = element.text
+        try:
+            explicit_source_label = source_label(element)
+        except SourceAttributeError as exc:
+            raise HierarchyError(str(exc)) from exc
+        text = (
+            explicit_source_label
+            if explicit_source_label is not None
+            else element.text
+        )
         if text is None or not text.strip():
             return None
         stripped = text.strip()

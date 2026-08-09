@@ -22,6 +22,23 @@ from .runner import (
     AdaptedSourceUnderstandingResult,
     SourceAdapterRunner,
 )
+from .markdown import (
+    MARKDOWN_ADAPTER_VERSION,
+    MARKDOWN_MEDIA_TYPE,
+    MARKDOWN_POLICY_VERSION,
+    MarkdownAdapter,
+    MarkdownAdapterPolicy,
+    MarkdownDialect,
+    MarkdownEncoding,
+)
+from .plaintext import (
+    PLAIN_TEXT_ADAPTER_VERSION,
+    PLAIN_TEXT_MEDIA_TYPE,
+    PLAIN_TEXT_POLICY_VERSION,
+    PlainTextAdapter,
+    PlainTextAdapterPolicy,
+    PlainTextEncoding,
+)
 
 __all__ = [
     "SOURCE_ADAPTER_PROTOCOL_VERSION",
@@ -40,4 +57,17 @@ __all__ = [
     "RevisionView",
     "AdaptedSourceUnderstandingResult",
     "SourceAdapterRunner",
+    "MARKDOWN_ADAPTER_VERSION",
+    "MARKDOWN_MEDIA_TYPE",
+    "MARKDOWN_POLICY_VERSION",
+    "MarkdownAdapter",
+    "MarkdownAdapterPolicy",
+    "MarkdownDialect",
+    "MarkdownEncoding",
+    "PLAIN_TEXT_ADAPTER_VERSION",
+    "PLAIN_TEXT_MEDIA_TYPE",
+    "PLAIN_TEXT_POLICY_VERSION",
+    "PlainTextAdapter",
+    "PlainTextAdapterPolicy",
+    "PlainTextEncoding",
 ]

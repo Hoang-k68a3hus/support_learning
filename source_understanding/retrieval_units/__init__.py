@@ -13,6 +13,10 @@ from .semantic import (
     SemanticRetrievalEnrichmentError,
     SemanticRetrievalEnricher,
     SemanticRetrievalPolicy,
+    SemanticCapabilityQualityDecision,
+    SemanticRetrievalQualityGate,
+    SemanticQualityGateStatus,
+    quality_gate_from_semantic_benchmark,
     SemanticRetrievalResult,
 )
 
@@ -27,5 +31,9 @@ __all__ = [
     "SemanticRetrievalEnrichmentError",
     "SemanticRetrievalEnricher",
     "SemanticRetrievalPolicy",
+    "SemanticCapabilityQualityDecision",
+    "SemanticRetrievalQualityGate",
+    "SemanticQualityGateStatus",
+    "quality_gate_from_semantic_benchmark",
     "SemanticRetrievalResult",
 ]

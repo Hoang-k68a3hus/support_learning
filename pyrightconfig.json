@@ -10,7 +10,8 @@
     "source_understanding/assembly.py",
     "source_understanding/completion.py",
     "source_understanding/pipeline.py",
-    "source_understanding/pipeline_support.py"
+    "source_understanding/pipeline_support.py",
+    "ai_data_studio"
   ],
   "exclude": [
     "source_understanding/adapters"
