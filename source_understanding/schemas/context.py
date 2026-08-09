@@ -9,7 +9,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    JsonValue,
     StringConstraints,
     model_validator,
 )
@@ -80,17 +79,37 @@ class FrozenList(list[T], Generic[T]):
     __imul__ = _immutable
 
 
-def _freeze_json(item: JsonValue) -> JsonValue:
-    if isinstance(item, float) and not isfinite(item):
-        raise ValueError("JSON metadata cannot contain NaN or Infinity")
+def _freeze_json(item: object) -> object:
+    """Validate one recursive JSON value and freeze mutable containers.
+
+    ``object`` is intentional at this boundary. Python's mutable ``list``/``dict``
+    invariance makes a recursive ``JsonValue`` annotation reject otherwise valid
+    producers such as ``list[str]`` or ``dict[str, str]``. Runtime validation is
+    authoritative here: unsupported Python objects and non-finite floats fail
+    before metadata enters any immutable schema.
+    """
+
+    if item is None or isinstance(item, (str, bool, int)):
+        return item
+    if isinstance(item, float):
+        if not isfinite(item):
+            raise ValueError("JSON metadata cannot contain NaN or Infinity")
+        return item
     if isinstance(item, dict):
-        return FrozenDict({key: _freeze_json(value) for key, value in item.items()})
+        frozen: dict[str, object] = {}
+        for key, value in item.items():
+            if not isinstance(key, str):
+                raise ValueError("JSON metadata object keys must be strings")
+            frozen[key] = _freeze_json(value)
+        return FrozenDict(frozen)
     if isinstance(item, list):
         return FrozenList(_freeze_json(value) for value in item)
-    return item
+    raise ValueError(
+        f"JSON metadata contains unsupported value type {type(item).__name__}"
+    )
 
 
-def _validate_and_freeze_json(value: dict[str, JsonValue]) -> dict[str, JsonValue]:
+def _validate_and_freeze_json(value: dict[str, object]) -> dict[str, object]:
     return FrozenDict({key: _freeze_json(item) for key, item in value.items()})
 
 
@@ -98,7 +117,7 @@ def _freeze_mapping(value: dict[str, Confidence]) -> dict[str, Confidence]:
     return FrozenDict(value)
 
 
-JsonObject = Annotated[dict[str, JsonValue], AfterValidator(_validate_and_freeze_json)]
+JsonObject = Annotated[dict[str, object], AfterValidator(_validate_and_freeze_json)]
 ConfidenceMap = Annotated[dict[str, Confidence], AfterValidator(_freeze_mapping)]
 
 
