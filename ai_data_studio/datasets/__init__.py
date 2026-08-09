@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 from .splits import (
     DATASET_SPLIT_MANIFEST_HASH_VERSION,
     SPLIT_MANIFEST_SCHEMA_VERSION,
@@ -6,7 +10,6 @@ from .splits import (
     SplitAssignment,
     dataset_split_manifest_hash,
 )
-from .compiler import SEMANTIC_GOLD_COMPILER_VERSION, SemanticGoldCompiler
 from .eligibility import (
     GoldEligibilityEvaluator,
     GoldEligibilityPolicy,
@@ -53,6 +56,26 @@ from .manifest import (
     FrozenDatasetVerificationReport,
     FrozenSplitArtifact,
 )
+
+if TYPE_CHECKING:
+    from .compiler import SemanticGoldCompiler
+
+
+def __getattr__(name: str) -> Any:
+    """Load compiler symbols lazily to keep validation imports acyclic.
+
+    ``ai_data_studio.validation.split`` depends only on the split contract.  An
+    eager compiler import here would pull ``ai_data_studio.validation`` back in
+    while that package is still initializing, making clean-process imports
+    depend on import order.
+    """
+
+    if name in {"SEMANTIC_GOLD_COMPILER_VERSION", "SemanticGoldCompiler"}:
+        from . import compiler as compiler_module
+
+        return getattr(compiler_module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "DATASET_SPLIT_MANIFEST_HASH_VERSION",
