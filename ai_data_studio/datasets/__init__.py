@@ -58,7 +58,12 @@ from .manifest import (
 )
 
 if TYPE_CHECKING:
-    from .hardened_compiler import SemanticGoldCompiler
+    from .hardened_compiler import (
+        GOLD_ELIGIBILITY_POLICY_HASH_VERSION,
+        SEMANTIC_GOLD_COMPILER_VERSION,
+        SemanticGoldCompiler,
+        gold_eligibility_policy_hash,
+    )
 
 
 def __getattr__(name: str) -> Any:
