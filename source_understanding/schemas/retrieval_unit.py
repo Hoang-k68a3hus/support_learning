@@ -59,7 +59,7 @@ class SourceAnchor(SchemaModel):
     line_end: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
-    def validate_location(self) -> SourceAnchor:
+    def validate_location(self) -> "SourceAnchor":
         has_location = any(
             value is not None
             for value in (
@@ -139,7 +139,7 @@ class RetrievalUnit(SchemaModel):
         return value
 
     @model_validator(mode="after")
-    def validate_refs_and_anchors(self) -> RetrievalUnit:
+    def validate_refs_and_anchors(self) -> "RetrievalUnit":
         for name, values in (
             ("logical_unit_ids", self.logical_unit_ids),
             ("element_ids", self.element_ids),
@@ -169,11 +169,13 @@ class RetrievalUnit(SchemaModel):
                 )
             if anchor.content_hash != self.content_hash:
                 raise ValueError(
-                    f"source anchor {anchor.element_id!r} content_hash does not match retrieval unit"
+                    f"source anchor {anchor.element_id!r} content_hash does not match "
+                    "retrieval unit"
                 )
             if anchor.source_revision != self.source_revision:
                 raise ValueError(
-                    f"source anchor {anchor.element_id!r} source_revision does not match retrieval unit"
+                    f"source anchor {anchor.element_id!r} source_revision does not match "
+                    "retrieval unit"
                 )
             if anchor.element_id not in element_ids:
                 raise ValueError(
@@ -190,7 +192,7 @@ class RetrievalUnit(SchemaModel):
             )
         return self
 
-    def validate_against_document(self, document: CanonicalDocument) -> RetrievalUnit:
+    def validate_against_document(self, document: "CanonicalDocument") -> "RetrievalUnit":
         """Validate references that require the canonical document graph."""
 
         if self.document_id != document.document_id:
@@ -206,7 +208,9 @@ class RetrievalUnit(SchemaModel):
         elements = {element.id: element for element in document.elements}
         logical_units = {unit.id: unit for unit in document.logical_units}
         context_nodes = {node.id: node for node in document.context_nodes}
-        annotations = {annotation.id: annotation for annotation in document.semantic_annotations}
+        annotations = {
+            annotation.id: annotation for annotation in document.semantic_annotations
+        }
         subdocuments = {subdoc.id: subdoc for subdoc in document.subdocuments}
 
         missing_elements = set(self.element_ids) - elements.keys()
@@ -228,7 +232,8 @@ class RetrievalUnit(SchemaModel):
                 )
             if not set(self.element_ids).issubset(subdocument.element_ids):
                 raise ValueError(
-                    f"retrieval unit contains elements outside subdocument {self.subdocument_id!r}"
+                    f"retrieval unit contains elements outside subdocument "
+                    f"{self.subdocument_id!r}"
                 )
 
         previous_context_id: str | None = None
@@ -243,7 +248,9 @@ class RetrievalUnit(SchemaModel):
             if ref.source is not None and ref.source != node.source:
                 raise ValueError(f"retrieval context source disagrees for node {ref.id!r}")
             if ref.confidence is not None and ref.confidence != node.confidence:
-                raise ValueError(f"retrieval context confidence disagrees for node {ref.id!r}")
+                raise ValueError(
+                    f"retrieval context confidence disagrees for node {ref.id!r}"
+                )
             if previous_context_id is None:
                 if node.parent_id is not None:
                     raise ValueError("context_path must start at a root context node")
@@ -262,32 +269,57 @@ class RetrievalUnit(SchemaModel):
             if ref.source is not None and ref.source != annotation.source:
                 raise ValueError(f"retrieval annotation source disagrees for {ref.id!r}")
             if ref.confidence is not None and ref.confidence != annotation.confidence:
-                raise ValueError(f"retrieval annotation confidence disagrees for {ref.id!r}")
+                raise ValueError(
+                    f"retrieval annotation confidence disagrees for {ref.id!r}"
+                )
 
         for anchor in self.source_anchors:
             element = elements[anchor.element_id]
             if anchor.location_source == StructureSource.DERIVED:
                 continue
-            fields = (
+            anchor_has_location = any(
+                getattr(anchor, field_name) is not None
+                for field_name in (
+                    "page",
+                    "bbox",
+                    "start_char",
+                    "end_char",
+                    "line_start",
+                    "line_end",
+                )
+            )
+            if not anchor_has_location:
+                continue
+            if element.location is None:
+                raise ValueError(
+                    f"non-derived anchor for element {element.id!r} has location "
+                    "not present on canonical element"
+                )
+            if element.location.source is None:
+                raise ValueError(
+                    f"non-derived anchor for element {element.id!r} cannot claim "
+                    "location provenance absent from canonical location"
+                )
+            if anchor.location_source != element.location.source:
+                raise ValueError(
+                    f"non-derived anchor location_source disagrees with element "
+                    f"{element.id!r}"
+                )
+            for field_name in (
                 "page",
                 "bbox",
                 "start_char",
                 "end_char",
                 "line_start",
                 "line_end",
-            )
-            for field_name in fields:
+            ):
                 anchor_value = getattr(anchor, field_name)
                 if anchor_value is None:
                     continue
-                if element.location is None:
-                    raise ValueError(
-                        f"non-derived anchor for element {element.id!r} has location "
-                        "not present on canonical element"
-                    )
                 if getattr(element.location, field_name) != anchor_value:
                     raise ValueError(
-                        f"non-derived anchor {field_name} disagrees with element {element.id!r}"
+                        f"non-derived anchor {field_name} disagrees with element "
+                        f"{element.id!r}"
                     )
 
         return self
