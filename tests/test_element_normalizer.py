@@ -9,7 +9,12 @@ from source_understanding.atomic import (
     UnicodeNormalizationForm,
 )
 from source_understanding.schemas.context import StructureSource
-from source_understanding.schemas.element import ElementType, Provenance, RawElement
+from source_understanding.schemas.element import (
+    ElementType,
+    Provenance,
+    RawElement,
+    SourceLocation,
+)
 
 
 def raw(
@@ -107,6 +112,40 @@ class ElementNormalizerTests(unittest.TestCase):
         self.assertEqual(nfc.elements[0].id, nfkc.elements[0].id)
         self.assertEqual(nfc.elements[0].normalized_text, "ＡＢＣ")
         self.assertEqual(nfkc.elements[0].normalized_text, "ABC")
+
+    def test_location_provenance_does_not_churn_element_identity(self):
+        common = {
+            "text": "located",
+            "type_hint": "paragraph",
+            "order": 0,
+            "attributes": {"source_key": "located"},
+            "provenance": Provenance(
+                source=StructureSource.EXPLICIT,
+                extractor="test-adapter",
+                extractor_version="1",
+            ),
+        }
+        legacy = RawElement(
+            **common,
+            location=SourceLocation(page=2, start_char=4, end_char=11),
+        )
+        sourced = RawElement(
+            **common,
+            location=SourceLocation(
+                source=StructureSource.EXPLICIT,
+                page=2,
+                start_char=4,
+                end_char=11,
+            ),
+        )
+        legacy_result = ElementNormalizer().normalize((legacy,), document_id="doc1")
+        sourced_result = ElementNormalizer().normalize((sourced,), document_id="doc1")
+        self.assertEqual(legacy_result.elements[0].id, sourced_result.elements[0].id)
+        self.assertIsNone(legacy_result.elements[0].location.source)
+        self.assertEqual(
+            sourced_result.elements[0].location.source,
+            StructureSource.EXPLICIT,
+        )
 
     def test_source_document_identity_namespaces_element_ids(self):
         source = raw(0, "same")
