@@ -33,4 +33,4 @@ jobs:
       - name: Run source-understanding unittest suite
         run: python -m unittest discover -s tests -p "test_*.py" -v
       - name: Run reproducible DOCX structure benchmark pilot
-        run: python benchmarks/docx_structure_v0_1/run_benchmark.py --report /tmp/docx-structure-v0.1-report.json
+        run: python -m benchmarks.docx_structure_v0_1.run_benchmark --report /tmp/docx-structure-v0.1-report.json
