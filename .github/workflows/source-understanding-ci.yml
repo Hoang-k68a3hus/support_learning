@@ -8,6 +8,7 @@ on:
       - "benchmarks/docx_structure_real_v0_1/**"
       - "tests/test_*.py"
       - ".github/workflows/source-understanding-ci.yml"
+      - ".github/workflows/source-understanding-real-docx.yml"
   pull_request:
     paths:
       - "source_understanding/**"
@@ -15,6 +16,7 @@ on:
       - "benchmarks/docx_structure_real_v0_1/**"
       - "tests/test_*.py"
       - ".github/workflows/source-understanding-ci.yml"
+      - ".github/workflows/source-understanding-real-docx.yml"
 
 permissions:
   contents: read
@@ -36,5 +38,3 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py" -v
       - name: Run reproducible synthetic DOCX benchmark
         run: python -m benchmarks.docx_structure_v0_1.run_benchmark --report /tmp/docx-structure-v0.1-report.json
-      - name: Run pinned real-world DOCX contract benchmark
-        run: python -m benchmarks.docx_structure_real_v0_1.run_benchmark --fail-on-error --report /tmp/docx-structure-real-v0.1-report.json
