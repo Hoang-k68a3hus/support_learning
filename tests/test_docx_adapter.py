@@ -116,7 +116,7 @@ class DocxAdapterTests(unittest.TestCase):
         document = adapted.understanding.document
         self.assertEqual(document.processing.adapter_name, "docx-ooxml")
         self.assertEqual(document.processing.normalizer_version, "2")
-        self.assertEqual(document.processing.structure_version, "2")
+        self.assertEqual(document.processing.structure_version, "3")
         self.assertTrue(adapted.understanding.completion_report.structural_pipeline_complete)
 
         footnote_relations = [
