@@ -63,6 +63,51 @@ class DocxRealWorldRegressionTests(unittest.TestCase):
         self.assertTrue(result.understanding.completion_report.structural_pipeline_complete)
         self.assertEqual(len(result.understanding.document.context_nodes), 2)
 
+    def test_toc_styles_are_navigation_not_canonical_content_headings(self) -> None:
+        styles = """<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+        <w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Normal"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr></w:style>
+        <w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/><w:basedOn w:val="Normal"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr></w:style>
+        <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:outlineLvl w:val="0"/></w:pPr></w:style>
+        </w:styles>"""
+        document = """<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+        <w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t>Contents</w:t></w:r></w:p>
+        <w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr><w:r><w:t>Introduction</w:t></w:r></w:p>
+        <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Introduction</w:t></w:r></w:p>
+        </w:body></w:document>"""
+        payload = package(document, styles)
+        adapted = DocxAdapter().adapt(payload)
+        by_style = {
+            item.attributes.get("paragraph_style_id"): item
+            for item in adapted.raw_elements
+            if item.attributes.get("paragraph_style_id")
+        }
+
+        toc_title = by_style["TOCHeading"]
+        self.assertEqual(toc_title.type_hint, "PARAGRAPH")
+        self.assertEqual(toc_title.attributes.get("docx_navigation_role"), "toc_title")
+        self.assertEqual(toc_title.attributes.get("docx_outline_level"), 0)
+        self.assertNotIn("heading_level", toc_title.attributes)
+        self.assertNotIn(INTEGRITY_GROUP_ID_ATTRIBUTE, toc_title.attributes)
+
+        toc_entry = by_style["TOC1"]
+        self.assertEqual(toc_entry.type_hint, "PARAGRAPH")
+        self.assertEqual(toc_entry.attributes.get("docx_navigation_role"), "toc_entry")
+        self.assertEqual(toc_entry.attributes.get("docx_outline_level"), 0)
+        self.assertNotIn("heading_level", toc_entry.attributes)
+
+        content_heading = by_style["Heading1"]
+        self.assertEqual(content_heading.type_hint, "HEADING")
+        self.assertEqual(content_heading.attributes.get("heading_level"), 1)
+
+        result = SourceAdapterRunner().understand_bytes(
+            payload,
+            adapter=DocxAdapter(),
+            document_id="toc-navigation",
+            processed_at=datetime(2026, 8, 9, tzinfo=timezone.utc),
+        )
+        self.assertEqual(len(result.understanding.document.context_nodes), 1)
+
     def test_compatible_duplicate_styles_merge_missing_structural_fields(self) -> None:
         styles = """<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
         <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="normal"/></w:style>
