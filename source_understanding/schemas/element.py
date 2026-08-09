@@ -104,11 +104,19 @@ class SourceLocation(SchemaModel):
             raise ValueError("bbox requires page")
         if (self.start_char is None) != (self.end_char is None):
             raise ValueError("start_char and end_char must be provided together")
-        if self.start_char is not None and self.end_char < self.start_char:
+        if (
+            self.start_char is not None
+            and self.end_char is not None
+            and self.end_char < self.start_char
+        ):
             raise ValueError("end_char must be >= start_char")
         if (self.line_start is None) != (self.line_end is None):
             raise ValueError("line_start and line_end must be provided together")
-        if self.line_start is not None and self.line_end < self.line_start:
+        if (
+            self.line_start is not None
+            and self.line_end is not None
+            and self.line_end < self.line_start
+        ):
             raise ValueError("line_end must be >= line_start")
         return self
 
