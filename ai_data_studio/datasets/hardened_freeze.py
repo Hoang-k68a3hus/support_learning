@@ -4,7 +4,10 @@ from pathlib import Path
 
 from source_understanding.evaluation import SemanticGoldDataset
 
-from .eligibility import GoldEligibilityPolicy
+from .eligibility import (
+    GoldEligibilityPolicy,
+    gold_eligibility_policy_hash,
+)
 from .errors import DatasetFreezeInvariantError
 from .freeze import (
     MANIFEST_FILENAME,
@@ -12,7 +15,6 @@ from .freeze import (
     verify_frozen_dataset as _base_verify_frozen_dataset,
     write_canonical_json,
 )
-from .hardened_compiler import gold_eligibility_policy_hash
 from .manifest import (
     FreezePolicy,
     FreezeProvenance,
@@ -138,10 +140,11 @@ def _require_case_certification(
     document_id: str,
     expected: dict[str, object],
 ) -> None:
-    if not isinstance(case_metadata, dict):
-        metadata = dict(case_metadata)
-    else:
-        metadata = case_metadata
+    metadata = (
+        case_metadata
+        if isinstance(case_metadata, dict)
+        else dict(case_metadata)
+    )
     for key, expected_value in expected.items():
         actual = metadata.get(key)
         if actual != expected_value:
@@ -180,15 +183,18 @@ def _certification_issues(
         )
         return tuple(issues)
 
-    if policy.name != manifest.eligibility_policy_name or policy.version != manifest.eligibility_policy_version:
+    policy_identity = (policy.name, policy.version)
+    manifest_policy_identity = (
+        manifest.eligibility_policy_name,
+        manifest.eligibility_policy_version,
+    )
+    if policy_identity != manifest_policy_identity:
         issues.append(
             FrozenDatasetVerificationIssue(
                 code=FrozenDatasetVerificationIssueCode.DATASET_IDENTITY_MISMATCH,
                 message=(
                     "frozen eligibility policy identity does not match manifest: "
-                    f"{policy.name!r}/{policy.version!r} != "
-                    f"{manifest.eligibility_policy_name!r}/"
-                    f"{manifest.eligibility_policy_version!r}"
+                    f"{policy_identity!r} != {manifest_policy_identity!r}"
                 ),
                 path=str(path),
             )
