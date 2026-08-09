@@ -45,7 +45,7 @@ The real pilot reports errors by structural layer:
 - **L2 — Structural grouping**: LogicalUnit/integrity grouping. Full real-document gold is not yet adjudicated in V0.1.
 - **L3 — Document structure**: hierarchy/regions/relations/readiness. V0.1 currently freezes only selected readiness expectations; full hierarchy/region/relation gold remains future work.
 
-The coverage flags in `gold_contracts.json` are part of the benchmark contract. A green V0.1 result therefore means **the frozen partial contracts pass**, not that all structural decisions across the documents are correct.
+The coverage flags in `gold_contracts.json` are part of the benchmark contract. A green V0.1 result therefore means **the frozen partial contracts pass**, not that all structural decisions across the documents are correct. In particular, `errors_by_level.L2_structural_grouping == 0` while L2 coverage is `NOT_YET_FULLY_ADJUDICATED` must not be interpreted as a measured L2 accuracy of 100%.
 
 ## TOC / outline policy
 
@@ -58,7 +58,7 @@ Built-in table-of-contents styles are treated as navigation material:
 
 Their style and outline observations are preserved, but they remain source `PARAGRAPH` elements and do not become canonical document-hierarchy nodes merely because a TOC style carries `outlineLvl`.
 
-This rule was adjudicated after the real flexible-working policy exposed `Contents` with style `TOCHeading` and outline level 0. Treating every `outlineLvl` paragraph as a content heading would incorrectly insert navigation structure into the document hierarchy.
+This rule was adjudicated after the real flexible-working policy exposed `Contents` with style `TOCHeading`. Treating every outline-bearing paragraph as a content heading would incorrectly insert navigation structure into the document hierarchy. The frozen L1 contract includes the observed TOC title and TOC entries for the two real pilot documents that contain them.
 
 ## Running
 
@@ -83,7 +83,7 @@ Network-dependent corpus evaluation is intentionally separated from deterministi
 
 - `source-understanding-ci.yml` runs unit tests and the generated reproducible DOCX benchmark without depending on external document hosts.
 - `source-understanding-real-docx.yml` runs the pinned real corpus on relevant pull requests, weekly schedule and manual dispatch.
-- On a pull request, the external-corpus benchmark step is non-blocking so a source-host/network outage cannot masquerade as a deterministic code regression.
+- On a pull request, the external-corpus benchmark step is non-blocking so a source-host/network outage cannot masquerade as a deterministic code regression. Review the benchmark JSON/exit status in its log rather than treating a green workflow badge alone as evidence that all real contracts passed.
 - Scheduled/manual real-corpus runs remain strict and fail when a frozen contract fails.
 
 ## Current limitations
