@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import PurePosixPath
 
 from pydantic import Field, model_validator
 
-from source_understanding.schemas.context import ContentHash, Identifier, JsonObject, SchemaModel, StructureMode
+from source_understanding.schemas.context import (
+    ContentHash,
+    Identifier,
+    JsonObject,
+    SchemaModel,
+    StructureMode,
+)
 from source_understanding.schemas.element import ElementType
 from source_understanding.schemas.logical_unit import LogicalUnitType
 from source_understanding.schemas.relation import RelationType
@@ -25,15 +32,54 @@ class BenchmarkSourceKind(StrEnum):
     HUMAN_AUTHORED = "human_authored"
 
 
+class GoldRegionCategory(StrEnum):
+    NARRATIVE = "narrative"
+    LIST = "list"
+    DIALOGUE = "dialogue"
+    CODE = "code"
+    TABLE = "table"
+    QA = "qa"
+    FORMULA = "formula"
+    LOG = "log"
+    KEY_VALUE = "key_value"
+    VISUAL = "visual"
+    BOILERPLATE = "boilerplate"
+    SEPARATOR = "separator"
+    UNKNOWN = "unknown"
+
+
+_STRUCTURAL_RELATION_TYPES = frozenset(
+    {
+        RelationType.NEXT,
+        RelationType.PARENT_OF,
+        RelationType.CONTINUES,
+        RelationType.QUESTION_ANSWER,
+        RelationType.CAPTION_OF,
+        RelationType.FOOTNOTE_OF,
+        RelationType.PART_OF,
+        RelationType.SEQUENCE_BEFORE,
+        RelationType.DUPLICATE_OF,
+    }
+)
+
+
+def _validate_relative_path(value: str, *, field_name: str) -> str:
+    path = PurePosixPath(value)
+    if path.is_absolute() or ".." in path.parts or value.startswith(("/", "\\")):
+        raise ValueError(f"{field_name} must be a relative benchmark path without traversal")
+    if not path.parts or any(part in {"", "."} for part in path.parts):
+        raise ValueError(f"{field_name} must be a canonical relative benchmark path")
+    if "\\" in value:
+        raise ValueError(f"{field_name} must use '/' separators")
+    return value
+
+
 class GoldSourceAnchor(SchemaModel):
     """Source-stable hint used to align gold Elements with predicted Elements.
 
-    Alignment deliberately does not depend on production Element ids.
-
-    ``exact_text`` lives on GoldElement rather than here. Text-bearing nodes are
-    aligned by exact source text + OPC part/zone whenever unique. Textless
-    structural nodes use ``source_kind`` + ``occurrence``. Notes/comments may use
-    their explicit native ``source_anchor_kind``/``source_anchor_id``.
+    Alignment deliberately does not depend on production Element ids. Text-bearing
+    nodes align by source text + OPC part/zone when unique. Textless structural
+    nodes use source kind/occurrence; notes may use explicit native anchors.
     """
 
     opc_part: str = Field(min_length=1, max_length=1024)
@@ -104,7 +150,7 @@ class GoldContextNode(SchemaModel):
 class GoldRegion(SchemaModel):
     id: Identifier
     element_ids: tuple[Identifier, ...] = Field(min_length=1)
-    category: str | None = Field(default=None, min_length=1, max_length=128)
+    category: GoldRegionCategory | None = None
     metadata: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -125,6 +171,10 @@ class GoldRelation(SchemaModel):
     def validate_not_self_relation(self) -> "GoldRelation":
         if self.source_id == self.target_id:
             raise ValueError("gold relation cannot target its own source")
+        if self.type not in _STRUCTURAL_RELATION_TYPES:
+            raise ValueError(
+                f"document-structure gold cannot contain semantic relation {self.type.value}"
+            )
         return self
 
 
@@ -151,6 +201,13 @@ class GoldSourceDescriptor(SchemaModel):
     generator_id: str | None = Field(default=None, min_length=1, max_length=256)
     provenance: JsonObject = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def validate_file_name(self) -> "GoldSourceDescriptor":
+        path = PurePosixPath(self.file_name)
+        if len(path.parts) != 1 or path.name != self.file_name or "\\" in self.file_name:
+            raise ValueError("gold source file_name must be a base file name, not a path")
+        return self
+
 
 class GoldDocumentStructure(SchemaModel):
     schema_version: str = DOCUMENT_STRUCTURE_EVAL_SCHEMA_VERSION
@@ -172,6 +229,16 @@ class GoldDocumentStructure(SchemaModel):
 
     @model_validator(mode="after")
     def validate_references(self) -> "GoldDocumentStructure":
+        if self.schema_version != DOCUMENT_STRUCTURE_EVAL_SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported gold schema_version {self.schema_version!r}; "
+                f"expected {DOCUMENT_STRUCTURE_EVAL_SCHEMA_VERSION!r}"
+            )
+        if self.benchmark_version != DOCX_GOLD_BENCHMARK_VERSION:
+            raise ValueError(
+                f"unsupported benchmark_version {self.benchmark_version!r}; "
+                f"expected {DOCX_GOLD_BENCHMARK_VERSION!r}"
+            )
         element_ids = [item.id for item in self.elements]
         if len(element_ids) != len(set(element_ids)):
             raise ValueError("gold elements contain duplicate ids")
@@ -279,6 +346,10 @@ class GoldDocumentStructure(SchemaModel):
                 parent = context_by_id.get(current)
                 current = parent.parent_id if parent is not None else None
 
+        context_anchors = [item.anchor_element_id for item in self.context_nodes]
+        if len(context_anchors) != len(set(context_anchors)):
+            raise ValueError("gold context nodes must have unique anchor elements")
+
         relation_targets = (
             element_set | set(logical_ids) | set(context_ids) | set(region_ids)
         )
@@ -294,8 +365,15 @@ class GoldDocumentStructure(SchemaModel):
                     f"{relation.target_id!r}"
                 )
 
+        relation_triples = [
+            (item.type, item.source_id, item.target_id) for item in self.relations
+        ]
+        if len(relation_triples) != len(set(relation_triples)):
+            raise ValueError("gold relations must not contain duplicate canonical triples")
         if len(self.evaluated_relation_types) != len(set(self.evaluated_relation_types)):
             raise ValueError("evaluated_relation_types must be unique")
+        if set(self.evaluated_relation_types) - _STRUCTURAL_RELATION_TYPES:
+            raise ValueError("evaluated_relation_types must be structural relations only")
         gold_relation_types = {item.type for item in self.relations}
         undeclared = gold_relation_types - set(self.evaluated_relation_types)
         if undeclared:
@@ -303,6 +381,9 @@ class GoldDocumentStructure(SchemaModel):
                 "every gold relation type must appear in evaluated_relation_types: "
                 f"{sorted(item.value for item in undeclared)}"
             )
+        diagnostic_codes = [item.code for item in self.expected_diagnostics]
+        if len(diagnostic_codes) != len(set(diagnostic_codes)):
+            raise ValueError("expected_diagnostics codes must be unique")
         return self
 
     @staticmethod
@@ -332,6 +413,8 @@ class BenchmarkCase(SchemaModel):
     def validate_tags(self) -> "BenchmarkCase":
         if len(self.tags) != len(set(self.tags)):
             raise ValueError("benchmark case tags must be unique")
+        _validate_relative_path(self.source_file, field_name="source_file")
+        _validate_relative_path(self.annotation_file, field_name="annotation_file")
         return self
 
 
@@ -346,6 +429,14 @@ class BenchmarkManifest(SchemaModel):
 
     @model_validator(mode="after")
     def validate_cases(self) -> "BenchmarkManifest":
+        if self.schema_version != DOCUMENT_STRUCTURE_EVAL_SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported manifest schema_version {self.schema_version!r}"
+            )
+        if self.benchmark_version != DOCX_GOLD_BENCHMARK_VERSION:
+            raise ValueError(
+                f"unsupported manifest benchmark_version {self.benchmark_version!r}"
+            )
         ids = [item.document_id for item in self.cases]
         if len(ids) != len(set(ids)):
             raise ValueError("benchmark manifest document ids must be unique")
