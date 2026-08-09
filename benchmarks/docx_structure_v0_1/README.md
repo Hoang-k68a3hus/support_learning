@@ -48,17 +48,19 @@ The generator uses:
 - deterministic entry ordering;
 - synthetic text released as CC0-1.0 by the project.
 
+Run commands from the repository root so imports resolve exactly as they do in CI.
+
 Generate the materialized files:
 
 ```bash
-python benchmarks/docx_structure_v0_1/generate_pilot.py \
+python -m benchmarks.docx_structure_v0_1.generate_pilot \
   --output benchmarks/docx_structure_v0_1/materialized
 ```
 
 Run the baseline against the current parser:
 
 ```bash
-python benchmarks/docx_structure_v0_1/run_benchmark.py \
+python -m benchmarks.docx_structure_v0_1.run_benchmark \
   --report /tmp/docx-structure-v0.1-report.json
 ```
 
@@ -77,6 +79,14 @@ Gold-to-prediction alignment uses, in descending preference:
 
 There is intentionally no broad fuzzy text matching. An ambiguous match is an evaluation error, not something the evaluator silently guesses.
 
-## Interpretation
+## Relation evaluation scope
+
+Structural relation labels may be reused across endpoint namespaces. For example, `PART_OF` can represent both Element→LogicalUnit membership and LogicalUnit→LogicalUnit native nesting. V0.1 evaluates only endpoint namespaces demonstrated by positive gold relations for the selected relation types. This prevents correct out-of-scope structural edges from becoming false positives.
+
+A future benchmark that needs **negative-only** relation scopes must make those scopes explicit in a later gold-schema version rather than treating unannotated namespaces as negative.
+
+## Metric interpretation
+
+The report exposes both pooled counts and per-document macro summaries. A complete miss on a document with gold positives has `F1=0`; it is not dropped from the macro average merely because precision has an empty denominator.
 
 A green unit-test suite means the framework obeys its coded invariants. Benchmark metrics mean the parser matches this gold set. Neither one alone demonstrates general real-world document-understanding accuracy.
