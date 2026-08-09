@@ -1,0 +1,137 @@
+{
+  "benchmark": "DOCX Structure Real Pilot V0.1",
+  "version": "0.1",
+  "gold_provenance": "INDEPENDENT_OOXML_AUDIT_ASSISTANT_ADJUDICATED_FROZEN",
+  "policy": {
+    "toc_navigation": "Built-in TOCHeading and TOC1..TOC9 styles are navigation material. Their source style/outline facts are preserved, but they are excluded from canonical content-heading and hierarchy gold.",
+    "blank_heading": "A blank paragraph carrying an explicit heading style remains an L1 source-heading observation, but no L3 hierarchy-node assertion is implied by that fact alone.",
+    "coverage": {
+      "L0_source_fidelity": "FROZEN_PARTIAL",
+      "L1_element_understanding": "FROZEN_PARTIAL",
+      "L2_structural_grouping": "NOT_YET_FULLY_ADJUDICATED",
+      "L3_document_structure": "FROZEN_PARTIAL"
+    }
+  },
+  "documents": [
+    {
+      "id": "real-docx-01-flexible-policy",
+      "bytes": 55706,
+      "sha256": "sha256:6df2c0ca6589ea053456cc7568e8e7611880f55dad00a62d517d7739a265cdc5",
+      "L0_source_fidelity": {
+        "table_aggregate": {"TABLE": 0, "TABLE_ROW": 0, "TABLE_CELL": 0},
+        "notes": {"endnote": 1, "footnote": 0},
+        "referenced_story_parts": 1,
+        "duplicate_style_groups": 0,
+        "unexpected_structural_diagnostic_count": 0
+      },
+      "L1_element_understanding": {
+        "headings": [
+          {"text": "Considering a request and communicating the outcome", "level": 1, "count": 1},
+          {"text": "Example flexible working policy", "level": 1, "count": 1},
+          {"text": "Guiding principles underpinning this policy", "level": 1, "count": 1},
+          {"text": "How we encourage conversations about flexible working", "level": 1, "count": 1},
+          {"text": "Introduction", "level": 1, "count": 1},
+          {"text": "Making a formal application for a flexible working arrangement in our school", "level": 2, "count": 1},
+          {"text": "Requesting flexible working", "level": 1, "count": 1},
+          {"text": "Review and monitoring", "level": 1, "count": 1},
+          {"text": "Right to appeal", "level": 1, "count": 1},
+          {"text": "Trialling a new arrangement", "level": 1, "count": 1},
+          {"text": "Types of flexible working", "level": 1, "count": 1}
+        ],
+        "navigation": [
+          {"text": "Contents", "role": "toc_title", "style_id": "TOCHeading", "count": 1}
+        ]
+      },
+      "L2_structural_grouping": {"status": "NOT_YET_FULLY_ADJUDICATED"},
+      "L3_document_structure": {"status": "PARTIAL", "structural_ready": true}
+    },
+    {
+      "id": "real-docx-02-academy-form",
+      "bytes": 63620,
+      "sha256": "sha256:18634e11e24c3e9c1b67e6f7f51132ab1fe953f30f6f857df36cfe9badf70448",
+      "L0_source_fidelity": {
+        "table_aggregate": {"TABLE": 6, "TABLE_ROW": 27, "TABLE_CELL": 66},
+        "notes": {"endnote": 1, "footnote": 1},
+        "referenced_story_parts": 2,
+        "duplicate_style_groups": 0,
+        "unexpected_structural_diagnostic_count": 0
+      },
+      "L1_element_understanding": {
+        "headings": [
+          {"text": "", "level": 2, "count": 2},
+          {"text": "", "level": 3, "count": 1},
+          {"text": "Application form", "level": 1, "count": 1},
+          {"text": "Option 1 - Digital identity check", "level": 3, "count": 1},
+          {"text": "Option 2 – Department identity check", "level": 3, "count": 1},
+          {"text": "Section A - Personal details", "level": 2, "count": 1},
+          {"text": "Section B – Right to work and barred list", "level": 2, "count": 1},
+          {"text": "Section C – Confirming identity", "level": 2, "count": 1},
+          {"text": "Submitting this form", "level": 2, "count": 1}
+        ],
+        "navigation": []
+      },
+      "L2_structural_grouping": {"status": "NOT_YET_FULLY_ADJUDICATED"},
+      "L3_document_structure": {"status": "PARTIAL", "structural_ready": true}
+    },
+    {
+      "id": "real-docx-03-ivd-tabular",
+      "bytes": 36340,
+      "sha256": "sha256:51994b23c89a5aaf4e017596990300bfa248d05690c978c5fb4d050a85ffddeb",
+      "L0_source_fidelity": {
+        "table_aggregate": {"TABLE": 1, "TABLE_ROW": 11, "TABLE_CELL": 33},
+        "notes": {"endnote": 0, "footnote": 0},
+        "referenced_story_parts": 2,
+        "duplicate_style_groups": 0,
+        "unexpected_structural_diagnostic_count": 0
+      },
+      "L1_element_understanding": {"headings": [], "navigation": []},
+      "L2_structural_grouping": {"status": "NOT_YET_FULLY_ADJUDICATED"},
+      "L3_document_structure": {"status": "PARTIAL", "structural_ready": true}
+    },
+    {
+      "id": "real-docx-04-eps-guidance",
+      "bytes": 69364,
+      "sha256": "sha256:eac3f63dd367e1f933051522eb3461a71cbddeda229410ccee49fa19095b9a60",
+      "L0_source_fidelity": {
+        "table_aggregate": {"TABLE": 0, "TABLE_ROW": 0, "TABLE_CELL": 0},
+        "notes": {"endnote": 0, "footnote": 0},
+        "referenced_story_parts": 4,
+        "duplicate_style_groups": 0,
+        "unexpected_structural_diagnostic_count": 0
+      },
+      "L1_element_understanding": {
+        "headings": [
+          {"text": "Data available", "level": 4, "count": 1},
+          {"text": "Overview – survey scope and sample", "level": 4, "count": 1},
+          {"text": "UK commission’s Employer perspectives survey 2012", "level": 4, "count": 1},
+          {"text": "guidance on use of dataset and data tables", "level": 4, "count": 1},
+          {"text": "reporting requirements", "level": 1, "count": 1},
+          {"text": "terms and conditions", "level": 1, "count": 1}
+        ],
+        "navigation": []
+      },
+      "L2_structural_grouping": {"status": "NOT_YET_FULLY_ADJUDICATED"},
+      "L3_document_structure": {"status": "PARTIAL", "structural_ready": true}
+    },
+    {
+      "id": "real-docx-05-contractor-licence",
+      "bytes": 313297,
+      "sha256": "sha256:c4f4ed0e853b38cd21d1bc5a5247b91d56aacddf1bd025888ea3338ff9798dfa",
+      "L0_source_fidelity": {
+        "table_aggregate": {"TABLE": 2, "TABLE_ROW": 23, "TABLE_CELL": 54},
+        "notes": {},
+        "referenced_story_parts": 2,
+        "duplicate_style_groups": 12,
+        "unexpected_structural_diagnostic_count": 0
+      },
+      "L1_element_understanding": {
+        "headings": [
+          {"text": "Standard Form Contractor Licence", "level": 1, "count": 1}
+        ],
+        "navigation": []
+      },
+      "L2_structural_grouping": {"status": "NOT_YET_FULLY_ADJUDICATED"},
+      "L3_document_structure": {"status": "PARTIAL", "structural_ready": true}
+    }
+  ]
+}
