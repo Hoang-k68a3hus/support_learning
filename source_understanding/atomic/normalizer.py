@@ -147,7 +147,8 @@ class ElementNormalizer:
                         operation="normalize_line_endings",
                         metadata={
                             "crlf_count": value.count("\r\n"),
-                            "standalone_cr_count": value.count("\r") - value.count("\r\n"),
+                            "standalone_cr_count": value.count("\r")
+                            - value.count("\r\n"),
                         },
                     )
                 )
@@ -190,10 +191,10 @@ class ElementNormalizer:
     @staticmethod
     def _element_id(document_id: str, raw: RawElement) -> str:
         # Element identity belongs to the source-near observation, not to the
-        # software version that happened to extract it.  Extractor/version,
-        # confidence and transformation bookkeeping remain in provenance but
-        # must not churn every downstream reference when an adapter is upgraded
-        # without changing its observed source output.
+        # software version or provenance bookkeeping that happened to extract it.
+        # Location coordinates/ranges identify the observation; SourceLocation.source
+        # classifies how that location was obtained and therefore must not churn
+        # downstream references when provenance becomes more precise.
         payload = {
             "document_id": document_id,
             "source_observation": {
@@ -201,7 +202,7 @@ class ElementNormalizer:
                 "type_hint": raw.type_hint,
                 "order": raw.order,
                 "location": (
-                    raw.location.model_dump(mode="json")
+                    raw.location.model_dump(mode="json", exclude={"source"})
                     if raw.location is not None
                     else None
                 ),
