@@ -45,6 +45,10 @@ class SemanticGoldCompiler(_BaseSemanticGoldCompiler):
         split: DatasetSplit,
         policy: GoldEligibilityPolicy,
     ) -> GoldSemanticDocument:
+        # Preserve the base compiler's local decision-state precedence. Invalid
+        # states such as UNDECIDED should be reported before cross-object audit
+        # consequences such as a terminal review hash becoming stale.
+        self._validate_supported_decisions(records)
         _validate_gold_target_topology(document=document, records=records)
         _validate_review_integrity(records)
         guideline_version = _resolve_guideline_version(records, policy=policy)
