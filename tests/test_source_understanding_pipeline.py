@@ -85,8 +85,8 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
         self.assertEqual(result.document, result.structural_document)
         self.assertEqual(result.document.elements, make_elements())
         self.assertEqual(result.content_profile.element_count, 2)
-        self.assertEqual(result.version, "2")
-        self.assertEqual(result.document.processing.structure_version, "2")
+        self.assertEqual(result.version, "3")
+        self.assertEqual(result.document.processing.structure_version, "3")
 
     def test_semantics_enrich_without_mutating_structural_snapshot(self):
         pipeline = SourceUnderstandingPipeline(semantic_annotator=SemanticAnnotator(HeuristicSemanticProvider()))
@@ -135,6 +135,7 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
         manifest = result.document.processing.configuration["source_understanding_pipeline"]
         self.assertEqual(manifest["content_regions"]["source"], "AUTO")
         self.assertEqual(manifest["content_regions"]["count"], 2)
+        self.assertEqual(manifest["content_regions"]["segmenter_version"], "3")
 
     def test_auto_content_regions_can_be_disabled(self):
         result = SourceUnderstandingPipeline(policy=SourceUnderstandingPipelinePolicy(auto_segment_regions=False)).understand(document_id="doc1", content_hash=HASH, processing=processing(), elements=make_elements())
@@ -166,11 +167,28 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
         self.assertEqual(result.document.structure.mode, StructureMode.MIXED)
         self.assertTrue(result.region_result.mixed)
 
-    def test_pipeline_manifest_records_v2_component_contracts(self):
+    def test_lexical_qa_grouping_refines_auto_regions_without_changing_elements(self):
+        elements = (
+            Element(id="e1", type=ElementType.PARAGRAPH, order=0, raw_text="Intro", normalized_text="Intro", provenance=Provenance(source=StructureSource.EXPLICIT, extractor="test")),
+            Element(id="e2", type=ElementType.PARAGRAPH, order=1, raw_text="Q: Why?", normalized_text="Q: Why?", provenance=Provenance(source=StructureSource.EXPLICIT, extractor="test")),
+            Element(id="e3", type=ElementType.PARAGRAPH, order=2, raw_text="A: Because.", normalized_text="A: Because.", provenance=Provenance(source=StructureSource.EXPLICIT, extractor="test")),
+            Element(id="e4", type=ElementType.PARAGRAPH, order=3, raw_text="Closing", normalized_text="Closing", provenance=Provenance(source=StructureSource.EXPLICIT, extractor="test")),
+        )
+        result = SourceUnderstandingPipeline().understand(document_id="doc1", content_hash=HASH, processing=processing(), elements=elements)
+        self.assertEqual(result.document.structure.mode, StructureMode.MIXED)
+        self.assertEqual(
+            [region.metadata["routing_category"] for region in result.document.regions],
+            ["narrative", "qa", "narrative"],
+        )
+        self.assertEqual(result.region_result.diagnostics["grouping_routing_override_count"], 2)
+        self.assertTrue(all(item.type == ElementType.PARAGRAPH for item in result.document.elements))
+
+    def test_pipeline_manifest_records_v3_component_contracts(self):
         result = SourceUnderstandingPipeline().understand(document_id="doc1", content_hash=HASH, processing=processing(), elements=make_elements())
         manifest = result.document.processing.configuration["source_understanding_pipeline"]
-        self.assertEqual(manifest["pipeline_version"], "2")
+        self.assertEqual(manifest["pipeline_version"], "3")
         self.assertEqual(manifest["content_profiler_version"], "2")
+        self.assertEqual(manifest["content_regions"]["segmenter_version"], "3")
         self.assertEqual(manifest["structure_signal_version"], "2")
         self.assertEqual(manifest["boundary_version"], "2")
         self.assertEqual(manifest["hierarchy_version"], "2")
