@@ -1,0 +1,21 @@
+{
+  "include": [
+    "source_understanding/schemas",
+    "source_understanding/atomic",
+    "source_understanding/profiling",
+    "source_understanding/structure",
+    "source_understanding/relations",
+    "source_understanding/semantics",
+    "source_understanding/retrieval_units",
+    "source_understanding/assembly.py",
+    "source_understanding/completion.py",
+    "source_understanding/pipeline.py",
+    "source_understanding/pipeline_support.py"
+  ],
+  "exclude": [
+    "source_understanding/adapters"
+  ],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic",
+  "reportMissingTypeStubs": "none"
+}
