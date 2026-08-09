@@ -22,7 +22,7 @@ from .errors import GoldEligibilityError, GoldSourceResolutionError
 from .splits import DatasetSplit, DatasetSplitManifest
 
 
-SEMANTIC_GOLD_COMPILER_VERSION = "2"
+SEMANTIC_GOLD_COMPILER_VERSION = "3"
 
 
 class SemanticGoldCompiler(_BaseSemanticGoldCompiler):
@@ -31,8 +31,8 @@ class SemanticGoldCompiler(_BaseSemanticGoldCompiler):
     M2.1 remains the complete audit validator. The compiler nevertheless
     re-checks the subset of cross-object invariants whose violation could create
     a semantically wrong but internally valid Gold V3 artifact: exact target
-    topology, review decision-hash continuity, and one terminal guideline per
-    compiled document.
+    topology, review decision-hash continuity, terminal guideline identity, and
+    source-family/split-group lineage.
     """
 
     version = SEMANTIC_GOLD_COMPILER_VERSION
@@ -52,6 +52,7 @@ class SemanticGoldCompiler(_BaseSemanticGoldCompiler):
         _validate_gold_target_topology(document=document, records=records)
         _validate_review_integrity(records)
         guideline_version = _resolve_guideline_version(records, policy=policy)
+        source_family_id, split_group_id = _resolve_source_lineage(records)
         gold = super().compile_document(
             document=document,
             records=records,
@@ -66,6 +67,8 @@ class SemanticGoldCompiler(_BaseSemanticGoldCompiler):
                 "eligibility_policy_name": policy.name,
                 "eligibility_policy_version": policy.version,
                 "eligibility_policy_hash": gold_eligibility_policy_hash(policy),
+                "source_family_id": source_family_id,
+                "split_group_id": split_group_id,
             }
         )
         if guideline_version is not None:
@@ -162,6 +165,24 @@ def _resolve_guideline_version(
     if policy.require_review and not versions:
         return None
     return versions[0] if versions else None
+
+
+def _resolve_source_lineage(
+    records: Sequence[SemanticWorkingRecord],
+) -> tuple[str, str]:
+    source_family_ids = {record.source.source_family_id for record in records}
+    split_group_ids = {record.source.split_group_id for record in records}
+    if len(source_family_ids) != 1:
+        raise GoldSourceResolutionError(
+            "cannot compile one canonical document from multiple source families: "
+            f"{sorted(source_family_ids)!r}"
+        )
+    if len(split_group_ids) != 1:
+        raise GoldSourceResolutionError(
+            "cannot compile one canonical document from multiple split groups: "
+            f"{sorted(split_group_ids)!r}"
+        )
+    return next(iter(source_family_ids)), next(iter(split_group_ids))
 
 
 def _validate_gold_target_topology(
