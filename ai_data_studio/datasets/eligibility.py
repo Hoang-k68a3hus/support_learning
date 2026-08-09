@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from enum import StrEnum
 
 from pydantic import Field, model_validator
@@ -10,11 +12,14 @@ from ai_data_studio.schemas import (
     SemanticWorkingRecord,
     WorkingRecordStatus,
 )
-from source_understanding.schemas.context import SchemaModel
+from source_understanding.schemas.context import ContentHash, SchemaModel
 from source_understanding.schemas.document import (
     SemanticPayloadMode,
     semantic_payload_mode_for_type,
 )
+
+
+GOLD_ELIGIBILITY_POLICY_HASH_VERSION = "1"
 
 
 class GoldIneligibilityReason(StrEnum):
@@ -156,6 +161,20 @@ class GoldEligibilityEvaluator:
             eligible=not ordered_reasons,
             reasons=ordered_reasons,
         )
+
+
+def gold_eligibility_policy_hash(policy: GoldEligibilityPolicy) -> ContentHash:
+    payload = {
+        "hash_version": GOLD_ELIGIBILITY_POLICY_HASH_VERSION,
+        "policy": policy.model_dump(mode="json"),
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
 _CONFIDENCE_RANK = {
