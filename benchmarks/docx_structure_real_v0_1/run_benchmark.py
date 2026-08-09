@@ -96,6 +96,31 @@ def _predicted_note_counts(raw_elements: tuple[object, ...]) -> Counter[str]:
     return counts
 
 
+def _candidate_elements_for_missing_headings(
+    raw_elements: tuple[object, ...], missing: Counter[tuple[str, int]]
+) -> list[dict[str, object]]:
+    missing_text = {text for text, _ in missing}
+    output: list[dict[str, object]] = []
+    for item in raw_elements:
+        text = _normalize_text(getattr(item, "text", None))
+        if text not in missing_text:
+            continue
+        attrs = dict(getattr(item, "attributes", {}))
+        output.append(
+            {
+                "text": text,
+                "type_hint": getattr(item, "type_hint", None),
+                "paragraph_style_id": attrs.get("paragraph_style_id"),
+                "paragraph_style_name": attrs.get("paragraph_style_name"),
+                "heading_level": attrs.get(HEADING_LEVEL_ATTRIBUTE),
+                "source_zone": attrs.get(SOURCE_ZONE_ATTRIBUTE),
+                "numbering_id": attrs.get("numbering_id"),
+                "numbering_level": attrs.get("numbering_level"),
+            }
+        )
+    return output
+
+
 def evaluate_source(source: dict[str, str], pin: dict[str, object]) -> dict[str, object]:
     errors: list[dict[str, object]] = []
     payload = _download(source["url"])
@@ -123,10 +148,14 @@ def evaluate_source(source: dict[str, str], pin: dict[str, object]) -> dict[str,
     expected_headings = _expected_headings(audit)
     predicted_headings = _predicted_headings(adapted.raw_elements)
     if expected_headings != predicted_headings:
+        missing = expected_headings - predicted_headings
         errors.append({
             "type": "HEADING_CONTRACT_MISMATCH",
-            "missing": list((expected_headings - predicted_headings).elements()),
+            "missing": list(missing.elements()),
             "extra": list((predicted_headings - expected_headings).elements()),
+            "candidate_elements": _candidate_elements_for_missing_headings(
+                adapted.raw_elements, missing
+            ),
         })
 
     expected_tables = _expected_table_shapes(audit)
