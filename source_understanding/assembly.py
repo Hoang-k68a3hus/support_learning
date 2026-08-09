@@ -22,7 +22,7 @@ from source_understanding.structure.quality import StructureQualityReport
 
 
 ASSEMBLY_VERSION = "1"
-STRUCTURE_PIPELINE_VERSION = "2"
+STRUCTURE_PIPELINE_VERSION = "3"
 
 
 class AssemblyError(ValueError):
