@@ -4,7 +4,10 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 
-from ai_data_studio.schemas import SemanticWorkingRecord
+from ai_data_studio.schemas import (
+    WORKING_RECORD_SCHEMA_VERSION,
+    SemanticWorkingRecord,
+)
 from ai_data_studio.validation.review import validate_review_chain
 from source_understanding.evaluation import GoldSemanticDocument, SemanticGoldDataset
 from source_understanding.schemas.context import ContentHash, Identifier
@@ -38,10 +41,11 @@ def gold_eligibility_policy_hash(policy: GoldEligibilityPolicy) -> ContentHash:
 class SemanticGoldCompiler(_BaseSemanticGoldCompiler):
     """Gold compiler with fail-closed checks for gold-critical working state.
 
-    M2.1 remains the complete audit validator.  The compiler nevertheless
+    M2.1 remains the complete audit validator. The compiler nevertheless
     re-checks the subset of cross-object invariants whose violation could create
     a semantically wrong but internally valid Gold V3 artifact: exact target
-    topology and review decision-hash continuity.
+    topology, review decision-hash continuity, and one terminal guideline per
+    compiled document.
     """
 
     version = SEMANTIC_GOLD_COMPILER_VERSION
@@ -56,12 +60,28 @@ class SemanticGoldCompiler(_BaseSemanticGoldCompiler):
     ) -> GoldSemanticDocument:
         _validate_gold_target_topology(document=document, records=records)
         _validate_review_integrity(records)
-        return super().compile_document(
+        guideline_version = _resolve_guideline_version(records, policy=policy)
+        gold = super().compile_document(
             document=document,
             records=records,
             split=split,
             policy=policy,
         )
+        metadata = dict(gold.metadata)
+        metadata.update(
+            {
+                "compiler_version": self.version,
+                "working_schema_version": WORKING_RECORD_SCHEMA_VERSION,
+                "eligibility_policy_name": policy.name,
+                "eligibility_policy_version": policy.version,
+                "eligibility_policy_hash": gold_eligibility_policy_hash(policy),
+            }
+        )
+        if guideline_version is not None:
+            metadata["guideline_version"] = guideline_version
+        payload = gold.model_dump(mode="python")
+        payload["metadata"] = metadata
+        return GoldSemanticDocument.model_validate(payload)
 
     def compile_dataset(
         self,
@@ -82,9 +102,9 @@ class SemanticGoldCompiler(_BaseSemanticGoldCompiler):
         guideline_versions = tuple(
             sorted(
                 {
-                    record.reviews[-1].guideline_version
-                    for record in records
-                    if record.reviews
+                    case.metadata["guideline_version"]
+                    for case in dataset.cases
+                    if "guideline_version" in case.metadata
                 }
             )
         )
@@ -92,6 +112,8 @@ class SemanticGoldCompiler(_BaseSemanticGoldCompiler):
         metadata.update(
             {
                 "compiler_version": self.version,
+                "eligibility_policy_name": policy.name,
+                "eligibility_policy_version": policy.version,
                 "eligibility_policy_hash": gold_eligibility_policy_hash(policy),
                 "guideline_versions": list(guideline_versions),
             }
@@ -111,11 +133,44 @@ def _validate_review_integrity(
             current_decision_hash=record.decision_hash,
             record_id=record.record_id,
         )
-        errors = tuple(issue.code.value for issue in issues if issue.severity.value == "ERROR")
+        errors = tuple(
+            issue.code.value
+            for issue in issues
+            if issue.severity.value == "ERROR"
+        )
         if errors:
             invalid.append((record.record_id, errors))
     if invalid:
         raise GoldEligibilityError(tuple(invalid))
+
+
+def _resolve_guideline_version(
+    records: Sequence[SemanticWorkingRecord],
+    *,
+    policy: GoldEligibilityPolicy,
+) -> str | None:
+    versions = tuple(
+        sorted(
+            {
+                record.reviews[-1].guideline_version
+                for record in records
+                if record.reviews
+            }
+        )
+    )
+    if len(versions) > 1:
+        raise GoldEligibilityError(
+            tuple(
+                (
+                    record.record_id,
+                    ("MIXED_REVIEW_GUIDELINES",),
+                )
+                for record in sorted(records, key=lambda item: item.record_id)
+            )
+        )
+    if policy.require_review and not versions:
+        return None
+    return versions[0] if versions else None
 
 
 def _validate_gold_target_topology(
