@@ -3,10 +3,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from source_understanding.schemas.document import CanonicalDocument
+from source_understanding.schemas.element import Element
+from source_understanding.source_attributes import SOURCE_ZONE_ATTRIBUTE
 
 from .alignment import AlignmentStatus, ElementAligner, ElementAlignmentResult
 from .element_scoring import ElementScorer
 from .metrics import prf_counts
+from .relation_scoring import RelationScorer
 from .report import (
     DocumentEvaluationMetrics,
     DocumentEvaluationReport,
@@ -26,6 +29,7 @@ class DocumentStructureEvaluator:
         *,
         element_scorer: ElementScorer | None = None,
         structure_scorer: StructureScorer | None = None,
+        relation_scorer: RelationScorer | None = None,
     ) -> None:
         self._aligner = aligner if aligner is not None else ElementAligner()
         self._element_scorer = (
@@ -33,6 +37,9 @@ class DocumentStructureEvaluator:
         )
         self._structure_scorer = (
             structure_scorer if structure_scorer is not None else StructureScorer()
+        )
+        self._relation_scorer = (
+            relation_scorer if relation_scorer is not None else RelationScorer()
         )
 
     def evaluate(
@@ -52,7 +59,7 @@ class DocumentStructureEvaluator:
             for gold_id, predicted_id in alignment.gold_to_predicted.items()
             if gold_id in optional_gold
         }
-        errors = self._alignment_errors(alignment, required_gold)
+        errors = self._alignment_errors(alignment, required_gold, predicted)
 
         matched_required = {
             gold_id: predicted_id
@@ -101,7 +108,7 @@ class DocumentStructureEvaluator:
         region_boundary, region_category_accuracy = self._structure_scorer.regions(
             gold, predicted, alignment, errors
         )
-        structural_relations, relation_per_label = self._structure_scorer.relations(
+        structural_relations, relation_per_label = self._relation_scorer.score(
             gold, predicted, alignment, errors
         )
 
@@ -169,6 +176,7 @@ class DocumentStructureEvaluator:
                 "evaluation_scope": "document_structure_benchmark",
                 "evaluation_is_model_accuracy": False,
                 "alignment_is_conservative": True,
+                "relation_scope_is_gold_endpoint_namespace": True,
                 "optional_gold_element_count": len(optional_gold),
                 "evaluated_logical_unit_types": [
                     item.value for item in gold.evaluated_logical_unit_types
@@ -199,8 +207,10 @@ class DocumentStructureEvaluator:
     def _alignment_errors(
         alignment: ElementAlignmentResult,
         required_gold: set[str],
+        predicted: CanonicalDocument,
     ) -> list[EvaluationError]:
         errors: list[EvaluationError] = []
+        predicted_by_id = {item.id: item for item in predicted.elements}
         for match in alignment.matches:
             if (
                 match.status == AlignmentStatus.GOLD_UNMATCHED
@@ -214,6 +224,7 @@ class DocumentStructureEvaluator:
                     )
                 )
             elif match.status == AlignmentStatus.PRED_UNMATCHED:
+                item = predicted_by_id.get(match.predicted_id)
                 errors.append(
                     EvaluationError(
                         type=EvaluationErrorType.ADAPTER_EXTRA_ELEMENT,
@@ -221,6 +232,11 @@ class DocumentStructureEvaluator:
                             f"predicted element {match.predicted_id!r} has no gold alignment"
                         ),
                         predicted_ids=(match.predicted_id,),
+                        metadata=(
+                            DocumentStructureEvaluator._element_debug_metadata(item)
+                            if item is not None
+                            else {}
+                        ),
                     )
                 )
             elif match.status == AlignmentStatus.AMBIGUOUS:
@@ -236,6 +252,33 @@ class DocumentStructureEvaluator:
                     )
                 )
         return errors
+
+    @staticmethod
+    def _element_debug_metadata(element: Element) -> dict[str, object]:
+        attributes = element.attributes
+        safe_attribute_keys = (
+            "opc_part",
+            SOURCE_ZONE_ATTRIBUTE,
+            "separator_kind",
+            "note_kind",
+            "native_integrity_kind",
+            "row_index",
+            "cell_index",
+            "alt_chunk_relationship_id",
+            "paragraph_style_id",
+        )
+        selected = {
+            key: attributes[key]
+            for key in safe_attribute_keys
+            if key in attributes
+        }
+        return {
+            "type": element.type.value,
+            "raw_text": element.raw_text,
+            "normalized_text": element.normalized_text,
+            "order": element.order,
+            "attributes": selected,
+        }
 
     @staticmethod
     def _structure_mode_check(
