@@ -104,7 +104,7 @@ class GroupingAwareRegionTests(unittest.TestCase):
         )
         self.assertEqual(
             result.regions[1].metadata["grouping_routing_override_element_ids"],
-            ("q", "a"),
+            ["q", "a"],
         )
         self.assertEqual(result.diagnostics["grouping_routing_override_count"], 2)
         self.assertEqual(result.structure.mode, StructureMode.MIXED)
