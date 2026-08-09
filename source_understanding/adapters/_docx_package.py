@@ -9,12 +9,17 @@ from datetime import datetime
 from xml.etree import ElementTree as ET
 
 from source_understanding.schemas.document import Asset, DocumentMetadata
-from .base import AdapterDiagnostic, AdapterDiagnosticLevel, AdapterError
+
 from ._docx_common import (
-    A, CT, NS, RELS, R, W,
-    DocxAdapterPolicy, ListLevel, Relationship, StyleDef,
-    half_points, int_attr, local_name, on_off, optional_text,
+    NS,
+    W,
+    ListLevel,
+    Relationship,
+    int_attr,
+    local_name,
+    optional_text,
 )
+from .base import AdapterDiagnostic, AdapterDiagnosticLevel, AdapterError
 
 
 class DocxPackageMixin:
@@ -53,11 +58,14 @@ class DocxPackageMixin:
             return None
         if info.file_size > self.policy.max_xml_part_bytes:
             raise AdapterError(
-                f"XML part {part!r} exceeds max_xml_part_bytes={self.policy.max_xml_part_bytes}"
+                f"XML part {part!r} exceeds max_xml_part_bytes="
+                f"{self.policy.max_xml_part_bytes}"
             )
         data = package.read(part)
         if re.search(br"<!\s*(?:DOCTYPE|ENTITY)\b", data, re.I):
-            raise AdapterError(f"DTD/entity declarations are forbidden in XML part {part!r}")
+            raise AdapterError(
+                f"DTD/entity declarations are forbidden in XML part {part!r}"
+            )
         try:
             return ET.fromstring(data)
         except ET.ParseError as exc:
@@ -77,7 +85,9 @@ class DocxPackageMixin:
                 if ext and media:
                     key = ext.casefold()
                     if key in defaults and defaults[key] != media:
-                        raise AdapterError(f"conflicting content type default for extension {ext!r}")
+                        raise AdapterError(
+                            f"conflicting content type default for extension {ext!r}"
+                        )
                     defaults[key] = media
             elif name == "Override":
                 part = node.attrib.get("PartName")
@@ -85,13 +95,19 @@ class DocxPackageMixin:
                 if part and media:
                     part = part.lstrip("/")
                     if part in overrides and overrides[part] != media:
-                        raise AdapterError(f"conflicting content type override for {part!r}")
+                        raise AdapterError(
+                            f"conflicting content type override for {part!r}"
+                        )
                     overrides[part] = media
         result = dict(overrides)
         for info in package.infolist():
             if info.filename in result:
                 continue
-            ext = info.filename.rsplit(".", 1)[-1].casefold() if "." in info.filename else ""
+            ext = (
+                info.filename.rsplit(".", 1)[-1].casefold()
+                if "." in info.filename
+                else ""
+            )
             if ext in defaults:
                 result[info.filename] = defaults[ext]
         return result
@@ -114,7 +130,9 @@ class DocxPackageMixin:
             created_text = optional_text(root.find("dcterms:created", NS))
             if created_text:
                 try:
-                    created = datetime.fromisoformat(created_text.replace("Z", "+00:00"))
+                    created = datetime.fromisoformat(
+                        created_text.replace("Z", "+00:00")
+                    )
                 except ValueError:
                     self._diagnostics.append(
                         AdapterDiagnostic(
@@ -143,71 +161,10 @@ class DocxPackageMixin:
             return None
         return lang.attrib.get(W + "val") or lang.attrib.get(W + "eastAsia")
 
-    def _read_styles(self, package: zipfile.ZipFile) -> dict[str, StyleDef]:
-        root = self._read_xml(package, "word/styles.xml")
-        if root is None:
-            return {}
-        raw: dict[str, StyleDef] = {}
-        for style in root.findall("w:style", NS):
-            style_id = style.attrib.get(W + "styleId")
-            if not style_id:
-                continue
-            if style_id in raw:
-                raise AdapterError(f"duplicate DOCX styleId {style_id!r}")
-            name_node = style.find("w:name", NS)
-            based = style.find("w:basedOn", NS)
-            outline = style.find("w:pPr/w:outlineLvl", NS)
-            num_pr = style.find("w:pPr/w:numPr", NS)
-            num_id, ilvl = self._num_pr(num_pr)
-            raw[style_id] = StyleDef(
-                style_id=style_id,
-                name=name_node.attrib.get(W + "val") if name_node is not None else None,
-                outline_level=int_attr(outline, "val"),
-                num_id=num_id,
-                ilvl=ilvl,
-                based_on=based.attrib.get(W + "val") if based is not None else None,
-            )
-        resolved: dict[str, StyleDef] = {}
-
-        def resolve(style_id: str, trail: tuple[str, ...] = ()) -> StyleDef:
-            if style_id in resolved:
-                return resolved[style_id]
-            if style_id in trail:
-                raise AdapterError(f"DOCX style inheritance cycle at {style_id!r}")
-            item = raw[style_id]
-            parent = None
-            if item.based_on:
-                if item.based_on in raw:
-                    parent = resolve(item.based_on, (*trail, style_id))
-                else:
-                    self._diagnostics.append(
-                        AdapterDiagnostic(
-                            code="MISSING_BASE_STYLE",
-                            message="DOCX style basedOn target is missing",
-                            affects_structural_completeness=True,
-                            part="word/styles.xml",
-                            metadata={"style_id": style_id, "based_on": item.based_on},
-                        )
-                    )
-            resolved_item = StyleDef(
-                style_id=item.style_id,
-                name=item.name or (parent.name if parent else None),
-                outline_level=(
-                    item.outline_level if item.outline_level is not None
-                    else (parent.outline_level if parent else None)
-                ),
-                num_id=item.num_id or (parent.num_id if parent else None),
-                ilvl=item.ilvl if item.num_id is not None else (parent.ilvl if parent else item.ilvl),
-                based_on=item.based_on,
-            )
-            resolved[style_id] = resolved_item
-            return resolved_item
-
-        for style_id in raw:
-            resolve(style_id)
-        return resolved
-
-    def _read_numbering(self, package: zipfile.ZipFile) -> dict[tuple[str, int], ListLevel]:
+    def _read_numbering(
+        self,
+        package: zipfile.ZipFile,
+    ) -> dict[tuple[str, int], ListLevel]:
         root = self._read_xml(package, "word/numbering.xml")
         if root is None:
             return {}
@@ -262,7 +219,9 @@ class DocxPackageMixin:
             if not rel_id or not rel_type or target is None:
                 continue
             if rel_id in result:
-                raise AdapterError(f"duplicate relationship Id {rel_id!r} in {rel_part!r}")
+                raise AdapterError(
+                    f"duplicate relationship Id {rel_id!r} in {rel_part!r}"
+                )
             external = node.attrib.get("TargetMode", "").casefold() == "external"
             resolved = target
             if not external:
@@ -271,7 +230,11 @@ class DocxPackageMixin:
                         f"relationship {rel_id!r} uses invalid OPC path separator"
                     )
                 resolved = posixpath.normpath(posixpath.join(base, target))
-                if resolved == ".." or resolved.startswith("../") or resolved.startswith("/"):
+                if (
+                    resolved == ".."
+                    or resolved.startswith("../")
+                    or resolved.startswith("/")
+                ):
                     raise AdapterError(
                         f"relationship {rel_id!r} escapes OPC package root"
                     )
@@ -344,7 +307,10 @@ class DocxPackageMixin:
                 self._diagnostics.append(
                     AdapterDiagnostic(
                         code="ASSET_PAYLOAD_HASH_SKIPPED_TOO_LARGE",
-                        message="large DOCX asset preserved by descriptor without payload hashing",
+                        message=(
+                            "large DOCX asset preserved by descriptor without "
+                            "payload hashing"
+                        ),
                         part=target_part,
                         metadata={"byte_size": info.file_size},
                     )
