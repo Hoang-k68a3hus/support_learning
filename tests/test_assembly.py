@@ -100,7 +100,7 @@ class AssemblyTests(unittest.TestCase):
 
     def test_assembles_valid_document_and_stamps_structure_version(self) -> None:
         document = self.assemble(stages(with_context=True), metadata=DocumentMetadata(title="Example"), assets=(Asset(id="asset", type="image"),))
-        self.assertEqual(document.processing.structure_version, "2")
+        self.assertEqual(document.processing.structure_version, "3")
         self.assertEqual(document.metadata.title, "Example")
         self.assertEqual(document.logical_units[0].context_node_ids, ("ctx",))
         self.assertEqual(document.context_nodes[0].id, "ctx")
