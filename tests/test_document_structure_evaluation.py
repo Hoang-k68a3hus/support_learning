@@ -8,12 +8,13 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from benchmarks.docx_structure_v0_1.generate_pilot import (
-    GENERATOR_ID,
-    build_manifest,
+from benchmarks.docx_structure_v0_1.adjudicated_pilot import (
+    GOLD_ADJUDICATION_VERSION,
+    build_adjudicated_manifest,
     build_pilot_cases,
     materialize,
 )
+from benchmarks.docx_structure_v0_1.generate_pilot import GENERATOR_ID
 from source_understanding.adapters import DocxAdapter, SourceAdapterRunner
 from source_understanding.evaluation import (
     BenchmarkEvaluator,
@@ -30,7 +31,7 @@ from source_understanding.evaluation.schemas import (
 
 
 class GeneratedDocxGoldBenchmarkTests(unittest.TestCase):
-    def test_generator_is_byte_deterministic_and_hashes_match_gold(self) -> None:
+    def test_generator_and_adjudication_are_byte_deterministic(self) -> None:
         first = build_pilot_cases()
         second = build_pilot_cases()
         self.assertEqual(len(first), 5)
@@ -40,6 +41,11 @@ class GeneratedDocxGoldBenchmarkTests(unittest.TestCase):
             expected = "sha256:" + hashlib.sha256(item.payload).hexdigest()
             self.assertEqual(item.gold.source.sha256, expected)
             self.assertEqual(item.gold.source.generator_id, GENERATOR_ID)
+        reviewed = next(item for item in first if item.document_id == "docx-pilot-03")
+        self.assertEqual(
+            reviewed.gold.metadata["gold_adjudication_version"],
+            GOLD_ADJUDICATION_VERSION,
+        )
 
     def test_materialized_manifest_and_gold_are_round_trippable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -49,6 +55,10 @@ class GeneratedDocxGoldBenchmarkTests(unittest.TestCase):
                 (root / "manifest.json").read_text(encoding="utf-8")
             )
             self.assertEqual(parsed, manifest)
+            self.assertEqual(
+                parsed.metadata["gold_adjudication_version"],
+                GOLD_ADJUDICATION_VERSION,
+            )
             for case in manifest.cases:
                 payload = (root / case.source_file).read_bytes()
                 self.assertEqual(
@@ -81,7 +91,7 @@ class GeneratedDocxGoldBenchmarkTests(unittest.TestCase):
             GoldDocumentStructure.model_validate(raw)
 
     def test_manifest_rejects_path_traversal(self) -> None:
-        manifest = build_manifest(build_pilot_cases())
+        manifest = build_adjudicated_manifest(build_pilot_cases())
         raw = manifest.model_dump(mode="json")
         raw["cases"][0]["source_file"] = "../escape.docx"
         with self.assertRaises(ValidationError):
@@ -100,7 +110,7 @@ class GeneratedDocxGoldBenchmarkTests(unittest.TestCase):
         self.assertEqual(score.recall, 0.0)
         self.assertEqual(score.f1, 0.0)
 
-    def test_all_generated_cases_run_through_real_docx_pipeline_and_evaluator(self) -> None:
+    def test_all_adjudicated_cases_run_through_real_docx_pipeline_and_evaluator(self) -> None:
         runner = SourceAdapterRunner()
         evaluator = DocumentStructureEvaluator()
         reports = []
@@ -145,8 +155,19 @@ class GeneratedDocxGoldBenchmarkTests(unittest.TestCase):
             "Element->LogicalUnit membership PART_OF edges are outside the nested "
             "LogicalUnit->LogicalUnit relation scope",
         )
+        notes = by_id["docx-pilot-03"]
+        self.assertEqual(notes.metrics.element_detection.f1, 1.0)
+        self.assertFalse(
+            any(
+                error.type == EvaluationErrorType.ADAPTER_EXTRA_ELEMENT
+                for error in notes.errors
+            ),
+            "adjudicated gold must include deliberate source-zone boundaries",
+        )
 
-        aggregate = BenchmarkEvaluator().aggregate(build_manifest(cases), reports)
+        aggregate = BenchmarkEvaluator().aggregate(
+            build_adjudicated_manifest(cases), reports
+        )
         self.assertEqual(len(aggregate.document_reports), 5)
 
 
