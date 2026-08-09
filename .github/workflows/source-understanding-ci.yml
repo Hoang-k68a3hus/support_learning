@@ -5,12 +5,14 @@ on:
     paths:
       - "source_understanding/**"
       - "benchmarks/docx_structure_v0_1/**"
+      - "benchmarks/docx_structure_real_v0_1/**"
       - "tests/test_*.py"
       - ".github/workflows/source-understanding-ci.yml"
   pull_request:
     paths:
       - "source_understanding/**"
       - "benchmarks/docx_structure_v0_1/**"
+      - "benchmarks/docx_structure_real_v0_1/**"
       - "tests/test_*.py"
       - ".github/workflows/source-understanding-ci.yml"
 
@@ -28,9 +30,11 @@ jobs:
           python-version: "3.12"
       - name: Install minimal test dependency
         run: python -m pip install --disable-pip-version-check "pydantic>=2,<3"
-      - name: Compile source tests and benchmark
-        run: python -m compileall -q source_understanding tests benchmarks/docx_structure_v0_1
+      - name: Compile source tests and benchmarks
+        run: python -m compileall -q source_understanding tests benchmarks/docx_structure_v0_1 benchmarks/docx_structure_real_v0_1
       - name: Run source-understanding unittest suite
         run: python -m unittest discover -s tests -p "test_*.py" -v
       - name: Run reproducible DOCX structure benchmark pilot
         run: python -m benchmarks.docx_structure_v0_1.run_benchmark --report /tmp/docx-structure-v0.1-report.json
+      - name: Discover public real-world DOCX sources
+        run: python -m benchmarks.docx_structure_real_v0_1.discover
