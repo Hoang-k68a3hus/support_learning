@@ -18,16 +18,16 @@ from source_understanding.schemas.context import (
 )
 from source_understanding.schemas.document import ContentRegion, DocumentStructure
 from source_understanding.schemas.element import Element
-from .content_profiler import (
-    ContentCategory,
-    content_category_for_element,
-)
+from source_understanding.schemas.logical_unit import LogicalUnitType
+
+from .content_profiler import ContentCategory, content_category_for_element
 
 if TYPE_CHECKING:
+    from source_understanding.structure.grouping import GroupingResult
     from source_understanding.structure.hierarchy import HierarchyResult
 
 
-CONTENT_REGION_SEGMENTER_VERSION = "2"
+CONTENT_REGION_SEGMENTER_VERSION = "3"
 CONTENT_REGION_POLICY_VERSION = "1"
 
 
@@ -102,7 +102,9 @@ class ContentRegionSegmentationResult(SchemaModel):
         region_ids = [region.id for region in self.regions]
         if len(region_ids) != len(set(region_ids)):
             raise ValueError("content region ids must be unique")
-        member_ids = [element_id for region in self.regions for element_id in region.element_ids]
+        member_ids = [
+            element_id for region in self.regions for element_id in region.element_ids
+        ]
         if len(member_ids) != len(set(member_ids)):
             raise ValueError("content regions must not overlap")
         if len(member_ids) != self.element_count:
@@ -119,6 +121,14 @@ class _RegionDraft:
     bridge_element_ids: list[str]
 
 
+_INTERACTION_UNIT_ROUTING: dict[LogicalUnitType, ContentCategory] = {
+    LogicalUnitType.QA_PAIR: ContentCategory.QA,
+    LogicalUnitType.DIALOGUE_SEGMENT: ContentCategory.DIALOGUE,
+    LogicalUnitType.LOG_WINDOW: ContentCategory.LOG,
+    LogicalUnitType.KEY_VALUE_GROUP: ContentCategory.KEY_VALUE,
+}
+
+
 class ContentRegionSegmenter:
     """Partition canonical order into contiguous modality regions.
 
@@ -126,6 +136,12 @@ class ContentRegionSegmenter:
     can open a region; token counts never do. Boilerplate and separators are
     conservatively attached to an adjacent source region so every element remains
     covered without inventing a semantic topic.
+
+    Source-near ``Element.type`` remains authoritative for observed composition.
+    Resolved structural interaction units may refine only the *routing* category:
+    for example, two source PARAGRAPH elements can remain paragraphs while a
+    validated lexical ``QA_PAIR`` routes them through a QA region. The inference
+    is recorded as derived region metadata and never mutates source facts.
     """
 
     version: str = CONTENT_REGION_SEGMENTER_VERSION
@@ -137,18 +153,40 @@ class ContentRegionSegmenter:
         self,
         elements: Sequence[Element],
         hierarchy_result: HierarchyResult,
+        grouping_result: GroupingResult | None = None,
     ) -> ContentRegionSegmentationResult:
         snapshot = tuple(elements)
-        self._validate_inputs(snapshot, hierarchy_result)
-        drafts = self._segment_drafts(snapshot)
+        self._validate_inputs(snapshot, hierarchy_result, grouping_result)
+        routing_categories, grouping_overrides = self._routing_categories(
+            snapshot, grouping_result
+        )
+        drafts = self._segment_drafts(snapshot, routing_categories)
         regions = tuple(
-            self._make_region(index, draft, hierarchy_result)
+            self._make_region(
+                index,
+                draft,
+                hierarchy_result,
+                grouping_overrides,
+            )
             for index, draft in enumerate(drafts)
         )
         structure, mixed, diagnostics = self._document_structure(
             snapshot,
             regions,
             hierarchy_result.structure,
+            routing_categories,
+        )
+        diagnostics.update(
+            {
+                "grouping_routing_override_count": len(grouping_overrides),
+                "grouping_routing_override_element_ids": sorted(grouping_overrides),
+                "grouping_routing_override_unit_types": sorted(
+                    {
+                        str(item["unit_type"])
+                        for item in grouping_overrides.values()
+                    }
+                ),
+            }
         )
         return ContentRegionSegmentationResult(
             element_count=len(snapshot),
@@ -159,14 +197,63 @@ class ContentRegionSegmenter:
             diagnostics=diagnostics,
         )
 
-    def _segment_drafts(self, elements: tuple[Element, ...]) -> tuple[_RegionDraft, ...]:
+    def _routing_categories(
+        self,
+        elements: tuple[Element, ...],
+        grouping_result: GroupingResult | None,
+    ) -> tuple[dict[str, ContentCategory], dict[str, dict[str, object]]]:
+        categories = {
+            element.id: content_category_for_element(element) for element in elements
+        }
+        if grouping_result is None:
+            return categories, {}
+
+        overrides: dict[str, dict[str, object]] = {}
+        allowed_source_categories = {
+            ContentCategory.NARRATIVE,
+            ContentCategory.UNKNOWN,
+        }
+        for unit in grouping_result.logical_units:
+            routing_category = _INTERACTION_UNIT_ROUTING.get(unit.type)
+            if routing_category is None:
+                continue
+            for element_id in unit.element_ids:
+                current = categories[element_id]
+                if current == routing_category:
+                    continue
+                if current not in allowed_source_categories:
+                    raise ContentRegionSegmentationError(
+                        f"interaction logical unit {unit.id!r} ({unit.type.value}) "
+                        f"conflicts with observed routing category {current.value!r} "
+                        f"for element {element_id!r}"
+                    )
+                previous = overrides.get(element_id)
+                if previous is not None and previous["category"] != routing_category.value:
+                    raise ContentRegionSegmentationError(
+                        f"element {element_id!r} has conflicting structural routing "
+                        f"evidence: {previous['category']!r} vs {routing_category.value!r}"
+                    )
+                categories[element_id] = routing_category
+                overrides[element_id] = {
+                    "category": routing_category.value,
+                    "unit_id": unit.id,
+                    "unit_type": unit.type.value,
+                    "source_category": current.value,
+                }
+        return categories, overrides
+
+    def _segment_drafts(
+        self,
+        elements: tuple[Element, ...],
+        routing_categories: dict[str, ContentCategory],
+    ) -> tuple[_RegionDraft, ...]:
         bridge_categories = set(self._policy.bridge_categories)
         drafts: list[_RegionDraft] = []
         current: _RegionDraft | None = None
         leading_bridges: list[Element] = []
 
         for element in elements:
-            category = content_category_for_element(element)
+            category = routing_categories[element.id]
             if category in bridge_categories:
                 if current is None:
                     leading_bridges.append(element)
@@ -197,13 +284,13 @@ class ContentRegionSegmenter:
             )
 
         if current is not None:
-            if leading_bridges:  # pragma: no cover - bridges are consumed once current exists.
+            if leading_bridges:  # pragma: no cover - consumed once material exists.
                 current.elements.extend(leading_bridges)
                 current.bridge_element_ids.extend(item.id for item in leading_bridges)
             drafts.append(current)
         else:
-            # All elements were bridge material. Preserve them in one neutral routing region.
-            categories = [content_category_for_element(element) for element in leading_bridges]
+            # All elements were bridge material. Preserve them in one neutral region.
+            categories = [routing_categories[element.id] for element in leading_bridges]
             counts = Counter(categories)
             highest = max(counts.values())
             routing_category = next(
@@ -224,14 +311,17 @@ class ContentRegionSegmenter:
         index: int,
         draft: _RegionDraft,
         hierarchy_result: HierarchyResult,
+        grouping_overrides: dict[str, dict[str, object]],
     ) -> ContentRegion:
         elements = tuple(draft.elements)
-        categories = tuple(content_category_for_element(element) for element in elements)
-        counts = Counter(categories)
+        # Keep the profile observational. Structural grouping refines routing only.
+        observed_categories = tuple(
+            content_category_for_element(element) for element in elements
+        )
+        counts = Counter(observed_categories)
         total = len(elements)
         profile = {
-            category.value: counts[category] / total
-            for category in ContentCategory
+            category.value: counts[category] / total for category in ContentCategory
         }
         highest = max(counts.values())
         dominant_candidates = [
@@ -258,6 +348,9 @@ class ContentRegionSegmenter:
             )
         )
         digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
+        region_override_ids = [
+            element.id for element in elements if element.id in grouping_overrides
+        ]
         return ContentRegion(
             id=f"region_{digest}",
             element_ids=tuple(element.id for element in elements),
@@ -273,7 +366,16 @@ class ContentRegionSegmenter:
                 "start_order": elements[0].order,
                 "end_order": elements[-1].order,
                 "bridge_element_ids": list(draft.bridge_element_ids),
-                "segmentation_basis": "contiguous_content_category",
+                "grouping_routing_override_element_ids": region_override_ids,
+                "grouping_routing_overrides": {
+                    element_id: grouping_overrides[element_id]
+                    for element_id in region_override_ids
+                },
+                "segmentation_basis": (
+                    "contiguous_content_category_plus_structural_grouping"
+                    if region_override_ids
+                    else "contiguous_content_category"
+                ),
                 "token_target_used": False,
                 "confidence_policy": "uncalibrated_baseline_capped_by_upstream",
             },
@@ -331,13 +433,14 @@ class ContentRegionSegmenter:
         elements: tuple[Element, ...],
         regions: tuple[ContentRegion, ...],
         global_structure: DocumentStructure,
+        routing_categories: dict[str, ContentCategory],
     ) -> tuple[DocumentStructure, bool, dict[str, object]]:
         bridge_categories = set(self._policy.bridge_categories)
         material_categories = [
-            content_category_for_element(element)
+            routing_categories[element.id]
             for element in elements
-            if content_category_for_element(element) not in bridge_categories
-            and content_category_for_element(element) != ContentCategory.UNKNOWN
+            if routing_categories[element.id] not in bridge_categories
+            and routing_categories[element.id] != ContentCategory.UNKNOWN
         ]
         distinct = set(material_categories)
         interaction = distinct & set(self._policy.interaction_categories)
@@ -345,7 +448,9 @@ class ContentRegionSegmenter:
             category != ContentCategory.NARRATIVE for category in material_categories
         )
         non_narrative_share = (
-            non_narrative_count / len(material_categories) if material_categories else 0.0
+            non_narrative_count / len(material_categories)
+            if material_categories
+            else 0.0
         )
 
         mixed = False
@@ -355,7 +460,10 @@ class ContentRegionSegmenter:
             mixed_reason = "interaction_pattern_coexists_with_other_content"
         elif len(distinct) > 1:
             only_hierarchy_embeddable = distinct.issubset(
-                {ContentCategory.NARRATIVE, *self._policy.hierarchy_embeddable_categories}
+                {
+                    ContentCategory.NARRATIVE,
+                    *self._policy.hierarchy_embeddable_categories,
+                }
             )
             if (
                 global_structure.mode
@@ -373,7 +481,9 @@ class ContentRegionSegmenter:
             "region_count": len(regions),
             "material_category_count": len(distinct),
             "material_categories": sorted(category.value for category in distinct),
-            "interaction_categories": sorted(category.value for category in interaction),
+            "interaction_categories": sorted(
+                category.value for category in interaction
+            ),
             "non_narrative_share": non_narrative_share,
             "mixed_reason": mixed_reason,
         }
@@ -394,7 +504,11 @@ class ContentRegionSegmenter:
                         "region_density": min(1.0, len(regions) / len(elements)),
                         "material_category_diversity": min(
                             1.0,
-                            len(distinct) / max(1, len(ContentCategory) - len(bridge_categories)),
+                            len(distinct)
+                            / max(
+                                1,
+                                len(ContentCategory) - len(bridge_categories),
+                            ),
                         ),
                     },
                 ),
@@ -430,12 +544,17 @@ class ContentRegionSegmenter:
     def _validate_inputs(
         elements: tuple[Element, ...],
         hierarchy_result: HierarchyResult,
+        grouping_result: GroupingResult | None,
     ) -> None:
         if not elements:
-            raise ContentRegionSegmentationError("cannot segment an empty element sequence")
+            raise ContentRegionSegmentationError(
+                "cannot segment an empty element sequence"
+            )
         ids = [element.id for element in elements]
         if len(ids) != len(set(ids)):
-            raise ContentRegionSegmentationError("content region segmentation requires unique ids")
+            raise ContentRegionSegmentationError(
+                "content region segmentation requires unique ids"
+            )
         orders = [element.order for element in elements]
         if len(orders) != len(set(orders)):
             raise ContentRegionSegmentationError(
@@ -449,8 +568,25 @@ class ContentRegionSegmenter:
             raise ContentRegionSegmentationError(
                 "hierarchy element_count does not match content region input"
             )
-        assignment_ids = [assignment.element_id for assignment in hierarchy_result.assignments]
+        assignment_ids = [
+            assignment.element_id for assignment in hierarchy_result.assignments
+        ]
         if assignment_ids != ids:
             raise ContentRegionSegmentationError(
                 "hierarchy assignments must follow exact canonical element order"
             )
+
+        if grouping_result is None:
+            return
+        if grouping_result.element_count != len(elements):
+            raise ContentRegionSegmentationError(
+                "grouping element_count does not match content region input"
+            )
+        valid_ids = set(ids)
+        for unit in grouping_result.logical_units:
+            missing = set(unit.element_ids) - valid_ids
+            if missing:
+                raise ContentRegionSegmentationError(
+                    f"logical unit {unit.id!r} references unknown elements for "
+                    f"region segmentation: {sorted(missing)}"
+                )
