@@ -12,7 +12,7 @@ from source_understanding.schemas.element import Provenance, RawElement, StyleIn
 from source_understanding.source_attributes import SOURCE_ZONE_ATTRIBUTE
 from .base import AdapterError
 
-DOCX_ADAPTER_VERSION = "1"
+DOCX_ADAPTER_VERSION = "2"
 DOCX_POLICY_VERSION = "1"
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -127,24 +127,19 @@ class Emitter:
                     source=source,
                     extractor=self.adapter.name,
                     extractor_version=self.adapter.version,
-                    metadata={
-                        "media_type": DOCX_MEDIA_TYPE,
-                        "location_policy": "reflowable_docx_no_page_or_bbox",
-                    },
+                    metadata={"opc_part": part},
                 ),
             )
         )
 
 
+def stable_group_id(*parts: str) -> str:
+    payload = "\x1f".join(parts).encode("utf-8")
+    return "srcgrp_" + hashlib.sha256(payload).hexdigest()[:24]
+
+
 def local_name(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
-
-
-def optional_text(node: ET.Element | None) -> str | None:
-    if node is None or node.text is None:
-        return None
-    value = node.text.strip()
-    return value or None
+    return tag.rsplit("}", 1)[-1]
 
 
 def int_attr(node: ET.Element | None, name: str) -> int | None:
@@ -159,24 +154,15 @@ def int_attr(node: ET.Element | None, name: str) -> int | None:
         return None
 
 
-def half_points(node: ET.Element | None) -> float | None:
+def on_off(node: ET.Element | None) -> bool | None:
     if node is None:
         return None
     value = node.attrib.get(W + "val")
     if value is None:
-        return None
-    try:
-        return int(value) / 2.0
-    except ValueError:
-        return None
+        return True
+    return value not in {"0", "false", "off"}
 
 
-def on_off(node: ET.Element | None) -> bool | None:
-    if node is None:
-        return None
-    value = (node.attrib.get(W + "val") or "true").casefold()
-    return value not in {"0", "false", "off", "no"}
-
-
-def stable_group_id(*parts: str) -> str:
-    return "srcgrp_" + hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:24]
+def half_points(node: ET.Element | None) -> float | None:
+    value = int_attr(node, "val")
+    return None if value is None else value / 2.0
