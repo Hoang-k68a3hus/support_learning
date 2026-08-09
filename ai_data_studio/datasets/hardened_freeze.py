@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from source_understanding.evaluation import SemanticGoldDataset
@@ -102,7 +103,10 @@ def _validate_compiled_certification(
                 f"{actual!r} != {expected_value!r}"
             )
 
-    guideline_versions = tuple(dataset.metadata.get("guideline_versions", ()))
+    guideline_versions = _metadata_string_tuple(
+        dataset.metadata,
+        "guideline_versions",
+    )
     if guideline_versions != (provenance.guideline_version,):
         raise DatasetFreezeInvariantError(
             "compiled dataset guideline_versions do not match freeze provenance: "
@@ -112,7 +116,7 @@ def _validate_compiled_certification(
     policy_payload = dataset.metadata.get("eligibility_policy")
     try:
         compiled_policy = GoldEligibilityPolicy.model_validate(policy_payload)
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise DatasetFreezeInvariantError(
             f"compiled dataset eligibility_policy is invalid: {exc}"
         ) from exc
@@ -136,17 +140,12 @@ def _validate_compiled_certification(
 
 def _require_case_certification(
     *,
-    case_metadata: object,
+    case_metadata: Mapping[str, object],
     document_id: str,
-    expected: dict[str, object],
+    expected: Mapping[str, object],
 ) -> None:
-    metadata = (
-        case_metadata
-        if isinstance(case_metadata, dict)
-        else dict(case_metadata)
-    )
     for key, expected_value in expected.items():
-        actual = metadata.get(key)
+        actual = case_metadata.get(key)
         if actual != expected_value:
             raise DatasetFreezeInvariantError(
                 f"gold case {document_id!r} {key} does not match compiled "
@@ -173,7 +172,7 @@ def _certification_issues(
     try:
         policy = GoldEligibilityPolicy.model_validate(policy_payload)
         policy_hash = gold_eligibility_policy_hash(policy)
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         issues.append(
             FrozenDatasetVerificationIssue(
                 code=FrozenDatasetVerificationIssueCode.DATASET_IDENTITY_MISMATCH,
@@ -200,7 +199,10 @@ def _certification_issues(
             )
         )
 
-    guideline_versions = tuple(dataset.metadata.get("guideline_versions", ()))
+    guideline_versions = _metadata_string_tuple(
+        dataset.metadata,
+        "guideline_versions",
+    )
     if guideline_versions != (manifest.guideline_version,):
         issues.append(
             FrozenDatasetVerificationIssue(
@@ -235,6 +237,18 @@ def _certification_issues(
                     )
                 )
     return tuple(issues)
+
+
+def _metadata_string_tuple(
+    metadata: Mapping[str, object],
+    key: str,
+) -> tuple[str, ...] | None:
+    value = metadata.get(key)
+    if not isinstance(value, (list, tuple)):
+        return None
+    if not all(isinstance(item, str) for item in value):
+        return None
+    return tuple(value)
 
 
 __all__ = [
