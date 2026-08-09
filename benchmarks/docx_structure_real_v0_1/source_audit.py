@@ -71,6 +71,33 @@ def _style_catalog(archive: zipfile.ZipFile) -> dict[str, dict[str, object]]:
     return merged
 
 
+def _normalized_style_token(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[\s_-]+", "", value).casefold()
+
+
+def _navigation_role(
+    style_id: str | None,
+    styles: dict[str, dict[str, object]],
+) -> str | None:
+    style = styles.get(style_id or "", {})
+    keys = {
+        _normalized_style_token(style_id),
+        _normalized_style_token(style.get("name")),
+    }
+    if keys & {"tocheading", "tableofcontentsheading"}:
+        return "toc_title"
+    if any(
+        re.fullmatch(r"toc[1-9]", key)
+        or re.fullmatch(r"tableofcontents[1-9]", key)
+        for key in keys
+        if key
+    ):
+        return "toc_entry"
+    return None
+
+
 def _heading_level(style_id: str | None, styles: dict[str, dict[str, object]]) -> int | None:
     if not style_id:
         return None
@@ -133,6 +160,7 @@ def _paragraph_record(node: ET.Element, styles: dict[str, dict[str, object]]) ->
         "text": _text(node),
         "style_id": style_id,
         "heading_level": _heading_level(style_id, styles),
+        "navigation_role": _navigation_role(style_id, styles),
         "has_numPr": ppr is not None and ppr.find(W + "numPr") is not None,
     }
 
@@ -165,11 +193,17 @@ def _story_audit(root: ET.Element, styles: dict[str, dict[str, object]]) -> dict
             section_count += 1
         elif local == "altChunk":
             alt_chunk_count += 1
-    headings = [item for item in paragraphs if item["heading_level"] is not None]
+    headings = [
+        item
+        for item in paragraphs
+        if item["heading_level"] is not None and item["navigation_role"] is None
+    ]
+    navigation = [item for item in paragraphs if item["navigation_role"] is not None]
     return {
         "paragraph_count": len(paragraphs),
         "nonempty_paragraph_count": sum(1 for item in paragraphs if str(item["text"]).strip()),
         "headings": headings,
+        "navigation": navigation,
         "tables": tables,
         "section_property_count": section_count,
         "alt_chunk_count": alt_chunk_count,
