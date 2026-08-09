@@ -58,20 +58,19 @@ from .manifest import (
 )
 
 if TYPE_CHECKING:
-    from .compiler import SemanticGoldCompiler
+    from .hardened_compiler import SemanticGoldCompiler
 
 
 def __getattr__(name: str) -> Any:
-    """Load compiler symbols lazily to keep validation imports acyclic.
+    """Load compiler symbols lazily to keep validation imports acyclic."""
 
-    ``ai_data_studio.validation.split`` depends only on the split contract.  An
-    eager compiler import here would pull ``ai_data_studio.validation`` back in
-    while that package is still initializing, making clean-process imports
-    depend on import order.
-    """
-
-    if name in {"SEMANTIC_GOLD_COMPILER_VERSION", "SemanticGoldCompiler"}:
-        from . import compiler as compiler_module
+    if name in {
+        "GOLD_ELIGIBILITY_POLICY_HASH_VERSION",
+        "SEMANTIC_GOLD_COMPILER_VERSION",
+        "SemanticGoldCompiler",
+        "gold_eligibility_policy_hash",
+    }:
+        from . import hardened_compiler as compiler_module
 
         return getattr(compiler_module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -82,6 +81,7 @@ __all__ = [
     "FROZEN_DATASET_MANIFEST_SCHEMA_VERSION",
     "FROZEN_MANIFEST_HASH_VERSION",
     "GOLD_DATASET_HASH_VERSION",
+    "GOLD_ELIGIBILITY_POLICY_HASH_VERSION",
     "MANIFEST_FILENAME",
     "SEMANTIC_GOLD_COMPILER_VERSION",
     "SOURCE_CORPUS_HASH_VERSION",
@@ -117,6 +117,7 @@ __all__ = [
     "dataset_hash_from_splits",
     "dataset_split_manifest_hash",
     "frozen_manifest_hash",
+    "gold_eligibility_policy_hash",
     "semantic_gold_dataset_hash",
     "semantic_gold_split_hash",
     "source_corpus_hash",
