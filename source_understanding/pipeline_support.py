@@ -4,6 +4,8 @@ import re
 from collections.abc import Callable
 from typing import TypeVar
 
+from pydantic import BaseModel
+
 from source_understanding.atomic.normalizer import ElementNormalizationResult
 from source_understanding.profiling.content_profiler import ContentProfile
 from source_understanding.profiling.regions import ContentRegionSegmentationResult
@@ -58,7 +60,7 @@ def processing_with_pipeline_manifest(
     processing: ProcessingManifest,
     *,
     pipeline_version: str,
-    pipeline_policy: object,
+    pipeline_policy: BaseModel,
     content_profile: ContentProfile,
     signal_set: StructureSignalSet,
     boundary_set: BoundarySet,
@@ -84,7 +86,9 @@ def processing_with_pipeline_manifest(
         "content_regions": {
             "source": region_source,
             "count": region_count,
-            "segmenter_version": region_result.version if region_result is not None else None,
+            "segmenter_version": (
+                region_result.version if region_result is not None else None
+            ),
             "segmenter_policy": (
                 region_result.policy.model_dump(mode="json")
                 if region_result is not None
@@ -163,12 +167,24 @@ def validate_semantic_boundary(
     enriched: CanonicalDocument,
 ) -> None:
     immutable_fields = (
-        "schema_version", "document_id", "content_hash", "source_revision", "metadata",
-        "structure", "elements", "regions", "logical_units", "context_nodes",
-        "relations", "assets", "subdocuments", "quality",
+        "schema_version",
+        "document_id",
+        "content_hash",
+        "source_revision",
+        "metadata",
+        "structure",
+        "elements",
+        "regions",
+        "logical_units",
+        "context_nodes",
+        "relations",
+        "assets",
+        "subdocuments",
+        "quality",
     )
     changed = [
-        name for name in immutable_fields
+        name
+        for name in immutable_fields
         if getattr(structural, name) != getattr(enriched, name)
     ]
     if changed:
@@ -176,11 +192,15 @@ def validate_semantic_boundary(
             f"semantic stage mutated canonical source/structure fields: {changed}"
         )
     processing_fields = (
-        "adapter_name", "adapter_version", "normalizer_version", "structure_version",
+        "adapter_name",
+        "adapter_version",
+        "normalizer_version",
+        "structure_version",
         "processed_at",
     )
     changed_processing = [
-        name for name in processing_fields
+        name
+        for name in processing_fields
         if getattr(structural.processing, name) != getattr(enriched.processing, name)
     ]
     if changed_processing:
