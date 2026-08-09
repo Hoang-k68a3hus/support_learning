@@ -49,7 +49,20 @@ jobs:
           do
             python -m benchmarks.docx_structure_real_v0_1.summary --source "$source"
           done
-      - name: Diagnose real-world structural failures
+      - name: Audit source OOXML independently for real gold
+        shell: bash
+        run: |
+          set -euo pipefail
+          for source in \
+            real-docx-01-flexible-policy \
+            real-docx-02-academy-form \
+            real-docx-03-ivd-tabular \
+            real-docx-04-eps-guidance \
+            real-docx-05-contractor-licence
+          do
+            python -m benchmarks.docx_structure_real_v0_1.source_audit --source "$source"
+          done
+      - name: Diagnose real-world structural regressions
         run: |
           python -m benchmarks.docx_structure_real_v0_1.diagnose --source real-docx-04-eps-guidance
           python -m benchmarks.docx_structure_real_v0_1.diagnose --source real-docx-05-contractor-licence
