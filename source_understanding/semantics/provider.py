@@ -133,7 +133,7 @@ class SemanticProviderCapabilities(SchemaModel):
         ontology: SemanticOntologyLabel | None,
         requested_name: str | None = None,
     ) -> SemanticCapability:
-        matches = tuple(
+        matches: list[SemanticCapability] = [
             capability
             for capability in self.capabilities
             if target_kind in capability.target_kinds
@@ -143,7 +143,7 @@ class SemanticProviderCapabilities(SchemaModel):
                 or ontology.namespace in capability.ontology_namespaces
             )
             and (requested_name is None or capability.name == requested_name)
-        )
+        ]
         if not matches:
             ontology_label = ontology.key if ontology is not None else None
             raise ValueError(
