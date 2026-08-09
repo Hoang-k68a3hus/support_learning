@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 
-from .discover import SOURCES, discover_source
+from .discover import SOURCES, _download, _package_inventory, discover_source
 
 
 def _source(source_id: str) -> dict[str, str]:
@@ -17,7 +18,19 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True)
     args = parser.parse_args()
-    item = discover_source(_source(args.source))
+    source = _source(args.source)
+    try:
+        item = discover_source(source)
+    except Exception as exc:
+        payload = _download(source["url"])
+        item = {
+            **source,
+            "bytes": len(payload),
+            "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+            "package": _package_inventory(payload),
+            "adapter": {"status": "failed", "error_type": type(exc).__name__, "error": str(exc)},
+            "pipeline": {"status": "not_run"},
+        }
     compact = {
         key: item.get(key)
         for key in (
