@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from math import isfinite
-from typing import Annotated, Generic, TypeVar
+from typing import Annotated, Generic, Never, TypeVar
 
 from pydantic import (
     AfterValidator,
@@ -46,7 +46,7 @@ class FrozenDict(dict[str, T], Generic[T]):
     """Small JSON-serializable immutable dict used inside frozen schemas."""
 
     @staticmethod
-    def _immutable(*args: object, **kwargs: object) -> None:
+    def _immutable(*args: object, **kwargs: object) -> Never:
         raise TypeError("schema mappings are immutable")
 
     __setitem__ = _immutable
@@ -63,7 +63,7 @@ class FrozenList(list[T], Generic[T]):
     """Small JSON-serializable immutable list for nested JSON metadata."""
 
     @staticmethod
-    def _immutable(*args: object, **kwargs: object) -> None:
+    def _immutable(*args: object, **kwargs: object) -> Never:
         raise TypeError("schema sequences are immutable")
 
     __setitem__ = _immutable
@@ -139,7 +139,7 @@ class ContextNode(SchemaModel):
     attributes: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_not_self_parent(self) -> ContextNode:
+    def validate_not_self_parent(self) -> "ContextNode":
         if self.parent_id == self.id:
             raise ValueError("context node cannot be its own parent")
         return self
