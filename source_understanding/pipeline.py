@@ -7,7 +7,10 @@ from pydantic import Field, model_validator
 
 from source_understanding.assembly import CanonicalDocumentAssembler
 from source_understanding.atomic.normalizer import ElementNormalizationResult, ElementNormalizer
-from source_understanding.completion import UnderstandingCompletionBuilder, UnderstandingCompletionReport
+from source_understanding.completion import (
+    UnderstandingCompletionBuilder,
+    UnderstandingCompletionReport,
+)
 from source_understanding.pipeline_support import (
     SourceUnderstandingPipelineError,
     diagnostic_message,
@@ -20,7 +23,10 @@ from source_understanding.pipeline_support import (
     validate_stage_counts,
 )
 from source_understanding.profiling.content_profiler import ContentProfile, ContentProfiler
-from source_understanding.profiling.regions import ContentRegionSegmentationResult, ContentRegionSegmenter
+from source_understanding.profiling.regions import (
+    ContentRegionSegmentationResult,
+    ContentRegionSegmenter,
+)
 from source_understanding.relations.builder import RelationBuildResult, StructuralRelationBuilder
 from source_understanding.schemas.context import Identifier, SchemaModel
 from source_understanding.schemas.document import (
@@ -42,7 +48,10 @@ from source_understanding.structure.integrity import (
     IntegrityConsolidationReport,
     IntegrityGroupConsolidator,
 )
-from source_understanding.structure.quality import StructureQualityEstimator, StructureQualityReport
+from source_understanding.structure.quality import (
+    StructureQualityEstimator,
+    StructureQualityReport,
+)
 from source_understanding.structure.region_routing import RegionRouter
 from source_understanding.structure.signals import StructureSignalExtractor, StructureSignalSet
 
@@ -180,15 +189,21 @@ class SourceUnderstandingPipeline:
         regions: Sequence[ContentRegion] = (),
         assets: Sequence[Asset] = (),
         additional_relations: Sequence[Relation] = (),
+        adapter_diagnostics: Sequence[object] = (),
     ) -> SourceUnderstandingResult:
         validate_source_identity(document_id, content_hash)
         validate_processing_manifest(processing)
         normalization_result = run_stage(
             "element normalization",
-            lambda: self._normalizer.normalize(tuple(raw_elements), document_id=document_id),
+            lambda: self._normalizer.normalize(
+                tuple(raw_elements),
+                document_id=document_id,
+            ),
         )
         processing = processing_with_normalizer_manifest(
-            processing, normalization_result, self._normalizer
+            processing,
+            normalization_result,
+            self._normalizer,
         )
         return self._understand_elements(
             document_id=document_id,
@@ -202,6 +217,7 @@ class SourceUnderstandingPipeline:
             regions=regions,
             assets=assets,
             additional_relations=additional_relations,
+            adapter_diagnostics=adapter_diagnostics,
         )
 
     def understand(
@@ -232,6 +248,7 @@ class SourceUnderstandingPipeline:
             regions=regions,
             assets=assets,
             additional_relations=additional_relations,
+            adapter_diagnostics=(),
         )
 
     def _understand_elements(
@@ -248,28 +265,49 @@ class SourceUnderstandingPipeline:
         regions: Sequence[ContentRegion],
         assets: Sequence[Asset],
         additional_relations: Sequence[Relation],
+        adapter_diagnostics: Sequence[object],
     ) -> SourceUnderstandingResult:
         element_snapshot = tuple(elements)
         region_snapshot = tuple(regions)
         asset_snapshot = tuple(assets)
         extra_relations = tuple(additional_relations)
+        adapter_diagnostic_snapshot = tuple(adapter_diagnostics)
 
-        content_profile = run_stage("content profiling", lambda: self._profiler.analyze(element_snapshot))
-        signal_set = run_stage("structure signal extraction", lambda: self._signal_extractor.extract(element_snapshot))
-        boundary_set = run_stage("boundary scoring", lambda: self._boundary_scorer.score(element_snapshot, signal_set))
+        content_profile = run_stage(
+            "content profiling",
+            lambda: self._profiler.analyze(element_snapshot),
+        )
+        signal_set = run_stage(
+            "structure signal extraction",
+            lambda: self._signal_extractor.extract(element_snapshot),
+        )
+        boundary_set = run_stage(
+            "boundary scoring",
+            lambda: self._boundary_scorer.score(element_snapshot, signal_set),
+        )
         grouping_result = run_stage(
             "logical grouping",
-            lambda: self._group_builder.build(element_snapshot, signal_set, boundary_set),
+            lambda: self._group_builder.build(
+                element_snapshot,
+                signal_set,
+                boundary_set,
+            ),
         )
         grouping_result, integrity_report = run_stage(
             "integrity consolidation",
             lambda: self._integrity_consolidator.consolidate(
-                element_snapshot, boundary_set, grouping_result
+                element_snapshot,
+                boundary_set,
+                grouping_result,
             ),
         )
         hierarchy_result = run_stage(
             "hierarchy understanding",
-            lambda: self._hierarchy_builder.build(element_snapshot, signal_set, boundary_set),
+            lambda: self._hierarchy_builder.build(
+                element_snapshot,
+                signal_set,
+                boundary_set,
+            ),
         )
 
         region_result: ContentRegionSegmentationResult | None = None
@@ -278,7 +316,10 @@ class SourceUnderstandingPipeline:
             region_source = "CALLER"
             grouping_result = run_stage(
                 "caller region routing",
-                lambda: self._region_router.assign_grouping(grouping_result, region_snapshot),
+                lambda: self._region_router.assign_grouping(
+                    grouping_result,
+                    region_snapshot,
+                ),
             )
         elif self._policy.auto_segment_regions:
             region_result = run_stage(
@@ -292,7 +333,9 @@ class SourceUnderstandingPipeline:
             grouping_result, hierarchy_result = run_stage(
                 "content region routing",
                 lambda: self._region_router.apply(
-                    grouping_result, hierarchy_result, region_result
+                    grouping_result,
+                    hierarchy_result,
+                    region_result,
                 ),
             )
             region_snapshot = region_result.regions
@@ -300,7 +343,10 @@ class SourceUnderstandingPipeline:
 
         integration_result = run_stage(
             "context integration",
-            lambda: self._context_integrator.integrate(grouping_result, hierarchy_result),
+            lambda: self._context_integrator.integrate(
+                grouping_result,
+                hierarchy_result,
+            ),
         )
         relation_result = run_stage(
             "structural relation building",
@@ -313,7 +359,10 @@ class SourceUnderstandingPipeline:
         quality_report = run_stage(
             "structure quality estimation",
             lambda: self._quality_estimator.estimate(
-                element_snapshot, boundary_set, grouping_result, hierarchy_result
+                element_snapshot,
+                boundary_set,
+                grouping_result,
+                hierarchy_result,
             ),
         )
         validate_stage_counts(
@@ -377,7 +426,10 @@ class SourceUnderstandingPipeline:
         if self._semantic_annotator is not None:
             try:
                 semantic_result = self._semantic_annotator.annotate(structural_document)
-                validate_semantic_boundary(structural_document, semantic_result.document)
+                validate_semantic_boundary(
+                    structural_document,
+                    semantic_result.document,
+                )
             except Exception as exc:
                 if self._policy.semantic_failure_mode == SemanticFailureMode.RAISE:
                     raise SourceUnderstandingPipelineError(
@@ -402,6 +454,7 @@ class SourceUnderstandingPipeline:
                 region_result=region_result,
                 semantic_status=semantic_status.value,
                 semantic_result=semantic_result,
+                adapter_diagnostics=adapter_diagnostic_snapshot,
             ),
         )
         return SourceUnderstandingResult(
