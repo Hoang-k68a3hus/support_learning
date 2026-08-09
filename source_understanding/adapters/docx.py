@@ -8,8 +8,10 @@ from source_understanding.schemas.document import Asset
 from ._docx_common import (
     DOCX_ADAPTER_VERSION,
     DOCX_MEDIA_TYPE,
+    DOCX_POLICY_VERSION,
     DocxAdapterPolicy,
     Emitter,
+    RevisionView,
 )
 from ._docx_extract import DocxExtractMixin
 from ._docx_fixups import DocxFixupMixin
