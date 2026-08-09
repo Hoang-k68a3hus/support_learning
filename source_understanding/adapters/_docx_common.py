@@ -127,19 +127,24 @@ class Emitter:
                     source=source,
                     extractor=self.adapter.name,
                     extractor_version=self.adapter.version,
-                    metadata={"opc_part": part},
+                    metadata={
+                        "media_type": DOCX_MEDIA_TYPE,
+                        "location_policy": "reflowable_docx_no_page_or_bbox",
+                    },
                 ),
             )
         )
 
 
-def stable_group_id(*parts: str) -> str:
-    payload = "\x1f".join(parts).encode("utf-8")
-    return "srcgrp_" + hashlib.sha256(payload).hexdigest()[:24]
-
-
 def local_name(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def optional_text(node: ET.Element | None) -> str | None:
+    if node is None or node.text is None:
+        return None
+    value = node.text.strip()
+    return value or None
 
 
 def int_attr(node: ET.Element | None, name: str) -> int | None:
@@ -154,15 +159,24 @@ def int_attr(node: ET.Element | None, name: str) -> int | None:
         return None
 
 
-def on_off(node: ET.Element | None) -> bool | None:
+def half_points(node: ET.Element | None) -> float | None:
     if node is None:
         return None
     value = node.attrib.get(W + "val")
     if value is None:
-        return True
-    return value not in {"0", "false", "off"}
+        return None
+    try:
+        return int(value) / 2.0
+    except ValueError:
+        return None
 
 
-def half_points(node: ET.Element | None) -> float | None:
-    value = int_attr(node, "val")
-    return None if value is None else value / 2.0
+def on_off(node: ET.Element | None) -> bool | None:
+    if node is None:
+        return None
+    value = (node.attrib.get(W + "val") or "true").casefold()
+    return value not in {"0", "false", "off", "no"}
+
+
+def stable_group_id(*parts: str) -> str:
+    return "srcgrp_" + hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:24]
