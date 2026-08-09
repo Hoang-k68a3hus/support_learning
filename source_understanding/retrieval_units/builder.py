@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections import defaultdict
 from collections.abc import Callable
 from enum import StrEnum
 
@@ -17,9 +18,10 @@ from source_understanding.schemas.document import CanonicalDocument, ContentRegi
 from source_understanding.schemas.element import Element, ElementType
 from source_understanding.schemas.logical_unit import LogicalUnit, LogicalUnitType
 from source_understanding.schemas.retrieval_unit import RetrievalUnit, RetrievalUnitType, SourceAnchor
+from source_understanding.source_attributes import SourceAttributeError, source_zone
 
 
-RETRIEVAL_UNIT_BUILDER_VERSION = "2"
+RETRIEVAL_UNIT_BUILDER_VERSION = "3"
 
 
 class RetrievalUnitBuildError(ValueError):
@@ -37,20 +39,38 @@ class RetrievalStrategy(StrEnum):
 class RetrievalUnitBuildPolicy(SchemaModel):
     """Projection policy; token targets are retrieval policy, never source structure."""
 
-    version: str = Field(default=RETRIEVAL_UNIT_BUILDER_VERSION, min_length=1, max_length=128)
+    version: str = Field(
+        default=RETRIEVAL_UNIT_BUILDER_VERSION,
+        min_length=1,
+        max_length=128,
+    )
     max_tokens: int | None = Field(default=None, ge=1)
     adaptive_text_partitioning: bool = True
     include_document_title: bool = True
     include_context_labels: bool = True
+    exclude_page_numbers: bool = True
+    exclude_boilerplate_source_zones: tuple[str, ...] = ("header", "footer")
     display_separator: str = "\n\n"
     retrieval_separator: str = "\n"
     context_separator: str = " > "
 
     @model_validator(mode="after")
-    def validate_separators(self) -> "RetrievalUnitBuildPolicy":
+    def validate_policy(self) -> "RetrievalUnitBuildPolicy":
         for name in ("display_separator", "retrieval_separator", "context_separator"):
             if not getattr(self, name):
                 raise ValueError(f"{name} must not be empty")
+        normalized_zones: list[str] = []
+        for zone in self.exclude_boilerplate_source_zones:
+            if not zone or zone.strip() != zone or len(zone) > 128:
+                raise ValueError(
+                    "exclude_boilerplate_source_zones must contain trimmed non-blank "
+                    "values <= 128 chars"
+                )
+            normalized_zones.append(zone.casefold())
+        if len(normalized_zones) != len(set(normalized_zones)):
+            raise ValueError(
+                "exclude_boilerplate_source_zones must be unique case-insensitively"
+            )
         return self
 
 
@@ -78,7 +98,9 @@ class RetrievalUnitBuildResult(SchemaModel):
             raise ValueError("oversized_unit_ids must be unique")
         if set(self.oversized_unit_ids) - set(unit_ids):
             raise ValueError("oversized_unit_ids must reference emitted retrieval units")
-        if len(self.partitioned_logical_unit_ids) != len(set(self.partitioned_logical_unit_ids)):
+        if len(self.partitioned_logical_unit_ids) != len(
+            set(self.partitioned_logical_unit_ids)
+        ):
             raise ValueError("partitioned_logical_unit_ids must be unique")
         return self
 
@@ -137,6 +159,9 @@ class RetrievalUnitBuilder:
             raise TypeError("token_counter must be callable")
         self._token_counter = token_counter
         self._policy = policy if policy is not None else RetrievalUnitBuildPolicy()
+        self._excluded_zones = frozenset(
+            zone.casefold() for zone in self._policy.exclude_boilerplate_source_zones
+        )
 
     def build(self, document: CanonicalDocument) -> RetrievalUnitBuildResult:
         elements = tuple(document.elements)
@@ -161,7 +186,11 @@ class RetrievalUnitBuilder:
         )
         for logical_unit in units:
             members = tuple(by_id[element_id] for element_id in logical_unit.element_ids)
-            excluded = tuple(element.id for element in members if element.exclude_from_retrieval)
+            excluded = tuple(
+                element.id
+                for element in members
+                if self._excluded_from_retrieval(element)
+            )
             if excluded:
                 if len(excluded) != len(members):
                     raise RetrievalUnitBuildError(
@@ -193,7 +222,7 @@ class RetrievalUnitBuilder:
                     oversized.append(retrieval_unit.id)
 
         for element in elements:
-            if element.id in covered or element.exclude_from_retrieval:
+            if element.id in covered or self._excluded_from_retrieval(element):
                 continue
             if element.type in _UNSAFE_SINGLETON_TYPES:
                 unresolved_integrity.append(element.id)
@@ -225,7 +254,9 @@ class RetrievalUnitBuilder:
                 ) from exc
 
         excluded_ids = tuple(
-            element.id for element in elements if element.exclude_from_retrieval
+            element.id
+            for element in elements
+            if self._excluded_from_retrieval(element)
         )
         retrievable_count = len(elements) - len(excluded_ids)
         emitted_element_ids = {
@@ -353,8 +384,10 @@ class RetrievalUnitBuilder:
         part_index: int,
         part_count: int,
     ) -> RetrievalUnit | None:
-        display_text = self._join_display_text(elements)
-        content_text = self._join_retrieval_content(elements)
+        display_text, content_text, content_projection = self._logical_unit_views(
+            logical_unit.type,
+            elements,
+        )
         if not display_text.strip() or not content_text.strip():
             return None
 
@@ -391,11 +424,12 @@ class RetrievalUnitBuilder:
         )
         metadata = {
             "projection": "logical_unit",
+            "content_projection": content_projection,
             "logical_unit_type": logical_unit.type.value,
             "strategy": strategy.value,
             "policy_version": self._policy.version,
             "semantic_enrichment_used": False,
-            "location_projection": "element_identity_only",
+            "location_projection": self._location_projection(elements),
             "token_budget_exceeded": self._budget_exceeded(token_count),
             "adaptive_partitioned": part_count > 1,
         }
@@ -470,11 +504,12 @@ class RetrievalUnitBuilder:
         )
         metadata = {
             "projection": "fallback_element",
+            "content_projection": "element",
             "element_type": element.type.value,
             "strategy": strategy.value,
             "policy_version": self._policy.version,
             "semantic_enrichment_used": False,
-            "location_projection": "element_identity_only",
+            "location_projection": self._location_projection((element,)),
             "token_budget_exceeded": self._budget_exceeded(token_count),
         }
         if self._policy.max_tokens is not None:
@@ -492,7 +527,10 @@ class RetrievalUnitBuilder:
             context_path=context_path,
             semantic_annotations=(),
             source_anchors=self._anchors(document, (element,)),
-            unit_type=_ELEMENT_TO_RETRIEVAL_TYPE.get(element.type, RetrievalUnitType.TEXT),
+            unit_type=_ELEMENT_TO_RETRIEVAL_TYPE.get(
+                element.type,
+                RetrievalUnitType.TEXT,
+            ),
             token_count=token_count,
             quality=None,
             version=self.version,
@@ -517,12 +555,95 @@ class RetrievalUnitBuilder:
         parts.append(content_text)
         return self._policy.retrieval_separator.join(parts)
 
+    def _logical_unit_views(
+        self,
+        logical_unit_type: LogicalUnitType,
+        elements: tuple[Element, ...],
+    ) -> tuple[str, str, str]:
+        if logical_unit_type == LogicalUnitType.TABLE_BLOCK:
+            display = self._table_view(elements, retrieval=False)
+            retrieval = self._table_view(elements, retrieval=True)
+            return display, retrieval, "table_cells"
+        return (
+            self._join_display_text(elements),
+            self._join_retrieval_content(elements),
+            "element_join",
+        )
+
+    def _table_view(
+        self,
+        elements: tuple[Element, ...],
+        *,
+        retrieval: bool,
+    ) -> str:
+        getter = self._retrieval_text if retrieval else self._display_text
+        cells: list[tuple[int, int | None, int | None, str]] = []
+        for source_index, element in enumerate(elements):
+            if element.type != ElementType.TABLE_CELL:
+                continue
+            value = getter(element)
+            if value is None:
+                continue
+            row_index = element.attributes.get("row_index")
+            cell_index = element.attributes.get("cell_index")
+            cells.append(
+                (
+                    source_index,
+                    row_index if isinstance(row_index, int) and not isinstance(row_index, bool) else None,
+                    cell_index if isinstance(cell_index, int) and not isinstance(cell_index, bool) else None,
+                    value,
+                )
+            )
+
+        if cells:
+            positioned = all(row is not None and cell is not None for _, row, cell, _ in cells)
+            if positioned:
+                by_row: dict[int, list[tuple[int, str]]] = defaultdict(list)
+                seen_positions: set[tuple[int, int]] = set()
+                duplicate_position = False
+                for _, row, cell, value in cells:
+                    assert row is not None and cell is not None
+                    position = (row, cell)
+                    if position in seen_positions:
+                        duplicate_position = True
+                        break
+                    seen_positions.add(position)
+                    by_row[row].append((cell, value))
+                if not duplicate_position:
+                    return "\n".join(
+                        "\t".join(
+                            value
+                            for _, value in sorted(by_row[row], key=lambda item: item[0])
+                        )
+                        for row in sorted(by_row)
+                    )
+            # Coordinates are optional source metadata. If they are absent or
+            # inconsistent, preserve canonical source order without reusing the
+            # aggregate TABLE_ROW text that would duplicate the cells.
+            return "\n".join(value for _, _, _, value in cells)
+
+        rows = [
+            value
+            for element in elements
+            if element.type == ElementType.TABLE_ROW
+            and (value := getter(element)) is not None
+        ]
+        if rows:
+            return "\n".join(rows)
+
+        values = [value for element in elements if (value := getter(element))]
+        return self._policy.display_separator.join(values)
+
     def _join_display_text(self, elements: tuple[Element, ...]) -> str:
-        values = [value for element in elements if (value := self._display_text(element))]
+        values = [
+            value for element in elements if (value := self._display_text(element))
+        ]
         return self._policy.display_separator.join(values)
 
     def _join_retrieval_content(self, elements: tuple[Element, ...]) -> str:
-        values = [value for element in elements if (value := self._retrieval_text(element))]
+        values = [
+            value for element in elements if (value := self._retrieval_text(element))
+        ]
         return self._policy.display_separator.join(values)
 
     @staticmethod
@@ -538,6 +659,21 @@ class RetrievalUnitBuilder:
             if value is not None and value.strip():
                 return value
         return None
+
+    def _excluded_from_retrieval(self, element: Element) -> bool:
+        if element.exclude_from_retrieval:
+            return True
+        if self._policy.exclude_page_numbers and element.type == ElementType.PAGE_NUMBER:
+            return True
+        if not self._excluded_zones:
+            return False
+        try:
+            zone = source_zone(element)
+        except SourceAttributeError as exc:
+            raise RetrievalUnitBuildError(
+                f"cannot evaluate retrieval eligibility for element {element.id!r}: {exc}"
+            ) from exc
+        return zone is not None and zone.casefold() in self._excluded_zones
 
     def _count_tokens(self, text: str) -> int:
         count = self._token_counter(text)
@@ -630,19 +766,42 @@ class RetrievalUnitBuilder:
         document: CanonicalDocument,
         elements: tuple[Element, ...],
     ) -> tuple[SourceAnchor, ...]:
-        # V2 deliberately does not copy canonical page/bbox/range fields because
-        # SourceLocation currently has no dedicated provenance field. The exact
-        # document/hash/revision/element identity remains sufficient to resolve
-        # the canonical location without fabricating location provenance.
-        return tuple(
-            SourceAnchor(
-                source_id=document.document_id,
-                content_hash=document.content_hash,
-                source_revision=document.source_revision,
-                element_id=element.id,
+        anchors: list[SourceAnchor] = []
+        for element in elements:
+            location = element.location
+            location_kwargs: dict[str, object] = {}
+            if location is not None and location.source is not None:
+                location_kwargs = {
+                    "location_source": location.source,
+                    "page": location.page,
+                    "bbox": location.bbox,
+                    "start_char": location.start_char,
+                    "end_char": location.end_char,
+                    "line_start": location.line_start,
+                    "line_end": location.line_end,
+                }
+            anchors.append(
+                SourceAnchor(
+                    source_id=document.document_id,
+                    content_hash=document.content_hash,
+                    source_revision=document.source_revision,
+                    element_id=element.id,
+                    **location_kwargs,
+                )
             )
+        return tuple(anchors)
+
+    @staticmethod
+    def _location_projection(elements: tuple[Element, ...]) -> str:
+        sourced = sum(
+            element.location is not None and element.location.source is not None
             for element in elements
         )
+        if sourced == 0:
+            return "element_identity_only"
+        if sourced == len(elements):
+            return "canonical_source_location"
+        return "partial_canonical_source_location"
 
     @staticmethod
     def _resolve_subdocument(
@@ -706,15 +865,9 @@ class RetrievalUnitBuilder:
         element_ids: tuple[str, ...],
         regions: dict[str, ContentRegion],
     ) -> RetrievalStrategy:
-        if document.structure.mode != StructureMode.MIXED:
-            return cls._document_strategy(document.structure.mode)
-
         member_set = set(element_ids)
-        intersecting = [
-            region
-            for region in regions.values()
-            if member_set.intersection(region.element_ids)
-        ]
+        global_strategy = cls._document_strategy(document.structure.mode)
+
         if declared_region_id is not None:
             declared = regions.get(declared_region_id)
             if declared is None:
@@ -723,23 +876,44 @@ class RetrievalUnitBuilder:
                 )
             if not member_set.issubset(declared.element_ids):
                 raise RetrievalUnitBuildError(
-                    f"retrieval projection contains elements outside declared region "
+                    "retrieval projection contains elements outside declared region "
                     f"{declared_region_id!r}"
                 )
-            return cls._document_strategy(declared.structure.mode)
-
-        containing = [
-            region
-            for region in intersecting
-            if member_set.issubset(region.element_ids)
-        ]
-        if not intersecting:
-            return RetrievalStrategy.FLAT
-        if len(intersecting) != 1 or len(containing) != 1:
-            raise RetrievalUnitBuildError(
-                "retrieval projection crosses ContentRegion boundaries in a MIXED document"
+            if declared.structure.mode != StructureMode.UNKNOWN:
+                return cls._document_strategy(declared.structure.mode)
+            return (
+                RetrievalStrategy.FLAT
+                if document.structure.mode == StructureMode.MIXED
+                else global_strategy
             )
-        return cls._document_strategy(containing[0].structure.mode)
+
+        intersecting = [
+            region
+            for region in regions.values()
+            if member_set.intersection(region.element_ids)
+        ]
+        if intersecting:
+            containing = [
+                region
+                for region in intersecting
+                if member_set.issubset(region.element_ids)
+            ]
+            if len(intersecting) != 1 or len(containing) != 1:
+                raise RetrievalUnitBuildError(
+                    "retrieval projection crosses ContentRegion boundaries"
+                )
+            region = containing[0]
+            if region.structure.mode != StructureMode.UNKNOWN:
+                return cls._document_strategy(region.structure.mode)
+            return (
+                RetrievalStrategy.FLAT
+                if document.structure.mode == StructureMode.MIXED
+                else global_strategy
+            )
+
+        if document.structure.mode == StructureMode.MIXED:
+            return RetrievalStrategy.FLAT
+        return global_strategy
 
     def _unit_id(
         self,
