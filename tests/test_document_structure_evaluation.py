@@ -21,6 +21,8 @@ from source_understanding.evaluation import (
     EvaluationLoadError,
     load_materialized_benchmark,
 )
+from source_understanding.evaluation.metrics import prf_counts
+from source_understanding.evaluation.report import EvaluationErrorType
 from source_understanding.evaluation.schemas import (
     BenchmarkManifest,
     GoldDocumentStructure,
@@ -92,6 +94,12 @@ class GeneratedDocxGoldBenchmarkTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             GoldDocumentStructure.model_validate(raw)
 
+    def test_complete_miss_is_zero_f1_not_undefined(self) -> None:
+        score = prf_counts(tp=0, fp=0, fn=3)
+        self.assertIsNone(score.precision)
+        self.assertEqual(score.recall, 0.0)
+        self.assertEqual(score.f1, 0.0)
+
     def test_all_generated_cases_run_through_real_docx_pipeline_and_evaluator(self) -> None:
         runner = SourceAdapterRunner()
         evaluator = DocumentStructureEvaluator()
@@ -125,6 +133,18 @@ class GeneratedDocxGoldBenchmarkTests(unittest.TestCase):
             # benchmark intentionally exposes a parser-quality gap.
             self.assertEqual(report.metrics.source_text_preservation_ratio, 1.0)
             reports.append(report)
+
+        by_id = {item.document_id: item for item in reports}
+        nested = by_id["docx-pilot-02"]
+        self.assertEqual(nested.metrics.structural_relations.f1, 1.0)
+        self.assertFalse(
+            any(
+                error.type == EvaluationErrorType.RELATION_EXTRA
+                for error in nested.errors
+            ),
+            "Element->LogicalUnit membership PART_OF edges are outside the nested "
+            "LogicalUnit->LogicalUnit relation scope",
+        )
 
         aggregate = BenchmarkEvaluator().aggregate(build_manifest(cases), reports)
         self.assertEqual(len(aggregate.document_reports), 5)
