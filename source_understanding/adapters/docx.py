@@ -25,13 +25,22 @@ from ._docx_common import (
     DocxAdapterPolicy, Emitter, RevisionView,
     half_points, int_attr, local_name, on_off, stable_group_id,
 )
+from ._docx_styles import DocxStyleMixin
 from ._docx_package import DocxPackageMixin
+from ._docx_postprocess import DocxPostprocessMixin
 from ._docx_fixups import DocxFixupMixin
 from ._docx_extract import DocxExtractMixin
 from ._docx_text import DocxTextMixin
 
 
-class DocxAdapter(DocxPackageMixin, DocxFixupMixin, DocxExtractMixin, DocxTextMixin):
+class DocxAdapter(
+    DocxStyleMixin,
+    DocxPackageMixin,
+    DocxPostprocessMixin,
+    DocxFixupMixin,
+    DocxExtractMixin,
+    DocxTextMixin,
+):
     """Source-near OOXML adapter for Word documents.
 
     DOCX is reflowable, therefore this adapter intentionally emits no page or
@@ -76,6 +85,7 @@ class DocxAdapter(DocxPackageMixin, DocxFixupMixin, DocxExtractMixin, DocxTextMi
                     self._read_header_footer_parts(
                         package, emitter, content_hash, content_types
                     )
+                self._normalize_list_integrity(emitter)
                 assets = tuple(self._assets_by_part[key] for key in sorted(self._assets_by_part))
         except zipfile.BadZipFile as exc:
             raise AdapterError("input is not a valid DOCX/ZIP package") from exc
