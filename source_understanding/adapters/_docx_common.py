@@ -12,7 +12,7 @@ from source_understanding.schemas.element import Provenance, RawElement, StyleIn
 from source_understanding.source_attributes import SOURCE_ZONE_ATTRIBUTE
 from .base import AdapterError
 
-DOCX_ADAPTER_VERSION = "2"
+DOCX_ADAPTER_VERSION = "3"
 DOCX_POLICY_VERSION = "1"
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
