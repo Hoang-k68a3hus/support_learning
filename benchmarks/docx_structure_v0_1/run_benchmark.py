@@ -76,6 +76,16 @@ def _accuracy_summary(score: object) -> dict[str, object]:
     }
 
 
+def _error_summary(error: object) -> dict[str, object]:
+    return {
+        "type": error.type.value,
+        "message": error.message,
+        "gold_ids": list(error.gold_ids),
+        "predicted_ids": list(error.predicted_ids),
+        "metadata": dict(error.metadata),
+    }
+
+
 def summary_dict(report: object) -> dict[str, object]:
     aggregate = {
         item.name: {
@@ -149,6 +159,7 @@ def summary_dict(report: object) -> dict[str, object]:
                 "structure_mode_matches": item.metrics.structure_mode_matches,
                 "structural_ready_matches": item.metrics.structural_ready_matches,
                 "error_count": len(item.errors),
+                "errors": [_error_summary(error) for error in item.errors],
             }
             for item in report.document_reports
         ],
