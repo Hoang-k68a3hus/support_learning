@@ -36,5 +36,16 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py" -v
       - name: Run reproducible DOCX structure benchmark pilot
         run: python -m benchmarks.docx_structure_v0_1.run_benchmark --report /tmp/docx-structure-v0.1-report.json
-      - name: Discover public real-world DOCX sources
-        run: python -m benchmarks.docx_structure_real_v0_1.discover
+      - name: Summarize public real-world DOCX sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          for source in \
+            real-docx-01-flexible-policy \
+            real-docx-02-academy-form \
+            real-docx-03-ivd-tabular \
+            real-docx-04-eps-guidance \
+            real-docx-05-contractor-licence
+          do
+            python -m benchmarks.docx_structure_real_v0_1.summary --source "$source"
+          done
