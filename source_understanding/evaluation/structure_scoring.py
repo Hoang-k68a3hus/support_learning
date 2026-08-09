@@ -7,13 +7,18 @@ from itertools import combinations
 from source_understanding.schemas.document import CanonicalDocument
 
 from .alignment import ElementAlignmentResult
-from .metrics import AccuracyScore, LabelPRF, PRFScore, accuracy_score, prf_counts, prf_from_sets
+from .metrics import AccuracyScore, PRFScore, accuracy_score, prf_counts, prf_from_sets
 from .report import EvaluationError, EvaluationErrorType
 from .schemas import GoldDocumentStructure
 
 
 class StructureScorer:
-    """Score hierarchy, integrity units, regions, relations, and diagnostics."""
+    """Score hierarchy, integrity units, regions, and adapter diagnostics.
+
+    Structural relations intentionally live in ``RelationScorer`` because their
+    endpoint-namespace scope is a separate concern. Keeping relation evaluation
+    out of this class avoids two implementations drifting apart.
+    """
 
     def hierarchy_parents(
         self,
@@ -105,13 +110,17 @@ class StructureScorer:
             if unit.type not in evaluated_types:
                 continue
             members = [f"g:{item}" for item in unit.element_ids]
-            gold_pair_set.update(tuple(sorted(pair)) for pair in combinations(members, 2))
+            gold_pair_set.update(
+                tuple(sorted(pair)) for pair in combinations(members, 2)
+            )
 
         predicted_pair_set: set[tuple[str, str]] = set()
         for unit in predicted.logical_units:
             if unit.type not in evaluated_types:
                 continue
-            members = [self.pred_element_token(item, alignment) for item in unit.element_ids]
+            members = [
+                self.pred_element_token(item, alignment) for item in unit.element_ids
+            ]
             predicted_pair_set.update(
                 tuple(sorted(pair)) for pair in combinations(members, 2)
             )
@@ -147,7 +156,10 @@ class StructureScorer:
         predicted_signatures = {
             (
                 unit.type.value,
-                tuple(self.pred_element_token(item, alignment) for item in unit.element_ids),
+                tuple(
+                    self.pred_element_token(item, alignment)
+                    for item in unit.element_ids
+                ),
             )
             for unit in predicted.logical_units
             if unit.type in exact_types
@@ -272,67 +284,6 @@ class StructureScorer:
                 )
         return score, accuracy_score(category_correct, category_total)
 
-    def relations(
-        self,
-        gold: GoldDocumentStructure,
-        predicted: CanonicalDocument,
-        alignment: ElementAlignmentResult,
-        errors: list[EvaluationError],
-    ) -> tuple[PRFScore, tuple[LabelPRF, ...]]:
-        evaluated_types = set(gold.evaluated_relation_types)
-        if not evaluated_types:
-            return prf_counts(0, 0, 0), ()
-
-        endpoint_map = self._predicted_endpoint_map(gold, predicted, alignment)
-        gold_triples = {
-            (item.type.value, item.source_id, item.target_id)
-            for item in gold.relations
-            if item.type in evaluated_types
-        }
-        predicted_triples = {
-            (
-                relation.type.value,
-                endpoint_map.get(relation.source_id, f"__pred__:{relation.source_id}"),
-                endpoint_map.get(relation.target_id, f"__pred__:{relation.target_id}"),
-            )
-            for relation in predicted.relations
-            if relation.type in evaluated_types
-        }
-
-        overall = prf_from_sets(gold_triples, predicted_triples)
-        for triple in sorted(gold_triples - predicted_triples):
-            errors.append(
-                EvaluationError(
-                    type=EvaluationErrorType.RELATION_MISSING,
-                    message=f"missing structural relation {triple}",
-                    metadata={"relation": list(triple)},
-                )
-            )
-        for triple in sorted(predicted_triples - gold_triples):
-            errors.append(
-                EvaluationError(
-                    type=EvaluationErrorType.RELATION_EXTRA,
-                    message=f"extra structural relation {triple}",
-                    metadata={"relation": list(triple)},
-                )
-            )
-
-        per_label = tuple(
-            LabelPRF(
-                label=relation_type.value,
-                score=prf_from_sets(
-                    {item for item in gold_triples if item[0] == relation_type.value},
-                    {
-                        item
-                        for item in predicted_triples
-                        if item[0] == relation_type.value
-                    },
-                ),
-            )
-            for relation_type in sorted(evaluated_types, key=lambda item: item.value)
-        )
-        return overall, per_label
-
     def diagnostics(
         self,
         gold: GoldDocumentStructure,
@@ -393,58 +344,6 @@ class StructureScorer:
             accuracy_score(met, len(gold.expected_diagnostics)),
             len(unexpected_structural),
         )
-
-    def _predicted_endpoint_map(
-        self,
-        gold: GoldDocumentStructure,
-        predicted: CanonicalDocument,
-        alignment: ElementAlignmentResult,
-    ) -> dict[str, str]:
-        mapping: dict[str, str] = {
-            predicted_id: gold_id
-            for predicted_id, gold_id in alignment.predicted_to_gold.items()
-        }
-
-        gold_units_by_signature = {
-            (unit.type.value, tuple(f"g:{item}" for item in unit.element_ids)): unit.id
-            for unit in gold.logical_units
-        }
-        for unit in predicted.logical_units:
-            signature = (
-                unit.type.value,
-                tuple(self.pred_element_token(item, alignment) for item in unit.element_ids),
-            )
-            gold_unit_id = gold_units_by_signature.get(signature)
-            if gold_unit_id is not None:
-                mapping[unit.id] = gold_unit_id
-
-        gold_context_by_anchor = {
-            item.anchor_element_id: item.id for item in gold.context_nodes
-        }
-        for node in predicted.context_nodes:
-            anchor_id = node.attributes.get("anchor_element_id")
-            if not isinstance(anchor_id, str):
-                continue
-            gold_element_id = alignment.predicted_to_gold.get(anchor_id)
-            if gold_element_id is None:
-                continue
-            gold_context_id = gold_context_by_anchor.get(gold_element_id)
-            if gold_context_id is not None:
-                mapping[node.id] = gold_context_id
-
-        gold_region_by_members = {
-            tuple(f"g:{item}" for item in region.element_ids): region.id
-            for region in gold.regions
-        }
-        for region in predicted.regions:
-            signature = tuple(
-                self.pred_element_token(item, alignment) for item in region.element_ids
-            )
-            gold_region_id = gold_region_by_members.get(signature)
-            if gold_region_id is not None:
-                mapping[region.id] = gold_region_id
-
-        return mapping
 
     @staticmethod
     def pred_element_token(
