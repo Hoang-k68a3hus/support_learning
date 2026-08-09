@@ -10,9 +10,10 @@ from pydantic import Field, model_validator
 from source_understanding.schemas.context import SchemaModel, StructureSource
 from source_understanding.schemas.element import Provenance, RawElement, StyleInfo
 from source_understanding.source_attributes import SOURCE_ZONE_ATTRIBUTE
+
 from .base import AdapterError
 
-DOCX_ADAPTER_VERSION = "3"
+DOCX_ADAPTER_VERSION = "4"
 DOCX_POLICY_VERSION = "1"
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -106,7 +107,9 @@ class Emitter:
     ) -> None:
         policy = self.adapter.policy
         if len(self.elements) >= policy.max_elements:
-            raise AdapterError(f"DOCX element count exceeds max_elements={policy.max_elements}")
+            raise AdapterError(
+                f"DOCX element count exceeds max_elements={policy.max_elements}"
+            )
         if text is not None and len(text) > policy.max_text_chars_per_element:
             raise AdapterError(
                 "DOCX element text exceeds max_text_chars_per_element; refusing lossy truncation"
