@@ -1,12 +1,14 @@
 import {
   CallHandler,
   ExecutionContext,
+  HttpException,
+  HttpStatus,
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { Observable } from 'rxjs';
-import { finalize } from 'rxjs/operators';
+import { finalize, tap } from 'rxjs/operators';
 import type { RequestContext } from '../types/http-request';
 import { JsonLoggerService } from './json-logger.service';
 
@@ -19,15 +21,22 @@ export class RequestLoggingInterceptor implements NestInterceptor {
     const request = http.getRequest<RequestContext>();
     const response = http.getResponse<Response>();
     const started = process.hrtime.bigint();
+    let failureStatus: number | undefined;
 
     return next.handle().pipe(
+      tap({
+        error: (error: unknown) => {
+          failureStatus =
+            error instanceof HttpException ? error.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+        },
+      }),
       finalize(() => {
         const latencyMs = Number(process.hrtime.bigint() - started) / 1_000_000;
         this.logger.log('http_request', {
           requestId: request.requestId,
           method: request.method,
           route: request.originalUrl.split('?')[0],
-          status: response.statusCode,
+          status: failureStatus ?? response.statusCode,
           latencyMs: Math.round(latencyMs * 100) / 100,
           userId: request.user?.userId,
         });
