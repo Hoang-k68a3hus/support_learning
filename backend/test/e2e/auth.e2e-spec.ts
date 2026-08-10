@@ -95,6 +95,18 @@ describe('Auth and RBAC E2E', () => {
     ).rejects.toBeDefined();
   });
 
+  it('allows only one concurrent registration for the same canonical email', async () => {
+    const [first, second] = await Promise.all([
+      request(app.getHttpServer()).post('/api/v1/auth/register').send(student),
+      request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ ...student, email: 'Student@Example.COM' }),
+    ]);
+
+    expect([first.status, second.status].sort()).toEqual([201, 409]);
+    expect(await prisma.user.count()).toBe(1);
+  });
+
   it('rejects malformed registration and public role escalation', async () => {
     await request(app.getHttpServer())
       .post('/api/v1/auth/register')
@@ -121,6 +133,13 @@ describe('Auth and RBAC E2E', () => {
     const response = await login().expect(200);
     expect(response.body.accessToken).toEqual(expect.any(String));
     expect(response.body.user).not.toHaveProperty('passwordHash');
+
+    const serializedCookie = Array.isArray(response.headers['set-cookie'])
+      ? response.headers['set-cookie'].join(';')
+      : String(response.headers['set-cookie']);
+    expect(serializedCookie).toContain('HttpOnly');
+    expect(serializedCookie).toContain('SameSite=Lax');
+    expect(serializedCookie).toContain('Path=/api/v1/auth');
 
     const cookie = refreshCookie(response);
     const rawRefresh = rawCookieValue(cookie);
@@ -244,6 +263,36 @@ describe('Auth and RBAC E2E', () => {
     const winner = a.status === 200 ? a : b;
     const r2 = refreshCookie(winner);
     await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Cookie', r2).send({}).expect(200);
+  });
+
+  it('leaves the session revoked when logout races with refresh', async () => {
+    await register();
+    const loginResponse = await login();
+    const accessToken = loginResponse.body.accessToken as string;
+    const r1 = refreshCookie(loginResponse);
+
+    const [logoutResponse, refreshResponse] = await Promise.all([
+      request(app.getHttpServer())
+        .post('/api/v1/auth/logout')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Cookie', r1)
+        .send({}),
+      request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Cookie', r1).send({}),
+    ]);
+
+    expect(logoutResponse.status).toBe(204);
+    expect([200, 401]).toContain(refreshResponse.status);
+
+    await request(app.getHttpServer()).get('/api/v1/users/me').set('Authorization', `Bearer ${accessToken}`).expect(401);
+    await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Cookie', r1).send({}).expect(401);
+
+    if (refreshResponse.status === 200) {
+      const r2 = refreshCookie(refreshResponse);
+      await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Cookie', r2).send({}).expect(401);
+    }
+
+    const session = await prisma.session.findFirstOrThrow();
+    expect(session.revokedAt).not.toBeNull();
   });
 
   it('revokes the server-side session on logout so the old refresh token is rejected', async () => {

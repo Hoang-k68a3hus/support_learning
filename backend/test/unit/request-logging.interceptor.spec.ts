@@ -20,7 +20,8 @@ function createContext(request: RequestContext, response: Response): ExecutionCo
 
 describe('RequestLoggingInterceptor', () => {
   it('logs the actual HttpException status even before the exception filter writes the response', async () => {
-    const logger = { log: jest.fn() } as unknown as JsonLoggerService;
+    const log = jest.fn();
+    const logger = { log } as unknown as JsonLoggerService;
     const interceptor = new RequestLoggingInterceptor(logger);
     const request = {
       requestId: 'request-1',
@@ -36,7 +37,7 @@ describe('RequestLoggingInterceptor', () => {
       UnauthorizedException,
     );
 
-    expect(logger.log).toHaveBeenCalledWith(
+    expect(log).toHaveBeenCalledWith(
       'http_request',
       expect.objectContaining({
         requestId: 'request-1',
