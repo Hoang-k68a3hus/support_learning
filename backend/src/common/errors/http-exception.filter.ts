@@ -20,6 +20,8 @@ interface ErrorBody {
   timestamp: string;
 }
 
+const INTERNAL_SERVER_ERROR_STATUS = Number(HttpStatus.INTERNAL_SERVER_ERROR);
+
 const STATUS_CODES: Partial<Record<number, string>> = {
   [HttpStatus.BAD_REQUEST]: 'VALIDATION_ERROR',
   [HttpStatus.UNAUTHORIZED]: 'AUTHENTICATION_ERROR',
@@ -42,7 +44,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const status = isHttp ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     const code = STATUS_CODES[status] ?? 'INTERNAL_ERROR';
 
-    let message = status === HttpStatus.INTERNAL_SERVER_ERROR ? 'Internal server error' : 'Request failed';
+    let message = status === INTERNAL_SERVER_ERROR_STATUS ? 'Internal server error' : 'Request failed';
     let details: string[] | undefined;
 
     if (isHttp) {
@@ -60,7 +62,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }
     }
 
-    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+    if (status >= INTERNAL_SERVER_ERROR_STATUS) {
       this.logger.error('http_exception', {
         requestId: request.requestId,
         method: request.method,
