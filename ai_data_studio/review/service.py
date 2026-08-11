@@ -10,7 +10,7 @@ from ai_data_studio.schemas import (
     WorkingRecordStatus,
     annotation_decisions_hash,
 )
-from ai_data_studio.validation import WorkingRecordValidator
+from ai_data_studio.validation.working_record import WorkingRecordValidator
 from source_understanding.schemas.context import Identifier
 from source_understanding.schemas.document import CanonicalDocument
 
