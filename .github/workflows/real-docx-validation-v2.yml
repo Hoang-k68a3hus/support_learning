@@ -1,0 +1,39 @@
+name: Real DOCX Validation V2
+
+on:
+  push:
+    branches:
+      - agent/docx-realworld-validation-v2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-real-docx-v2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install source-understanding dependency
+        run: python -m pip install --disable-pip-version-check "pydantic>=2,<3"
+      - name: Compile validation runner
+        run: python -m compileall -q source_understanding tools/validate_real_docx_v2.py
+      - name: Run exact 30-document production validation
+        id: validation
+        continue-on-error: true
+        run: python tools/validate_real_docx_v2.py
+      - name: Upload validation V2 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-docx-validation-v2
+          path: validation/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Enforce validation result
+        if: steps.validation.outcome != 'success'
+        run: exit 1
