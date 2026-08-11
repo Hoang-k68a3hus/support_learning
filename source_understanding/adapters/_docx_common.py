@@ -13,7 +13,7 @@ from source_understanding.source_attributes import SOURCE_ZONE_ATTRIBUTE
 
 from .base import AdapterError
 
-DOCX_ADAPTER_VERSION = "5"
+DOCX_ADAPTER_VERSION = "6"
 DOCX_POLICY_VERSION = "1"
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
