@@ -42,6 +42,20 @@ class ArgillaDatasetContractError(ArgillaReviewError):
     """Raised when an existing Argilla dataset has an incompatible schema."""
 
 
+class ArgillaWebhookTransportError(ArgillaReviewError):
+    """Raised when an incoming webhook cannot be safely transported or decoded."""
+
+
+class ArgillaWebhookAuthenticationError(ArgillaWebhookTransportError):
+    """Raised when Standard Webhooks signature verification fails."""
+
+
+class ArgillaReviewContextNotFoundError(ArgillaReviewError):
+    def __init__(self, batch_id: Identifier) -> None:
+        self.batch_id = batch_id
+        super().__init__(f"review application context for batch_id={batch_id!r} was not found")
+
+
 class ArgillaRemoteReviewConflictError(ArgillaReviewError):
     def __init__(self, record_id: Identifier) -> None:
         self.record_id = record_id
