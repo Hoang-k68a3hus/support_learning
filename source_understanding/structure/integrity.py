@@ -19,6 +19,7 @@ from source_understanding.source_attributes import (
     source_integrity_parent_group_id,
     source_numbering_format,
     source_numbering_level,
+    source_numbering_sequence_id,
     source_zone,
 )
 
@@ -28,8 +29,8 @@ if TYPE_CHECKING:
     from .boundary import BoundarySet
 
 
-INTEGRITY_CONSOLIDATION_VERSION = "3"
-INTEGRITY_CONSOLIDATION_POLICY_VERSION = "3"
+INTEGRITY_CONSOLIDATION_VERSION = "4"
+INTEGRITY_CONSOLIDATION_POLICY_VERSION = "4"
 
 
 class IntegrityConsolidationError(ValueError):
@@ -103,6 +104,7 @@ class IntegrityConsolidationPolicy(SchemaModel):
     require_native_parent_present: bool = True
     merge_contiguous_native_list_fragments: bool = True
     merge_native_list_fragments_across_blank_spacers: bool = True
+    merge_native_list_fragments_across_section_breaks: bool = True
     max_native_list_blank_spacers: int = Field(default=2, ge=0, le=8)
     list_indentation_tolerance: float = Field(default=1.0, ge=0.0, le=100.0)
 
@@ -473,11 +475,14 @@ class IntegrityGroupConsolidator:
         right_element = elements[right_pos]
         if not self._same_story(left_element, right_element):
             return False
+
+        gap = elements[left_pos + 1 : right_pos]
+        if self._is_section_break_list_bridge(left_element, right_element, gap):
+            return True
+
         boundaries = boundary_set.boundaries[left_pos:right_pos]
         if any(not self._can_cross(boundary.classification) for boundary in boundaries):
             return False
-
-        gap = elements[left_pos + 1 : right_pos]
         if not gap:
             return True
         if not self._policy.merge_native_list_fragments_across_blank_spacers:
@@ -491,6 +496,39 @@ class IntegrityGroupConsolidator:
         ):
             return False
         return self._compatible_list_edges(left_element, right_element)
+
+    def _is_section_break_list_bridge(
+        self,
+        left: Element,
+        right: Element,
+        gap: tuple[Element, ...],
+    ) -> bool:
+        if not self._policy.merge_native_list_fragments_across_section_breaks:
+            return False
+        if len(gap) != 1:
+            return False
+        separator = gap[0]
+        if element_type := separator.type:
+            if element_type != ElementType.SEPARATOR:
+                return False
+        if separator.attributes.get("separator_kind") != "section_break":
+            return False
+        try:
+            left_sequence = source_numbering_sequence_id(left)
+            right_sequence = source_numbering_sequence_id(right)
+            left_format = source_numbering_format(left)
+            right_format = source_numbering_format(right)
+        except SourceAttributeError as exc:
+            raise IntegrityConsolidationError(str(exc)) from exc
+        if (
+            left_sequence is None
+            or right_sequence is None
+            or left_sequence != right_sequence
+        ):
+            return False
+        if left_format is None or right_format is None:
+            return False
+        return left_format.casefold() == right_format.casefold()
 
     def _compatible_list_edges(self, left: Element, right: Element) -> bool:
         try:
