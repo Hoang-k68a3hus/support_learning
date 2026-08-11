@@ -21,6 +21,7 @@ class PdfMetadataBuilder:
         page_metadata: list[dict[str, object]],
         pages_with_native_text: int,
         pages_with_images: int,
+        pages_with_occluded_text: int,
         diagnostics: list[AdapterDiagnostic],
         reading_order_version: str,
         block_reconstruction_version: str,
@@ -49,6 +50,7 @@ class PdfMetadataBuilder:
             "page_count": len(page_metadata),
             "pages_with_native_text": pages_with_native_text,
             "pages_with_image_blocks": pages_with_images,
+            "pages_with_occluded_native_text": pages_with_occluded_text,
             "standard_metadata": standard,
             "xmp_metadata": xmp_xml,
             "pages": page_metadata,
@@ -76,6 +78,8 @@ class PdfMetadataBuilder:
         *,
         emitted_block_count: int,
     ) -> dict[str, object]:
+        visible_count = len(page.native_text_blocks)
+        occluded_count = len(page.occluded_text_blocks)
         return {
             "page": page.page_number,
             "width_points": page.width_points,
@@ -84,7 +88,9 @@ class PdfMetadataBuilder:
             "cropbox_points": list(page.cropbox),
             "mediabox_points": list(page.mediabox),
             "cropbox_position_points": list(page.cropbox_position),
-            "native_text_block_count": len(page.native_text_blocks),
+            "native_text_block_count": visible_count + occluded_count,
+            "visible_native_text_block_count": visible_count,
+            "occluded_native_text_block_count": occluded_count,
             "emitted_block_count": emitted_block_count,
             "image_block_count": page.image_block_count,
         }
