@@ -200,10 +200,14 @@ class ArgillaRemoteTests(unittest.TestCase):
     def test_real_argilla_2_8_settings_and_record_construction(self) -> None:
         import argilla as rg
 
+        client = rg.Argilla(
+            api_url="http://127.0.0.1:6900",
+            api_key="test-api-key",
+        )
         settings = build_argilla_settings(
             rg,
             guidelines="Review semantic roles.",
-            client=SimpleNamespace(),
+            client=client,
         )
         self.assertEqual(
             tuple(field.name for field in settings.fields),
