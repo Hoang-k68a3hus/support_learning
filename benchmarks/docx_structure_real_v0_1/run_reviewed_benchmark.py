@@ -9,14 +9,19 @@ from pathlib import Path
 from source_understanding.adapters import DocxAdapter, SourceAdapterRunner
 from source_understanding.evaluation import BenchmarkEvaluator, DocumentStructureEvaluator
 from source_understanding.evaluation.metrics import accuracy_score, prf_counts, prf_from_sets
+from source_understanding.evaluation.report import EvaluationErrorType
 from source_understanding.evaluation.structure_scoring import StructureScorer
 
 from ._corpus import FIXED_EVALUATION_TIME, SOURCES, _download
+from .adjudication import ReviewCoverageStatus
 from .reviewed_gold import (
     REVIEWED_GOLD_ADJUDICATION_VERSION,
     build_reviewed_benchmark_manifest,
     load_review_decisions,
 )
+
+
+_L0_ERROR_TYPES = frozenset({EvaluationErrorType.SOURCE_TEXT_LOSS})
 
 
 def _verify_source_revision(source: dict[str, object], payload: bytes) -> None:
@@ -104,6 +109,67 @@ def _sum_accuracy(records: list[dict[str, object]]) -> dict[str, object]:
     return accuracy_score(correct, total).model_dump(mode="json")
 
 
+def _source_text_escape_audit(report) -> dict[str, int]:
+    """Diagnose review-artifact escaping without weakening exact source scoring."""
+
+    source_errors = [
+        error for error in report.errors if error.type == EvaluationErrorType.SOURCE_TEXT_LOSS
+    ]
+    escaped_newline_equivalent = 0
+    for error in source_errors:
+        gold_text = error.metadata.get("gold_text")
+        predicted_text = error.metadata.get("predicted_raw_text")
+        if (
+            isinstance(gold_text, str)
+            and isinstance(predicted_text, str)
+            and "\\n" in gold_text
+            and gold_text.replace("\\n", "\n") == predicted_text
+        ):
+            escaped_newline_equivalent += 1
+    return {
+        "raw_source_text_mismatch_count": len(source_errors),
+        "literal_backslash_n_equivalent_count": escaped_newline_equivalent,
+        "non_escape_mismatch_count": len(source_errors) - escaped_newline_equivalent,
+    }
+
+
+def _scope_report_to_review_coverage(decision, report):
+    """Exclude measurements for review layers explicitly marked NOT_REVIEWED.
+
+    The generic evaluator intentionally scores every available gold field. The
+    reviewed real-DOCX benchmark has an additional human-review coverage contract,
+    so its aggregate must not turn fields from an unreviewed layer into accuracy
+    claims or disagreement events.
+    """
+
+    l0_status = decision.coverage.L0_source_fidelity.coverage
+    if l0_status != ReviewCoverageStatus.NOT_REVIEWED:
+        return report, {
+            "excluded_layers": [],
+            "excluded_error_type_counts": {},
+        }
+
+    excluded = Counter(
+        error.type.value for error in report.errors if error.type in _L0_ERROR_TYPES
+    )
+    retained_errors = tuple(
+        error for error in report.errors if error.type not in _L0_ERROR_TYPES
+    )
+    metrics = report.metrics.model_copy(
+        update={
+            "source_text_exact": accuracy_score(0, 0),
+            "source_text_gold_char_count": 0,
+            "source_text_preserved_char_count": 0,
+            "source_text_preservation_ratio": None,
+        }
+    )
+    scoped = report.model_copy(update={"metrics": metrics, "errors": retained_errors})
+    return scoped, {
+        "excluded_layers": ["L0_source_fidelity"],
+        "excluded_error_type_counts": dict(sorted(excluded.items())),
+    }
+
+
 def evaluate_reviewed_corpus() -> dict[str, object]:
     decisions = load_review_decisions()
     decision_by_id = {decision.source_id: decision for decision in decisions}
@@ -113,6 +179,7 @@ def evaluate_reviewed_corpus() -> dict[str, object]:
     documents: list[dict[str, object]] = []
     context_detection_records: list[dict[str, object]] = []
     context_level_records: list[dict[str, object]] = []
+    escape_audit_totals = Counter()
     per_type_records: dict[str, dict[str, list[dict[str, object]]]] = defaultdict(
         lambda: {"pairwise": [], "exact_match": []}
     )
@@ -135,11 +202,16 @@ def evaluate_reviewed_corpus() -> dict[str, object]:
             processed_at=FIXED_EVALUATION_TIME,
         )
         understanding = production.understanding
-        report = evaluator.evaluate(
+        raw_report = evaluator.evaluate(
             gold,
             understanding.document,
             adapter_diagnostics=production.adapter_result.diagnostics,
             structural_ready=understanding.completion_report.structural_ready,
+        )
+        escape_audit = _source_text_escape_audit(raw_report)
+        escape_audit_totals.update(escape_audit)
+        report, scope_exclusions = _scope_report_to_review_coverage(
+            decision, raw_report
         )
         reports.append(report)
 
@@ -161,6 +233,8 @@ def evaluate_reviewed_corpus() -> dict[str, object]:
                 "id": document_id,
                 "review_status": decision.status.value,
                 "review_coverage": decision.coverage.model_dump(mode="json"),
+                "measurement_scope_exclusions": scope_exclusions,
+                "source_text_escape_audit": escape_audit,
                 "metrics": report.metrics.model_dump(mode="json"),
                 "context_anchor_metrics": context_metrics,
                 "logical_unit_metrics_by_type": per_type,
@@ -196,6 +270,10 @@ def evaluate_reviewed_corpus() -> dict[str, object]:
         "measurement_scope": (
             "structural agreement on five pinned assistant-adjudicated public DOCX documents"
         ),
+        "measurement_scope_policy": (
+            "metrics and disagreement events from NOT_REVIEWED layers are excluded from "
+            "the reviewed benchmark aggregate; raw mismatches may remain as diagnostics"
+        ),
         "population_accuracy_claim": False,
         "gold_oracle_policy": (
             "source-document inspection + independent OOXML audit; production output is not gold"
@@ -207,6 +285,7 @@ def evaluate_reviewed_corpus() -> dict[str, object]:
             "context_anchor_detection": _sum_prf(context_detection_records),
             "context_level_accuracy": _sum_accuracy(context_level_records),
             "logical_unit_metrics_by_type": per_type_pooled,
+            "source_text_escape_audit": dict(sorted(escape_audit_totals.items())),
         },
     }
 
