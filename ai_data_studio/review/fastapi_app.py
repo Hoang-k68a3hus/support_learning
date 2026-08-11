@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from importlib import import_module
-from typing import Any
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from .application import ArgillaReviewApplication
 from .errors import (
@@ -21,52 +21,45 @@ REVIEW_LIVENESS_PATH = "/health/live"
 REVIEW_READINESS_PATH = "/health/ready"
 
 
-def create_argilla_review_fastapi_app(application: ArgillaReviewApplication) -> Any:
+def create_argilla_review_fastapi_app(application: ArgillaReviewApplication) -> FastAPI:
     """Create the minimal FastAPI transport for review webhook + health endpoints."""
 
-    fastapi = _load_fastapi()
-    app = fastapi.FastAPI(title="Support Learning AI Data Studio Review API", version="1")
+    app = FastAPI(title="Support Learning AI Data Studio Review API", version="1")
 
     @app.get(REVIEW_LIVENESS_PATH)
     async def liveness() -> dict[str, object]:
         return {"status": "ok"}
 
     @app.get(REVIEW_READINESS_PATH)
-    async def readiness() -> Any:
+    async def readiness() -> object:
         status = application.readiness()
         body = status.model_dump(mode="json")
         if status.ready:
             return body
-        return fastapi.responses.JSONResponse(status_code=503, content=body)
+        return JSONResponse(status_code=503, content=body)
 
     @app.post(ARGILLA_WEBHOOK_PATH)
-    async def argilla_webhook(request: Any) -> Any:
+    async def argilla_webhook(request: Request) -> object:
         body = await request.body()
         try:
             result = application.handle_signed_webhook(body, request.headers)
-        except ArgillaWebhookAuthenticationError:
-            raise fastapi.HTTPException(status_code=401, detail="invalid webhook signature")
+        except ArgillaWebhookAuthenticationError as exc:
+            raise HTTPException(status_code=401, detail="invalid webhook signature") from exc
         except (ArgillaWebhookTransportError, ReviewContractError) as exc:
-            raise fastapi.HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ArgillaReviewContextNotFoundError as exc:
-            raise fastapi.HTTPException(status_code=404, detail=str(exc))
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         except (
             ReviewStateError,
             StaleArgillaReviewTaskError,
             StaleReviewSubmissionError,
         ) as exc:
-            raise fastapi.HTTPException(status_code=409, detail=str(exc))
-        except ArgillaRemoteError:
-            raise fastapi.HTTPException(status_code=503, detail="review dependency unavailable")
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ArgillaRemoteError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="review dependency unavailable",
+            ) from exc
         return result.model_dump(mode="json")
 
     return app
-
-
-def _load_fastapi() -> Any:
-    try:
-        return import_module("fastapi")
-    except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            'FastAPI transport requires "fastapi>=0.115,<1"'
-        ) from exc
