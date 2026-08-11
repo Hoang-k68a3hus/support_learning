@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from pydantic import SecretStr
 
@@ -200,10 +201,11 @@ class ArgillaRemoteTests(unittest.TestCase):
     def test_real_argilla_2_8_settings_and_record_construction(self) -> None:
         import argilla as rg
 
-        client = rg.Argilla(
-            api_url="http://127.0.0.1:6900",
-            api_key="test-api-key",
-        )
+        with patch.object(rg.Argilla, "_validate_connection", return_value=None):
+            client = rg.Argilla(
+                api_url="http://127.0.0.1:6900",
+                api_key="test-api-key",
+            )
         settings = build_argilla_settings(
             rg,
             guidelines="Review semantic roles.",
