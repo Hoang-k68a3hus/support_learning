@@ -132,13 +132,13 @@ def _hierarchy(elements: tuple[Element, ...]) -> HierarchyResult:
 
 
 class ListFragmentContinuityTests(unittest.TestCase):
-    def test_blank_paragraph_routes_as_separator_without_retyping_source(self) -> None:
+    def test_blank_paragraph_remains_narrative_without_structural_override(self) -> None:
         blank = _element("blank", 0, ElementType.PARAGRAPH, None)
         whitespace = _element("space", 1, ElementType.PARAGRAPH, "  \t")
         narrative = _element("text", 2, ElementType.PARAGRAPH, "Body")
 
-        self.assertEqual(content_category_for_element(blank), ContentCategory.SEPARATOR)
-        self.assertEqual(content_category_for_element(whitespace), ContentCategory.SEPARATOR)
+        self.assertEqual(content_category_for_element(blank), ContentCategory.NARRATIVE)
+        self.assertEqual(content_category_for_element(whitespace), ContentCategory.NARRATIVE)
         self.assertEqual(content_category_for_element(narrative), ContentCategory.NARRATIVE)
         self.assertEqual(blank.type, ElementType.PARAGRAPH)
 
@@ -174,7 +174,9 @@ class ListFragmentContinuityTests(unittest.TestCase):
         )
 
         list_units = [
-            unit for unit in consolidated.logical_units if unit.type == LogicalUnitType.LIST_GROUP
+            unit
+            for unit in consolidated.logical_units
+            if unit.type == LogicalUnitType.LIST_GROUP
         ]
         self.assertEqual(len(list_units), 1)
         self.assertEqual(list_units[0].element_ids, ("i1", "i2"))
@@ -195,28 +197,61 @@ class ListFragmentContinuityTests(unittest.TestCase):
             region_result.regions[0].metadata["routing_category"],
             ContentCategory.LIST.value,
         )
-        self.assertEqual(region_result.regions[0].element_ids, ("i1", "blank", "i2"))
+        self.assertEqual(
+            region_result.regions[0].element_ids,
+            ("i1", "blank", "i2"),
+        )
+        self.assertEqual(region_result.diagnostics["list_bridge_override_count"], 1)
+        self.assertEqual(
+            region_result.regions[0].metadata["grouping_routing_overrides"]["blank"][
+                "routing_role"
+            ],
+            "list_bridge_blank_paragraph",
+        )
+        self.assertEqual(
+            content_category_for_element(elements[1]),
+            ContentCategory.NARRATIVE,
+        )
+
         routed, _ = RegionRouter().apply(
             consolidated,
             _hierarchy(elements),
             region_result,
         )
         routed_list = next(
-            unit for unit in routed.logical_units if unit.type == LogicalUnitType.LIST_GROUP
+            unit
+            for unit in routed.logical_units
+            if unit.type == LogicalUnitType.LIST_GROUP
         )
         self.assertEqual(routed_list.element_ids, ("i1", "i2"))
         self.assertEqual(routed_list.region_id, region_result.regions[0].id)
+        routed_blank = next(
+            unit for unit in routed.logical_units if unit.id == "blank-text"
+        )
+        self.assertEqual(routed_blank.region_id, region_result.regions[0].id)
 
     def test_nonblank_gap_prevents_native_list_fragment_merge(self) -> None:
         elements = (
             _element(
-                "i1", 0, ElementType.LIST_ITEM, "First",
-                group_id="list-a", level=0, number_format="bullet", indentation=720.0,
+                "i1",
+                0,
+                ElementType.LIST_ITEM,
+                "First",
+                group_id="list-a",
+                level=0,
+                number_format="bullet",
+                indentation=720.0,
             ),
             _element("body", 1, ElementType.PARAGRAPH, "New section"),
             _element(
-                "i2", 2, ElementType.LIST_ITEM, "Second",
-                group_id="list-b", level=0, number_format="bullet", indentation=720.0,
+                "i2",
+                2,
+                ElementType.LIST_ITEM,
+                "Second",
+                group_id="list-b",
+                level=0,
+                number_format="bullet",
+                indentation=720.0,
             ),
         )
         consolidated, report = IntegrityGroupConsolidator().consolidate(
@@ -225,20 +260,37 @@ class ListFragmentContinuityTests(unittest.TestCase):
             _grouping(elements, blank_id="body"),
         )
         list_units = [
-            unit for unit in consolidated.logical_units if unit.type == LogicalUnitType.LIST_GROUP
+            unit
+            for unit in consolidated.logical_units
+            if unit.type == LogicalUnitType.LIST_GROUP
         ]
-        self.assertEqual([unit.element_ids for unit in list_units], [("i1",), ("i2",)])
+        self.assertEqual(
+            [unit.element_ids for unit in list_units],
+            [("i1",), ("i2",)],
+        )
         self.assertEqual(report.merged_native_list_group_count, 0)
 
     def test_hard_boundary_prevents_native_list_fragment_merge(self) -> None:
         elements = (
             _element(
-                "i1", 0, ElementType.LIST_ITEM, "First",
-                group_id="list-a", level=0, number_format="bullet", indentation=720.0,
+                "i1",
+                0,
+                ElementType.LIST_ITEM,
+                "First",
+                group_id="list-a",
+                level=0,
+                number_format="bullet",
+                indentation=720.0,
             ),
             _element(
-                "i2", 1, ElementType.LIST_ITEM, "Second",
-                group_id="list-b", level=0, number_format="bullet", indentation=720.0,
+                "i2",
+                1,
+                ElementType.LIST_ITEM,
+                "Second",
+                group_id="list-b",
+                level=0,
+                number_format="bullet",
+                indentation=720.0,
             ),
         )
         consolidated, report = IntegrityGroupConsolidator().consolidate(
@@ -247,21 +299,38 @@ class ListFragmentContinuityTests(unittest.TestCase):
             _grouping(elements),
         )
         list_units = [
-            unit for unit in consolidated.logical_units if unit.type == LogicalUnitType.LIST_GROUP
+            unit
+            for unit in consolidated.logical_units
+            if unit.type == LogicalUnitType.LIST_GROUP
         ]
-        self.assertEqual([unit.element_ids for unit in list_units], [("i1",), ("i2",)])
+        self.assertEqual(
+            [unit.element_ids for unit in list_units],
+            [("i1",), ("i2",)],
+        )
         self.assertEqual(report.merged_native_list_group_count, 0)
 
     def test_blank_gap_requires_compatible_numbering_and_indentation(self) -> None:
         elements = (
             _element(
-                "i1", 0, ElementType.LIST_ITEM, "First",
-                group_id="list-a", level=0, number_format="bullet", indentation=720.0,
+                "i1",
+                0,
+                ElementType.LIST_ITEM,
+                "First",
+                group_id="list-a",
+                level=0,
+                number_format="bullet",
+                indentation=720.0,
             ),
             _element("blank", 1, ElementType.PARAGRAPH, None),
             _element(
-                "i2", 2, ElementType.LIST_ITEM, "Second",
-                group_id="list-b", level=1, number_format="bullet", indentation=1440.0,
+                "i2",
+                2,
+                ElementType.LIST_ITEM,
+                "Second",
+                group_id="list-b",
+                level=1,
+                number_format="bullet",
+                indentation=1440.0,
             ),
         )
         consolidated, report = IntegrityGroupConsolidator().consolidate(
@@ -270,9 +339,14 @@ class ListFragmentContinuityTests(unittest.TestCase):
             _grouping(elements, blank_id="blank"),
         )
         list_units = [
-            unit for unit in consolidated.logical_units if unit.type == LogicalUnitType.LIST_GROUP
+            unit
+            for unit in consolidated.logical_units
+            if unit.type == LogicalUnitType.LIST_GROUP
         ]
-        self.assertEqual([unit.element_ids for unit in list_units], [("i1",), ("i2",)])
+        self.assertEqual(
+            [unit.element_ids for unit in list_units],
+            [("i1",), ("i2",)],
+        )
         self.assertEqual(report.merged_native_list_group_count, 0)
 
 
