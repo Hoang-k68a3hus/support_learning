@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Sequence
 
 from pydantic import Field, model_validator
@@ -14,12 +15,16 @@ from .boundary import BoundaryClass, BoundarySet
 from .dialogue import DialogueSegmentBuilder
 from .log import LogWindowBuilder
 from .qa import QAPairBuilder, QAPairRule
-from .signals import StructureSignalSet
+from .signals import StructureSignalKind, StructureSignalSet
 from .subdocument import SubDocumentDetector
 
 
-GROUPING_VERSION = "1"
-GROUPING_POLICY_VERSION = "1"
+GROUPING_VERSION = "2"
+GROUPING_POLICY_VERSION = "2"
+
+_PARENTHESIZED_LIST_MARKER_RE = re.compile(
+    r"^\s*\((?:\d+|[A-Za-z]|[IVXLCDMivxlcdm]+)\)(?=\s|\t)"
+)
 
 
 class GroupingError(ValueError):
@@ -27,11 +32,12 @@ class GroupingError(ValueError):
 
 
 class GroupingPolicy(SchemaModel):
-    """Uncalibrated baseline grouping policy kept with the result for reproducibility."""
+    """Conservative deterministic grouping policy kept with the result."""
 
     version: str = GROUPING_POLICY_VERSION
     explicit_qa_confidence: Confidence = 0.95
     lexical_qa_confidence: Confidence = 0.80
+    lexical_list_confidence: Confidence = 0.85
     dialogue_confidence: Confidence = 0.90
     log_confidence: Confidence = 0.90
     atomic_structured_confidence: Confidence = 0.95
@@ -40,6 +46,8 @@ class GroupingPolicy(SchemaModel):
     subdocument_confidence: Confidence = 0.85
     min_dialogue_turns: int = Field(default=2, ge=2)
     min_log_entries: int = Field(default=2, ge=2)
+    min_lexical_list_markers: int = Field(default=2, ge=2, le=32)
+    max_lexical_list_blank_bridges: int = Field(default=1, ge=0, le=4)
     merge_soft_boundaries: bool = True
 
 
@@ -198,6 +206,15 @@ class LogicalGroupBuilder:
             )
             consumed.update(candidate.element_ids)
 
+        self._append_lexical_list_groups(
+            snapshot,
+            signal_set,
+            boundary_set,
+            by_id,
+            consumed,
+            units,
+        )
+
         for element in snapshot:
             if element.id in consumed:
                 continue
@@ -259,6 +276,101 @@ class LogicalGroupBuilder:
             subdocuments=subdocuments,
             ungrouped_element_ids=ungrouped,
         )
+
+    def _append_lexical_list_groups(
+        self,
+        elements: tuple[Element, ...],
+        signal_set: StructureSignalSet,
+        boundary_set: BoundarySet,
+        by_id: dict[str, Element],
+        consumed: set[str],
+        units: list[LogicalUnit],
+    ) -> None:
+        marker_signal_ids: dict[str, list[str]] = {}
+        for signal in signal_set.signals:
+            if signal.kind != StructureSignalKind.NUMBERING_MARKER:
+                continue
+            if len(signal.element_ids) != 1:
+                continue
+            marker_signal_ids.setdefault(signal.element_ids[0], []).append(signal.id)
+
+        def is_marker(element: Element) -> bool:
+            if element.type != ElementType.PARAGRAPH or element.id in consumed:
+                return False
+            if element.id in marker_signal_ids:
+                return True
+            text = element.text
+            return bool(text and _PARENTHESIZED_LIST_MARKER_RE.match(text))
+
+        def can_cross(boundary_index: int) -> bool:
+            boundary = boundary_set.boundaries[boundary_index]
+            return boundary.classification not in {
+                BoundaryClass.HARD,
+                BoundaryClass.UNKNOWN,
+            }
+
+        index = 0
+        while index < len(elements):
+            if not is_marker(elements[index]):
+                index += 1
+                continue
+
+            member_indices = [index]
+            marker_count = 1
+            cursor = index + 1
+            pending_blanks: list[int] = []
+            while cursor < len(elements):
+                candidate = elements[cursor]
+                if candidate.id in consumed or not can_cross(cursor - 1):
+                    break
+                if is_marker(candidate):
+                    member_indices.extend(pending_blanks)
+                    pending_blanks = []
+                    member_indices.append(cursor)
+                    marker_count += 1
+                    cursor += 1
+                    continue
+                if (
+                    candidate.type == ElementType.PARAGRAPH
+                    and (candidate.text is None or not candidate.text.strip())
+                    and len(pending_blanks) < self._policy.max_lexical_list_blank_bridges
+                ):
+                    pending_blanks.append(cursor)
+                    cursor += 1
+                    continue
+                break
+
+            if marker_count < self._policy.min_lexical_list_markers:
+                index += 1
+                continue
+
+            member_ids = tuple(elements[item].id for item in member_indices)
+            signal_ids = [
+                signal_id
+                for element_id in member_ids
+                for signal_id in marker_signal_ids.get(element_id, ())
+            ]
+            units.append(
+                self._make_unit(
+                    LogicalUnitType.LIST_GROUP,
+                    member_ids,
+                    by_id,
+                    confidence=self._policy.lexical_list_confidence,
+                    source=StructureSource.INFERRED,
+                    metadata={
+                        "grouping_rule": "lexical_numbering_sequence",
+                        "signal_ids": signal_ids,
+                        "marker_count": marker_count,
+                        "blank_bridge_count": sum(
+                            elements[item].text is None
+                            or not (elements[item].text or "").strip()
+                            for item in member_indices
+                        ),
+                    },
+                )
+            )
+            consumed.update(member_ids)
+            index = cursor
 
     def _append_fallback_text_blocks(
         self,
