@@ -47,6 +47,19 @@ class PdfBlockObservation:
 
 
 @dataclass(frozen=True, slots=True)
+class PdfOccludedTextObservation:
+    native_block_number: int
+    native_order: int
+    bbox: PdfRect
+    displayed_bbox: PdfRect
+    text_character_count: int
+    paint_seqno: int
+    occluder_seqno: int
+    occluder_bbox: PdfRect
+    coverage_ratio: float
+
+
+@dataclass(frozen=True, slots=True)
 class PdfPageObservation:
     page_number: int
     width_points: float
@@ -57,3 +70,4 @@ class PdfPageObservation:
     cropbox_position: tuple[float, float]
     native_text_blocks: tuple[PdfBlockObservation, ...]
     image_block_count: int
+    occluded_text_blocks: tuple[PdfOccludedTextObservation, ...] = ()
