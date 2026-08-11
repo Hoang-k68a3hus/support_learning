@@ -302,6 +302,23 @@ class LogicalGroupBuilder:
             text = element.text
             return bool(text and _PARENTHESIZED_LIST_MARKER_RE.match(text))
 
+        def is_parenthesized_marker(element: Element) -> bool:
+            text = element.text
+            return bool(text and _PARENTHESIZED_LIST_MARKER_RE.match(text))
+
+        def has_introducing_clause(first_marker_index: int) -> bool:
+            cursor = first_marker_index - 1
+            while cursor >= 0:
+                candidate = elements[cursor]
+                if candidate.type == ElementType.PARAGRAPH and (
+                    candidate.text is None or not candidate.text.strip()
+                ):
+                    cursor -= 1
+                    continue
+                text = candidate.text
+                return bool(text and text.rstrip().endswith(":"))
+            return False
+
         def can_cross(boundary_index: int) -> bool:
             boundary = boundary_set.boundaries[boundary_index]
             return boundary.classification not in {
@@ -344,6 +361,11 @@ class LogicalGroupBuilder:
                 index += 1
                 continue
 
+            parenthesized = is_parenthesized_marker(elements[index])
+            if not parenthesized and not has_introducing_clause(index):
+                index += 1
+                continue
+
             member_ids = tuple(elements[item].id for item in member_indices)
             signal_ids = [
                 signal_id
@@ -359,6 +381,11 @@ class LogicalGroupBuilder:
                     source=StructureSource.INFERRED,
                     metadata={
                         "grouping_rule": "lexical_numbering_sequence",
+                        "evidence_rule": (
+                            "parenthesized_enumeration"
+                            if parenthesized
+                            else "introduced_numbering_sequence"
+                        ),
                         "signal_ids": signal_ids,
                         "marker_count": marker_count,
                         "blank_bridge_count": sum(
