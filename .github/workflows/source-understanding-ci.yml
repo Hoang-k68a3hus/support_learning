@@ -39,7 +39,8 @@ jobs:
       - name: Install test and static-check dependencies
         run: >-
           python -m pip install --disable-pip-version-check
-          "pydantic>=2,<3" "argilla==2.8.0" "ruff>=0.9,<1" "pyright>=1.1,<2"
+          "pydantic>=2,<3" "argilla==2.8.0" "fastapi>=0.115,<1"
+          "standardwebhooks>=1,<2" "ruff>=0.9,<1" "pyright>=1.1,<2"
       - name: Compile source tests and benchmarks
         run: python -m compileall -q source_understanding ai_data_studio tests benchmarks/docx_structure_v0_1 benchmarks/docx_structure_real_v0_1
       - name: Run high-signal Ruff checks
