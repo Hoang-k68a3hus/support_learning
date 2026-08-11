@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from importlib import import_module
+from typing import TYPE_CHECKING
+
 from .splits import (
     DATASET_SPLIT_MANIFEST_HASH_VERSION,
     SPLIT_MANIFEST_SCHEMA_VERSION,
@@ -5,11 +10,6 @@ from .splits import (
     DatasetSplitManifest,
     SplitAssignment,
     dataset_split_manifest_hash,
-)
-from .compilation import (
-    SEMANTIC_GOLD_COMPILER_VERSION,
-    VALIDATED_WORKING_SET_HASH_VERSION,
-    SemanticGoldCompiler,
 )
 from .eligibility import (
     GOLD_ELIGIBILITY_POLICY_HASH_VERSION,
@@ -60,6 +60,31 @@ from .manifest import (
     FrozenDatasetVerificationReport,
     FrozenSplitArtifact,
 )
+
+if TYPE_CHECKING:
+    from .compilation import (
+        SEMANTIC_GOLD_COMPILER_VERSION,
+        VALIDATED_WORKING_SET_HASH_VERSION,
+        SemanticGoldCompiler,
+    )
+
+_LAZY_COMPILATION_EXPORTS = frozenset(
+    {
+        "SEMANTIC_GOLD_COMPILER_VERSION",
+        "VALIDATED_WORKING_SET_HASH_VERSION",
+        "SemanticGoldCompiler",
+    }
+)
+
+
+def __getattr__(name: str) -> object:
+    if name in _LAZY_COMPILATION_EXPORTS:
+        compilation = import_module(f"{__name__}.compilation")
+        value = getattr(compilation, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "DATASET_SPLIT_MANIFEST_HASH_VERSION",
