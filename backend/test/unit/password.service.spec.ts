@@ -16,7 +16,9 @@ describe('PasswordService', () => {
     expect(first).not.toBe(password);
     expect(second).not.toBe(password);
     expect(first).not.toBe(second);
-    expect(first).toContain('m=65536,t=3,p=1');
+    expect(first).toContain('m=65536');
+    expect(first).toContain('t=3');
+    expect(first).toContain('p=1');
     await expect(service.verify(first, password)).resolves.toBe(true);
     await expect(service.verify(first, 'wrong password')).resolves.toBe(false);
     await expect(service.verify(second, password)).resolves.toBe(true);
