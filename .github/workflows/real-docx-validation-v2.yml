@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - agent/docx-realworld-validation-v2
+  pull_request:
   workflow_dispatch:
 
 permissions:
