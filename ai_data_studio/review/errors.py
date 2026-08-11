@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from ai_data_studio.validation.issues import ValidationReport
+from typing import TYPE_CHECKING
+
 from source_understanding.schemas.context import Identifier
+
+if TYPE_CHECKING:
+    from ai_data_studio.validation.issues import ValidationReport
 
 
 class ReviewWorkflowError(RuntimeError):
