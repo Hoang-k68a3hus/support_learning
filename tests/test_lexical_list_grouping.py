@@ -19,10 +19,16 @@ from source_understanding.structure.signals import (
 )
 
 
-def element(element_id: str, order: int, text: str | None) -> Element:
+def element(
+    element_id: str,
+    order: int,
+    text: str | None,
+    *,
+    element_type: ElementType = ElementType.PARAGRAPH,
+) -> Element:
     return Element(
         id=element_id,
-        type=ElementType.PARAGRAPH,
+        type=element_type,
         order=order,
         raw_text=text,
         normalized_text=text,
@@ -110,9 +116,14 @@ class LexicalListGroupingTests(unittest.TestCase):
         self.assertEqual(groups[0].metadata["evidence_rule"], "parenthesized_enumeration")
         self.assertTrue(all(item.type == ElementType.PARAGRAPH for item in elements))
 
-    def test_alpha_sequence_requires_colon_intro_and_keeps_blank_bridge(self) -> None:
+    def test_alpha_sequence_requires_native_list_intro_and_keeps_blank_bridge(self) -> None:
         elements = (
-            element("intro", 0, "The contractor shall provide:"),
+            element(
+                "intro",
+                0,
+                "The contractor shall provide:",
+                element_type=ElementType.LIST_ITEM,
+            ),
             element("a", 1, "a) first"),
             element("b", 2, "b) second"),
             element("blank", 3, None),
@@ -126,9 +137,28 @@ class LexicalListGroupingTests(unittest.TestCase):
         groups = list_groups(result)
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0].element_ids, ("a", "b", "blank", "d"))
-        self.assertEqual(groups[0].metadata["evidence_rule"], "introduced_numbering_sequence")
+        self.assertEqual(
+            groups[0].metadata["evidence_rule"],
+            "introduced_native_list_subsequence",
+        )
         self.assertEqual(groups[0].metadata["blank_bridge_count"], 1)
-        self.assertTrue(all(item.type == ElementType.PARAGRAPH for item in elements))
+        self.assertTrue(
+            all(item.type == ElementType.PARAGRAPH for item in elements[1:])
+        )
+
+    def test_plain_paragraph_colon_is_not_enough_to_promote_alpha_sequence(self) -> None:
+        elements = (
+            element("intro", 0, "The survey categories are:"),
+            element("a", 1, "a) Primary"),
+            element("b", 2, "b) Manufacturing"),
+            element("c", 3, "c) Construction"),
+        )
+        result = LogicalGroupBuilder().build(
+            elements,
+            signals(elements, ("a", "b", "c")),
+            boundaries(elements),
+        )
+        self.assertEqual(list_groups(result), [])
 
     def test_unintroduced_alpha_enumeration_is_not_promoted(self) -> None:
         elements = (
@@ -146,7 +176,12 @@ class LexicalListGroupingTests(unittest.TestCase):
 
     def test_single_marker_is_not_a_list_group(self) -> None:
         elements = (
-            element("intro", 0, "Choose:"),
+            element(
+                "intro",
+                0,
+                "Choose:",
+                element_type=ElementType.LIST_ITEM,
+            ),
             element("a", 1, "a) only"),
         )
         result = LogicalGroupBuilder().build(
@@ -158,7 +193,12 @@ class LexicalListGroupingTests(unittest.TestCase):
 
     def test_hard_boundary_prevents_lexical_group(self) -> None:
         elements = (
-            element("intro", 0, "Choose:"),
+            element(
+                "intro",
+                0,
+                "Choose:",
+                element_type=ElementType.LIST_ITEM,
+            ),
             element("a", 1, "a) first"),
             element("b", 2, "b) second"),
         )
