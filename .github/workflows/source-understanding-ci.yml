@@ -68,7 +68,7 @@ jobs:
       - name: Run exact 30-document production validation
         id: validation
         continue-on-error: true
-        run: python tools/validate_real_docx_v2.py
+        run: PYTHONPATH=. python tools/validate_real_docx_v2.py
       - name: Upload validation V2 artifacts
         if: always()
         uses: actions/upload-artifact@v4
