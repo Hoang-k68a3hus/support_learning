@@ -82,14 +82,14 @@ class ArgillaReviewApplicationTests(unittest.TestCase):
             {self.batch.batch_id: context}
         )
         self.secret_bytes = b"0123456789abcdef0123456789abcdef"
-        secret = base64.b64encode(self.secret_bytes).decode("ascii")
-        verifier = StandardArgillaWebhookVerifier(
-            ArgillaWebhookTransportConfig(webhook_secret=SecretStr(secret))
+        self.secret = base64.b64encode(self.secret_bytes).decode("ascii")
+        self.verifier = StandardArgillaWebhookVerifier(
+            ArgillaWebhookTransportConfig(webhook_secret=SecretStr(self.secret))
         )
         self.application = ArgillaReviewApplication(
             orchestrator=orchestrator,
             context_resolver=resolver,
-            webhook_verifier=verifier,
+            webhook_verifier=self.verifier,
             readiness_probe=StaticArgillaReviewReadinessProbe(
                 ArgillaReviewReadiness(
                     ready=True,
@@ -182,13 +182,13 @@ class ArgillaReviewApplicationTests(unittest.TestCase):
         self.assertEqual(accepted.status_code, 200)
         self.assertTrue(accepted.json()["applied"])
         self.assertEqual(invalid.status_code, 401)
-        self.assertNotIn("signature", invalid.text.lower())
+        self.assertNotIn(self.secret, invalid.text)
 
     def test_readiness_false_maps_to_503(self) -> None:
         application = ArgillaReviewApplication(
             orchestrator=ArgillaReviewOrchestrator(self.repository, self.remote),
             context_resolver=MappingArgillaReviewContextResolver({}),
-            webhook_verifier=self.application._webhook_verifier,
+            webhook_verifier=self.verifier,
             readiness_probe=StaticArgillaReviewReadinessProbe(
                 ArgillaReviewReadiness(
                     ready=False,
