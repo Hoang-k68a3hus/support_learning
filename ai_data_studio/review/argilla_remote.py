@@ -125,6 +125,7 @@ class ArgillaReviewRemote:
                 settings = build_argilla_settings(
                     self._sdk,
                     guidelines=normalized_guidelines,
+                    client=self._client,
                 )
                 dataset = self._sdk.Dataset(
                     name=self.config.dataset_name,
@@ -291,7 +292,12 @@ class ArgillaReviewRemote:
             )
 
 
-def build_argilla_settings(sdk: Any, *, guidelines: str) -> Any:
+def build_argilla_settings(
+    sdk: Any,
+    *,
+    guidelines: str,
+    client: Any,
+) -> Any:
     """Build Settings using the public Argilla 2.x SDK contract."""
 
     normalized_guidelines = _required_trimmed(guidelines, "guidelines")
@@ -302,6 +308,7 @@ def build_argilla_settings(sdk: Any, *, guidelines: str) -> Any:
             title=name.replace("_", " ").title(),
             required=True,
             use_markdown=False,
+            client=client,
         )
         for name in spec.fields
     ]
@@ -314,6 +321,7 @@ def build_argilla_settings(sdk: Any, *, guidelines: str) -> Any:
                     title=question.title,
                     labels=list(question.labels),
                     required=question.required,
+                    client=client,
                 )
             )
         else:
@@ -323,6 +331,7 @@ def build_argilla_settings(sdk: Any, *, guidelines: str) -> Any:
                     title=question.title,
                     required=question.required,
                     use_markdown=False,
+                    client=client,
                 )
             )
     return sdk.Settings(
