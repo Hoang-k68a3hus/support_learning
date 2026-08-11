@@ -19,14 +19,14 @@ def element(element_id: str, order: int, element_type: ElementType, text: str = 
 
 def signal_set(elements: tuple[Element, ...], extra: tuple[StructureSignal, ...] = ()) -> StructureSignalSet:
     base = tuple(StructureSignal(id=f"type_{item.id}", kind=StructureSignalKind.ELEMENT_TYPE, element_ids=(item.id,), source=item.provenance.source, confidence=item.confidence.type, text_value=item.type.value) for item in elements)
-    return StructureSignalSet(version="2", element_count=len(elements), signals=base + extra)
+    return StructureSignalSet(version="3", element_count=len(elements), signals=base + extra)
 
 
 def boundary_set(elements: tuple[Element, ...], classes: tuple[BoundaryClass, ...] | None = None, *, explicit_starts: tuple[str, ...] = ()) -> BoundarySet:
     resolved = classes or (BoundaryClass.SOFT,) * max(0, len(elements) - 1)
     return BoundarySet(
         element_count=len(elements),
-        signal_version="2",
+        signal_version="3",
         policy=BoundaryPolicy(),
         boundaries=tuple(
             BoundaryDecision(
@@ -150,8 +150,8 @@ class HierarchyBuilderTests(unittest.TestCase):
     def test_rejects_missing_type_signal_and_wrong_boundary_order(self):
         elements = (element("p", 0, ElementType.PARAGRAPH), element("h", 1, ElementType.HEADING, "Heading"))
         with self.assertRaises(HierarchyError):
-            self.builder.build(elements, StructureSignalSet(version="2", element_count=2, signals=()), boundary_set(elements, (BoundaryClass.HARD,), explicit_starts=("h",)))
-        wrong = BoundarySet(element_count=2, signal_version="2", policy=BoundaryPolicy(), boundaries=(BoundaryDecision(id="wrong", left_element_id="h", right_element_id="p", classification=BoundaryClass.HARD, score=0.0),))
+            self.builder.build(elements, StructureSignalSet(version="3", element_count=2, signals=()), boundary_set(elements, (BoundaryClass.HARD,), explicit_starts=("h",)))
+        wrong = BoundarySet(element_count=2, signal_version="3", policy=BoundaryPolicy(), boundaries=(BoundaryDecision(id="wrong", left_element_id="h", right_element_id="p", classification=BoundaryClass.HARD, score=0.0),))
         with self.assertRaises(HierarchyError):
             self.builder.build(elements, signal_set(elements), wrong)
 

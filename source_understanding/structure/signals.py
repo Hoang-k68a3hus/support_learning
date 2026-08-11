@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from enum import StrEnum
 
@@ -19,13 +20,19 @@ from source_understanding.schemas.context import (
 from source_understanding.schemas.element import Element, ElementType
 from source_understanding.source_attributes import (
     HEADING_LEVEL_ATTRIBUTE,
+    NUMBERING_FORMAT_ATTRIBUTE,
+    NUMBERING_LEVEL_ATTRIBUTE,
     SourceAttributeError,
     source_heading_level,
+    source_numbering_format,
+    source_numbering_level,
+    source_numbering_sequence_id,
+    source_zone,
 )
 
 
-STRUCTURE_SIGNAL_VERSION = "2"
-STRUCTURE_SIGNAL_POLICY_VERSION = "1"
+STRUCTURE_SIGNAL_VERSION = "3"
+STRUCTURE_SIGNAL_POLICY_VERSION = "2"
 
 _DEFAULT_SECTION_MARKERS = (
     "chapter",
@@ -37,10 +44,18 @@ _DEFAULT_SECTION_MARKERS = (
     "summary",
     "todo",
 )
+_DEFAULT_ORDERED_NUMBER_FORMATS = (
+    "decimal",
+    "upperRoman",
+    "lowerRoman",
+    "upperLetter",
+    "lowerLetter",
+)
 
 _NUMBERING_RE = re.compile(
     r"^\s*(?P<marker>(?:\d+\.\d+(?:\.\d+)*|\d+[.)]|[A-Za-z][.)]|[IVXLCDMivxlcdm]+[.)]))\s+"
 )
+_NAVIGATION_ENTRY_RE = re.compile(r"^\s*\S.*\t+\s*\d+\s*$")
 _QUESTION_RE = re.compile(r"^\s*(?P<marker>q(?:uestion)?\s*[:\-])\s*", re.IGNORECASE)
 _ANSWER_RE = re.compile(r"^\s*(?P<marker>a(?:nswer)?\s*[:\-])\s*", re.IGNORECASE)
 _TIMESTAMP_RE = re.compile(
@@ -78,7 +93,10 @@ class StructureSignalKind(StrEnum):
     STYLE_FONT_SIZE = "STYLE_FONT_SIZE"
     STYLE_INDENTATION = "STYLE_INDENTATION"
     HEADING_LEVEL = "HEADING_LEVEL"
+    NUMBERING_LEVEL = "NUMBERING_LEVEL"
+    NUMBERING_FORMAT = "NUMBERING_FORMAT"
     NUMBERING_MARKER = "NUMBERING_MARKER"
+    OUTLINE_LEVEL = "OUTLINE_LEVEL"
     SECTION_MARKER = "SECTION_MARKER"
     QUESTION_MARKER = "QUESTION_MARKER"
     ANSWER_MARKER = "ANSWER_MARKER"
@@ -92,28 +110,39 @@ class StructureSignalPolicy(SchemaModel):
 
     version: str = STRUCTURE_SIGNAL_POLICY_VERSION
     section_markers: tuple[str, ...] = _DEFAULT_SECTION_MARKERS
+    ordered_number_formats: tuple[str, ...] = _DEFAULT_ORDERED_NUMBER_FORMATS
+    min_native_outline_sections: int = Field(default=5, ge=3, le=64)
+    min_native_outline_children: int = Field(default=3, ge=1, le=256)
+    min_preface_navigation_entries: int = Field(default=3, ge=2, le=64)
+    min_preface_sections: int = Field(default=2, ge=2, le=16)
+    max_outline_label_length: int = Field(default=160, ge=8, le=2048)
+    outline_confidence: Confidence = 0.85
 
-    @field_validator("section_markers", mode="before")
+    @field_validator("section_markers", "ordered_number_formats", mode="before")
     @classmethod
-    def normalize_markers(cls, value: object) -> object:
+    def normalize_string_sequences(cls, value: object) -> object:
         if isinstance(value, str) or value is None:
-            raise ValueError("section_markers must be a sequence of marker strings")
+            raise ValueError("configured marker/format values must be a sequence of strings")
         if not isinstance(value, Iterable):
-            raise ValueError("section_markers must be an iterable of strings")
-        markers = tuple(value)
-        if any(not isinstance(marker, str) for marker in markers):
-            raise ValueError("section_markers must contain only strings")
-        return tuple(marker.strip() for marker in markers if isinstance(marker, str))
+            raise ValueError("configured marker/format values must be iterable")
+        items = tuple(value)
+        if any(not isinstance(item, str) for item in items):
+            raise ValueError("configured marker/format values must contain only strings")
+        return tuple(item.strip() for item in items if isinstance(item, str))
 
     @model_validator(mode="after")
-    def validate_markers(self) -> "StructureSignalPolicy":
-        if not self.section_markers or any(not marker for marker in self.section_markers):
-            raise ValueError("section_markers must contain non-blank markers")
-        if any(len(marker) > 128 for marker in self.section_markers):
-            raise ValueError("section markers must be <= 128 characters")
-        folded = [marker.casefold() for marker in self.section_markers]
-        if len(folded) != len(set(folded)):
-            raise ValueError("section_markers must be unique case-insensitively")
+    def validate_configuration(self) -> "StructureSignalPolicy":
+        for name, values, max_length in (
+            ("section_markers", self.section_markers, 128),
+            ("ordered_number_formats", self.ordered_number_formats, 128),
+        ):
+            if not values or any(not value for value in values):
+                raise ValueError(f"{name} must contain non-blank values")
+            if any(len(value) > max_length for value in values):
+                raise ValueError(f"{name} values must be <= {max_length} characters")
+            folded = [value.casefold() for value in values]
+            if len(folded) != len(set(folded)):
+                raise ValueError(f"{name} must be unique case-insensitively")
         return self
 
 
@@ -144,7 +173,7 @@ class StructureSignalSet(SchemaModel):
 
 
 class StructureSignalExtractor:
-    """Extract local structural evidence without deciding boundaries or groups."""
+    """Extract auditable source/local evidence without deciding final structure."""
 
     version: str = STRUCTURE_SIGNAL_VERSION
 
@@ -197,6 +226,11 @@ class StructureSignalExtractor:
                         )
                     )
 
+        outline_signals = self._document_outline_signals(snapshot)
+        if not outline_signals:
+            outline_signals = self._preface_outline_signals(snapshot)
+        signals.extend(outline_signals)
+
         return StructureSignalSet(
             element_count=len(snapshot),
             policy=self._policy,
@@ -230,6 +264,39 @@ class StructureSignalExtractor:
                         metadata={"attribute_key": HEADING_LEVEL_ATTRIBUTE},
                     )
                 )
+
+        try:
+            numbering_sequence_id = source_numbering_sequence_id(element)
+            numbering_level = source_numbering_level(element)
+            numbering_format = source_numbering_format(element)
+        except SourceAttributeError as exc:
+            raise StructureSignalError(str(exc)) from exc
+        if element.type == ElementType.LIST_ITEM and numbering_level is not None:
+            signals.append(
+                self._signal(
+                    StructureSignalKind.NUMBERING_LEVEL,
+                    (element.id,),
+                    source=element.provenance.source,
+                    numeric_value=float(numbering_level),
+                    metadata={
+                        "attribute_key": NUMBERING_LEVEL_ATTRIBUTE,
+                        "numbering_sequence_id": numbering_sequence_id,
+                    },
+                )
+            )
+        if element.type == ElementType.LIST_ITEM and numbering_format is not None:
+            signals.append(
+                self._signal(
+                    StructureSignalKind.NUMBERING_FORMAT,
+                    (element.id,),
+                    source=element.provenance.source,
+                    text_value=numbering_format,
+                    metadata={
+                        "attribute_key": NUMBERING_FORMAT_ATTRIBUTE,
+                        "numbering_sequence_id": numbering_sequence_id,
+                    },
+                )
+            )
 
         if element.style is not None:
             if element.style.bold is True:
@@ -302,6 +369,330 @@ class StructureSignalExtractor:
             )
 
         return signals
+
+    def _document_outline_signals(
+        self,
+        elements: tuple[Element, ...],
+    ) -> list[StructureSignal]:
+        """Infer a repeated native ordered outline without rewriting source facts."""
+
+        groups: dict[tuple[str | None, str, str], list[tuple[Element, int]]] = defaultdict(list)
+        for element in elements:
+            if element.type != ElementType.LIST_ITEM:
+                continue
+            try:
+                sequence_id = source_numbering_sequence_id(element)
+                level = source_numbering_level(element)
+                number_format = source_numbering_format(element)
+                zone = source_zone(element)
+            except SourceAttributeError as exc:
+                raise StructureSignalError(str(exc)) from exc
+            if sequence_id is None or level is None or number_format is None:
+                continue
+            groups[(zone, sequence_id, number_format)].append((element, level))
+
+        ordered_formats = {value.casefold() for value in self._policy.ordered_number_formats}
+        qualified: list[
+            tuple[tuple[str | None, str, str], list[Element], list[tuple[Element, int]]]
+        ] = []
+        for key, members in groups.items():
+            if key[2].casefold() not in ordered_formats:
+                continue
+            top_level = [
+                element
+                for element, level in members
+                if level == 0
+                and element.style is not None
+                and element.style.bold is True
+                and element.text is not None
+                and 0 < len(element.text.strip()) <= self._policy.max_outline_label_length
+            ]
+            nested_count = sum(level > 0 for _, level in members)
+            if (
+                len(top_level) >= self._policy.min_native_outline_sections
+                and nested_count >= self._policy.min_native_outline_children
+            ):
+                top_level.sort(key=lambda item: item.order)
+                qualified.append((key, top_level, members))
+
+        if len(qualified) != 1:
+            return []
+
+        (zone, sequence_id, number_format), sections, _ = qualified[0]
+        first_section = sections[0]
+        last_section = sections[-1]
+        leading_headings = [
+            element
+            for element in elements
+            if element.type == ElementType.HEADING
+            and element.order < first_section.order
+            and self._safe_zone(element) == zone
+        ]
+        if len(leading_headings) != 1 or leading_headings[0].order != 0:
+            return []
+        root = leading_headings[0]
+
+        pre_labels = [
+            element
+            for element in elements
+            if root.order < element.order < first_section.order
+            and self._is_outline_paragraph_label(element, zone=zone, require_colon=True)
+        ]
+        section_level = 2 if pre_labels else 1
+        output = [
+            self._outline_signal(
+                root,
+                level=0,
+                role="DOCUMENT_TITLE",
+                sequence_id=sequence_id,
+                number_format=number_format,
+                section_count=len(sections),
+            )
+        ]
+        output.extend(
+            self._outline_signal(
+                element,
+                level=1,
+                role="SECTION",
+                sequence_id=sequence_id,
+                number_format=number_format,
+                section_count=len(sections),
+            )
+            for element in pre_labels
+        )
+        output.extend(
+            self._outline_signal(
+                element,
+                level=section_level,
+                role="NUMBERED_SECTION",
+                sequence_id=sequence_id,
+                number_format=number_format,
+                section_count=len(sections),
+                native_numbering_level=0,
+            )
+            for element in sections
+        )
+
+        post_label = self._post_outline_label(
+            elements,
+            after_order=last_section.order,
+            zone=zone,
+            sequence_id=sequence_id,
+        )
+        if post_label is not None:
+            output.append(
+                self._outline_signal(
+                    post_label,
+                    level=1,
+                    role="SECTION",
+                    sequence_id=sequence_id,
+                    number_format=number_format,
+                    section_count=len(sections),
+                )
+            )
+        return output
+
+    def _preface_outline_signals(
+        self,
+        elements: tuple[Element, ...],
+    ) -> list[StructureSignal]:
+        """Infer a styled preface root/sections only when a TOC corroborates them."""
+
+        headings = [
+            element
+            for element in elements
+            if element.type == ElementType.HEADING and (element.text or "").strip()
+        ]
+        if not headings:
+            return []
+        first_heading = min(headings, key=lambda item: item.order)
+        if first_heading.order <= 1:
+            return []
+        try:
+            first_heading_level = source_heading_level(first_heading)
+            zone = source_zone(first_heading)
+        except SourceAttributeError as exc:
+            raise StructureSignalError(str(exc)) from exc
+        if first_heading_level != 1:
+            return []
+
+        navigation_entries = [
+            element
+            for element in elements
+            if element.order < first_heading.order
+            and self._safe_zone(element) == zone
+            and element.text is not None
+            and _NAVIGATION_ENTRY_RE.match(element.text)
+        ]
+        if len(navigation_entries) < self._policy.min_preface_navigation_entries:
+            return []
+        navigation_start = min(item.order for item in navigation_entries)
+
+        visible_before_navigation = [
+            element
+            for element in elements
+            if element.order < navigation_start
+            and self._safe_zone(element) == zone
+            and element.text is not None
+            and element.text.strip()
+        ]
+        if not visible_before_navigation:
+            return []
+
+        styled = [
+            element
+            for element in visible_before_navigation
+            if element.type == ElementType.PARAGRAPH
+            and element.style is not None
+            and element.style.bold is True
+            and element.style.font_size is not None
+            and 0 < len((element.text or "").strip()) <= self._policy.max_outline_label_length
+        ]
+        if len(styled) < 1 + self._policy.min_preface_sections:
+            return []
+
+        max_size = max(element.style.font_size for element in styled if element.style is not None and element.style.font_size is not None)
+        title_candidates = [
+            element
+            for element in styled
+            if element.style is not None and element.style.font_size == max_size
+        ]
+        if len(title_candidates) != 1:
+            return []
+        title = title_candidates[0]
+        if title.order != visible_before_navigation[0].order:
+            return []
+
+        by_size: dict[float, list[Element]] = defaultdict(list)
+        for element in styled:
+            if element.id == title.id or element.order <= title.order or element.style is None:
+                continue
+            size = element.style.font_size
+            if size is not None and size < max_size:
+                by_size[size].append(element)
+        if not by_size:
+            return []
+        best_count = max(len(items) for items in by_size.values())
+        best_sizes = [size for size, items in by_size.items() if len(items) == best_count]
+        if len(best_sizes) != 1 or best_count < self._policy.min_preface_sections:
+            return []
+        section_size = best_sizes[0]
+        sections = sorted(by_size[section_size], key=lambda item: item.order)
+
+        output = [
+            self._outline_signal(
+                title,
+                level=0,
+                role="DOCUMENT_TITLE",
+                sequence_id="preface-typography",
+                number_format="none",
+                section_count=len(sections),
+                detection_rule="styled_preface_with_navigation",
+            )
+        ]
+        output.extend(
+            self._outline_signal(
+                section,
+                level=1,
+                role="SECTION",
+                sequence_id="preface-typography",
+                number_format="none",
+                section_count=len(sections),
+                detection_rule="styled_preface_with_navigation",
+            )
+            for section in sections
+        )
+        return output
+
+    def _post_outline_label(
+        self,
+        elements: tuple[Element, ...],
+        *,
+        after_order: int,
+        zone: str | None,
+        sequence_id: str,
+    ) -> Element | None:
+        candidates: list[Element] = []
+        found_table = False
+        for element in elements:
+            if element.order <= after_order or self._safe_zone(element) != zone:
+                continue
+            if element.type == ElementType.HEADING:
+                return None
+            if element.type == ElementType.TABLE:
+                found_table = True
+                break
+            if element.type == ElementType.LIST_ITEM:
+                try:
+                    current_sequence = source_numbering_sequence_id(element)
+                except SourceAttributeError as exc:
+                    raise StructureSignalError(str(exc)) from exc
+                if current_sequence != sequence_id:
+                    return None
+                continue
+            if self._is_outline_paragraph_label(element, zone=zone, require_colon=False):
+                candidates.append(element)
+        if not found_table or len(candidates) != 1:
+            return None
+        return candidates[0]
+
+    def _is_outline_paragraph_label(
+        self,
+        element: Element,
+        *,
+        zone: str | None,
+        require_colon: bool,
+    ) -> bool:
+        if element.type != ElementType.PARAGRAPH or self._safe_zone(element) != zone:
+            return False
+        text = (element.text or "").strip()
+        if not text or len(text) > self._policy.max_outline_label_length:
+            return False
+        if require_colon and not text.endswith(":"):
+            return False
+        style = element.style
+        return (
+            style is not None
+            and style.bold is True
+            and style.indentation is not None
+        )
+
+    def _outline_signal(
+        self,
+        element: Element,
+        *,
+        level: int,
+        role: str,
+        sequence_id: str,
+        number_format: str,
+        section_count: int,
+        native_numbering_level: int | None = None,
+        detection_rule: str = "repeated_native_ordered_outline",
+    ) -> StructureSignal:
+        metadata: dict[str, object] = {
+            "context_role": role,
+            "detection_rule": detection_rule,
+            "numbering_sequence_id": sequence_id,
+            "numbering_format": number_format,
+            "top_level_section_count": section_count,
+        }
+        if native_numbering_level is not None:
+            metadata["native_numbering_level"] = native_numbering_level
+        return self._signal(
+            StructureSignalKind.OUTLINE_LEVEL,
+            (element.id,),
+            source=StructureSource.INFERRED,
+            confidence=self._policy.outline_confidence,
+            numeric_value=float(level),
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _safe_zone(element: Element) -> str | None:
+        try:
+            return source_zone(element)
+        except SourceAttributeError as exc:
+            raise StructureSignalError(str(exc)) from exc
 
     @staticmethod
     def _signal(

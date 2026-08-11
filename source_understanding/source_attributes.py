@@ -1,7 +1,7 @@
 """Stable attribute keys shared by source adapters and structural understanding.
 
 These keys describe source-near observations carried in ``RawElement.attributes`` /
-``Element.attributes``.  They are deliberately not format-specific: DOCX, HTML,
+``Element.attributes``. They are deliberately not format-specific: DOCX, HTML,
 Markdown, PDF-layout adapters and future sources may emit the same facts.
 """
 
@@ -10,10 +10,13 @@ from __future__ import annotations
 from source_understanding.schemas.element import Element
 
 
-SOURCE_ATTRIBUTE_CONTRACT_VERSION = "2"
+SOURCE_ATTRIBUTE_CONTRACT_VERSION = "3"
 HEADING_LEVEL_ATTRIBUTE = "heading_level"
 INTEGRITY_GROUP_ID_ATTRIBUTE = "integrity_group_id"
 INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE = "integrity_parent_group_id"
+NUMBERING_FORMAT_ATTRIBUTE = "number_format"
+NUMBERING_LEVEL_ATTRIBUTE = "numbering_level"
+NUMBERING_SEQUENCE_ID_ATTRIBUTE = "numbering_id"
 SOURCE_ANCHOR_ATTRIBUTE = "source_anchor"
 SOURCE_REFERENCES_ATTRIBUTE = "source_references"
 SOURCE_LABEL_ATTRIBUTE = "source_label"
@@ -33,6 +36,48 @@ def source_integrity_parent_group_id(element: Element) -> str | None:
     group_id = source_integrity_group_id(element)
     if value is not None and value == group_id:
         raise SourceAttributeError("native integrity group cannot be its own parent")
+    return value
+
+
+def source_numbering_sequence_id(element: Element) -> str | None:
+    """Return a source-native numbering sequence identity when one is available."""
+
+    return _identifier_attribute(element, NUMBERING_SEQUENCE_ID_ATTRIBUTE)
+
+
+def source_numbering_level(element: Element) -> int | None:
+    """Return the zero-based native numbering depth without inferring hierarchy."""
+
+    value = element.attributes.get(NUMBERING_LEVEL_ATTRIBUTE)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise SourceAttributeError(
+            f"{NUMBERING_LEVEL_ATTRIBUTE} for element {element.id!r} must be an integer"
+        )
+    if value < 0 or value > 64:
+        raise SourceAttributeError(
+            f"{NUMBERING_LEVEL_ATTRIBUTE} for element {element.id!r} must be between 0 and 64"
+        )
+    return value
+
+
+def source_numbering_format(element: Element) -> str | None:
+    """Return the source-native numbering format token when explicitly observed."""
+
+    value = element.attributes.get(NUMBERING_FORMAT_ATTRIBUTE)
+    if value is None:
+        return None
+    if (
+        not isinstance(value, str)
+        or not value
+        or value.strip() != value
+        or len(value) > 128
+    ):
+        raise SourceAttributeError(
+            f"{NUMBERING_FORMAT_ATTRIBUTE} for element {element.id!r} must be a trimmed "
+            "non-blank string <= 128 chars"
+        )
     return value
 
 
@@ -155,7 +200,12 @@ def _identifier_attribute(element: Element, key: str) -> str | None:
     value = element.attributes.get(key)
     if value is None:
         return None
-    if not isinstance(value, str) or not value or value.strip() != value or len(value) > 256:
+    if (
+        not isinstance(value, str)
+        or not value
+        or value.strip() != value
+        or len(value) > 256
+    ):
         raise SourceAttributeError(
             f"{key} for element {element.id!r} must be a trimmed non-blank string <= 256 chars"
         )

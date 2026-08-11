@@ -123,8 +123,15 @@ class ElementScorer:
         alignment: ElementAlignmentResult,
         errors: list[EvaluationError],
     ) -> AccuracyScore:
+        """Score source-near heading levels, not inferred ContextNode levels.
+
+        GoldElement.heading_level belongs to the Preserve/source-fact layer. The
+        inferred hierarchy has its own GoldContextNode.level and is evaluated
+        separately. Mixing the two makes a correct hierarchy inference appear to
+        corrupt a native Word heading level.
+        """
+
         predicted_by_id = {item.id: item for item in predicted.elements}
-        context_by_anchor = self._context_by_anchor(predicted)
         correct = 0
         total = 0
         for gold_element in gold.elements:
@@ -139,13 +146,10 @@ class ElementScorer:
             if predicted_id is None:
                 continue
             predicted_element = predicted_by_id[predicted_id]
-            node = context_by_anchor.get(predicted_id)
-            predicted_level = getattr(node, "level", None)
-            if predicted_level is None:
-                try:
-                    predicted_level = source_heading_level(predicted_element)
-                except ValueError:
-                    predicted_level = None
+            try:
+                predicted_level = source_heading_level(predicted_element)
+            except ValueError:
+                predicted_level = None
             if predicted_level == gold_element.heading_level:
                 correct += 1
             else:
@@ -153,7 +157,7 @@ class ElementScorer:
                     EvaluationError(
                         type=EvaluationErrorType.HEADING_LEVEL_MISMATCH,
                         message=(
-                            f"gold heading {gold_element.id!r} expected level "
+                            f"gold heading {gold_element.id!r} expected source level "
                             f"{gold_element.heading_level}, predicted {predicted_level}"
                         ),
                         gold_ids=(gold_element.id,),
@@ -161,6 +165,7 @@ class ElementScorer:
                         metadata={
                             "gold_level": gold_element.heading_level,
                             "predicted_level": predicted_level,
+                            "metric_scope": "source_element_heading_level",
                         },
                     )
                 )
@@ -271,12 +276,3 @@ class ElementScorer:
             elif gold_id is None:
                 predicted_set.add(f"p:{item.id}")
         return prf_from_sets(gold_set, predicted_set)
-
-    @staticmethod
-    def _context_by_anchor(predicted: CanonicalDocument) -> dict[str, object]:
-        output: dict[str, object] = {}
-        for node in predicted.context_nodes:
-            anchor = node.attributes.get("anchor_element_id")
-            if isinstance(anchor, str) and anchor not in output:
-                output[anchor] = node
-        return output

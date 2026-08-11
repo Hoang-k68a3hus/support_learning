@@ -167,8 +167,8 @@ class MarkdownAdapterTests(unittest.TestCase):
         )
         self.assertEqual(document.context_nodes[1].parent_id, document.context_nodes[0].id)
         manifest = document.processing.configuration["source_understanding_pipeline"]
-        self.assertEqual(manifest["source_attribute_contract_version"], "2")
-        self.assertEqual(manifest["hierarchy_version"], "3")
+        self.assertEqual(manifest["source_attribute_contract_version"], "3")
+        self.assertEqual(manifest["hierarchy_version"], "5")
         self.assertEqual(document.processing.adapter_name, "markdown-block-subset")
         self.assertEqual(
             document.processing.configuration["source_adapter"]["policy"]["dialect"],
