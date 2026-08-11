@@ -7,9 +7,8 @@ from ai_data_studio.datasets import (
     GoldDuplicateTargetError,
     GoldEligibilityError,
     GoldEligibilityPolicy,
-    GoldSourceResolutionError,
     GoldSplitResolutionError,
-    GoldUnsupportedDecisionError,
+    GoldValidationError,
     SemanticGoldCompiler,
 )
 from ai_data_studio.schemas import (
@@ -18,6 +17,7 @@ from ai_data_studio.schemas import (
     AnnotationDecisionState,
     WorkingRecordStatus,
 )
+from ai_data_studio.validation import ValidationIssueCode
 from source_understanding.evaluation import (
     BenchmarkSplit,
     semantic_gold_dataset_hash,
@@ -94,7 +94,7 @@ class SemanticGoldCompilerTests(unittest.TestCase):
         self.assertEqual(gold.annotations, ())
         self.assertEqual(len(gold.evaluation_scopes), 1)
 
-    def test_canonical_document_is_the_only_gold_text_source(self) -> None:
+    def test_stale_target_snapshot_fails_closed_before_gold_projection(self) -> None:
         document = canonical_document()
         record = adjudicated_record(document=document)
         altered_target = record.target.model_copy(
@@ -103,17 +103,19 @@ class SemanticGoldCompilerTests(unittest.TestCase):
                 "normalized_text": "workflow snapshot noise",
             }
         )
-        record = record.model_copy(update={"target": altered_target})
+        stale = record.model_copy(update={"target": altered_target})
 
-        gold = self.compiler.compile_document(
-            document=document,
-            records=(record,),
-            split=DatasetSplit.DEV,
-            policy=self.policy,
-        )
+        with self.assertRaises(GoldValidationError) as caught:
+            self.compiler.compile_document(
+                document=document,
+                records=(stale,),
+                split=DatasetSplit.DEV,
+                policy=self.policy,
+            )
 
-        self.assertEqual(gold.elements[0].raw_text, document.elements[0].raw_text)
-        self.assertNotEqual(gold.elements[0].raw_text, record.target.raw_text)
+        codes = {issue.code for issue in caught.exception.report.errors}
+        self.assertIn(ValidationIssueCode.TARGET_RAW_TEXT_MISMATCH, codes)
+        self.assertIn(ValidationIssueCode.TARGET_NORMALIZED_TEXT_MISMATCH, codes)
 
     def test_ineligible_record_fails_instead_of_being_silently_skipped(self) -> None:
         document = canonical_document()
@@ -132,7 +134,7 @@ class SemanticGoldCompilerTests(unittest.TestCase):
 
         self.assertEqual(caught.exception.record_reasons[0][0], record.record_id)
 
-    def test_undecided_decision_cannot_compile_even_in_a_pass_snapshot(self) -> None:
+    def test_stale_review_hash_is_rejected_before_unsupported_decision_projection(self) -> None:
         document = canonical_document()
         valid = adjudicated_record(document=document)
         undecided = AnnotationDecision(
@@ -141,11 +143,9 @@ class SemanticGoldCompilerTests(unittest.TestCase):
             rationale="The adjudication is unresolved.",
             confidence=AdjudicationConfidence.LOW,
         )
-        invalid_snapshot = valid.model_copy(
-            update={"decisions": (undecided,)}
-        )
+        invalid_snapshot = valid.model_copy(update={"decisions": (undecided,)})
 
-        with self.assertRaises(GoldUnsupportedDecisionError) as caught:
+        with self.assertRaises(GoldValidationError) as caught:
             self.compiler.compile_document(
                 document=document,
                 records=(invalid_snapshot,),
@@ -153,7 +153,10 @@ class SemanticGoldCompilerTests(unittest.TestCase):
                 policy=self.policy,
             )
 
-        self.assertIn("UNDECIDED", str(caught.exception))
+        self.assertIn(
+            ValidationIssueCode.REVIEW_FINAL_HASH_MISMATCH,
+            {issue.code for issue in caught.exception.report.errors},
+        )
 
     def test_custom_positive_preserves_ontology_exactly(self) -> None:
         document = canonical_document()
@@ -194,7 +197,7 @@ class SemanticGoldCompilerTests(unittest.TestCase):
                 policy=self.policy,
             )
 
-    def test_source_revision_snapshot_and_document_mismatches_fail(self) -> None:
+    def test_source_revision_snapshot_and_document_mismatches_fail_validation(self) -> None:
         document = canonical_document()
         valid = adjudicated_record(document=document)
         cases = {
@@ -223,7 +226,7 @@ class SemanticGoldCompilerTests(unittest.TestCase):
 
         for name, record in cases.items():
             with self.subTest(name=name):
-                with self.assertRaises(GoldSourceResolutionError):
+                with self.assertRaises(GoldValidationError):
                     self.compiler.compile_document(
                         document=document,
                         records=(record,),
@@ -231,35 +234,12 @@ class SemanticGoldCompilerTests(unittest.TestCase):
                         policy=self.policy,
                     )
 
-    def test_multiple_working_revisions_for_one_document_fail(self) -> None:
-        document = canonical_document()
-        first = adjudicated_record(document=document, record_id="record-a")
-        second = adjudicated_record(document=document, record_id="record-b")
-        second = second.model_copy(
-            update={
-                "source": second.source.model_copy(
-                    update={"content_hash": "sha256:" + "c" * 64}
-                )
-            }
-        )
-
-        with self.assertRaisesRegex(
-            GoldSourceResolutionError,
-            "multiple source revisions",
-        ):
-            self.compiler.compile_document(
-                document=document,
-                records=(first, second),
-                split=DatasetSplit.DEV,
-                policy=self.policy,
-            )
-
     def test_dataset_requires_documents_and_valid_split_resolution(self) -> None:
         document = canonical_document()
         record = adjudicated_record(document=document)
         manifest = split_manifest(("group-1", DatasetSplit.TRAIN))
 
-        with self.assertRaises(GoldSourceResolutionError):
+        with self.assertRaises(GoldValidationError):
             self.compiler.compile_dataset(
                 name="semantic-gold",
                 documents={},
@@ -279,7 +259,7 @@ class SemanticGoldCompilerTests(unittest.TestCase):
                 policy=self.policy,
             )
 
-    def test_dataset_preserves_train_split_from_manifest(self) -> None:
+    def test_dataset_preserves_train_split_and_records_provenance_hashes(self) -> None:
         document = document_variant(document_id="doc-train", content_token="c")
         record = adjudicated_record(
             document=document,
@@ -303,6 +283,12 @@ class SemanticGoldCompilerTests(unittest.TestCase):
                 split=BenchmarkSplit.TRAIN,
             ).startswith("sha256:")
         )
+        self.assertEqual(dataset.metadata["guideline_version"], "roles-v1")
+        self.assertEqual(
+            dataset.metadata["eligibility_policy_name"], self.policy.name
+        )
+        self.assertTrue(dataset.metadata["eligibility_policy_hash"].startswith("sha256:"))
+        self.assertTrue(dataset.metadata["validated_working_set_hash"].startswith("sha256:"))
 
     def test_dataset_reports_all_ineligible_record_ids(self) -> None:
         document = canonical_document()

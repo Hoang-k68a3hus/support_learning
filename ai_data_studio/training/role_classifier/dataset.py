@@ -23,7 +23,7 @@ from source_understanding.semantics.providers.role_classifier.provider import (
 )
 
 
-ROLE_CLASSIFIER_DATASET_SCHEMA_VERSION = "2"
+ROLE_CLASSIFIER_DATASET_SCHEMA_VERSION = "3"
 
 
 class RoleClassifierDatasetError(ValueError):
@@ -43,15 +43,24 @@ class RoleClassifierTestPolicy(StrEnum):
 
 
 class RoleClassifierTrainingTarget(SchemaModel):
+    target_id: Identifier
     kind: SemanticTargetKind = SemanticTargetKind.LOGICAL_UNIT
+    element_ids: tuple[Identifier, ...] = Field(min_length=1)
     element_orders: tuple[int, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_target(self) -> "RoleClassifierTrainingTarget":
         if self.kind != SemanticTargetKind.LOGICAL_UNIT:
             raise ValueError("role classifier training targets must be LOGICAL_UNIT")
+        if len(self.element_ids) != len(set(self.element_ids)):
+            raise ValueError("role classifier target element_ids must be unique")
         if len(self.element_orders) != len(set(self.element_orders)):
             raise ValueError("role classifier target element_orders must be unique")
+        if len(self.element_ids) != len(self.element_orders):
+            raise ValueError(
+                "role classifier target element_ids and element_orders must align "
+                "one-to-one"
+            )
         if self.element_orders != tuple(sorted(self.element_orders)):
             raise ValueError(
                 "role classifier target element_orders must follow canonical order"
@@ -89,6 +98,16 @@ class RoleClassifierTrainingExample(SchemaModel):
         if self.request.target_kind != SemanticTargetKind.LOGICAL_UNIT:
             raise ValueError(
                 "role classifier training request must target a LOGICAL_UNIT"
+            )
+        if self.request.target_id != self.target.target_id:
+            raise ValueError(
+                "role classifier training request target_id must match the "
+                "source-stable training target"
+            )
+        if self.request.element_ids != self.target.element_ids:
+            raise ValueError(
+                "role classifier training request element_ids must exactly match "
+                "the source-stable training target"
             )
         if len(self.target.element_orders) != len(self.request.element_ids):
             raise ValueError(

@@ -6,12 +6,18 @@ from .splits import (
     SplitAssignment,
     dataset_split_manifest_hash,
 )
-from .compiler import SEMANTIC_GOLD_COMPILER_VERSION, SemanticGoldCompiler
+from .compilation import (
+    SEMANTIC_GOLD_COMPILER_VERSION,
+    VALIDATED_WORKING_SET_HASH_VERSION,
+    SemanticGoldCompiler,
+)
 from .eligibility import (
+    GOLD_ELIGIBILITY_POLICY_HASH_VERSION,
     GoldEligibilityEvaluator,
     GoldEligibilityPolicy,
     GoldEligibilityResult,
     GoldIneligibilityReason,
+    gold_eligibility_policy_hash,
 )
 from .errors import (
     DatasetFreezeError,
@@ -25,13 +31,14 @@ from .errors import (
     GoldSourceResolutionError,
     GoldSplitResolutionError,
     GoldUnsupportedDecisionError,
+    GoldValidationError,
 )
 from .freeze import (
     MANIFEST_FILENAME,
-    SemanticGoldFreezer,
     verify_frozen_dataset,
     write_canonical_json,
 )
+from .publishing import SemanticGoldFreezer
 from .hashing import (
     FROZEN_MANIFEST_HASH_VERSION,
     GOLD_DATASET_HASH_VERSION,
@@ -59,10 +66,12 @@ __all__ = [
     "FROZEN_DATASET_MANIFEST_SCHEMA_VERSION",
     "FROZEN_MANIFEST_HASH_VERSION",
     "GOLD_DATASET_HASH_VERSION",
+    "GOLD_ELIGIBILITY_POLICY_HASH_VERSION",
     "MANIFEST_FILENAME",
     "SEMANTIC_GOLD_COMPILER_VERSION",
     "SOURCE_CORPUS_HASH_VERSION",
     "SPLIT_MANIFEST_SCHEMA_VERSION",
+    "VALIDATED_WORKING_SET_HASH_VERSION",
     "DatasetSplit",
     "DatasetSplitManifest",
     "DatasetFreezeError",
@@ -87,6 +96,7 @@ __all__ = [
     "GoldSourceResolutionError",
     "GoldSplitResolutionError",
     "GoldUnsupportedDecisionError",
+    "GoldValidationError",
     "SemanticGoldCompiler",
     "SemanticGoldFreezer",
     "SplitAssignment",
@@ -94,6 +104,7 @@ __all__ = [
     "dataset_hash_from_splits",
     "dataset_split_manifest_hash",
     "frozen_manifest_hash",
+    "gold_eligibility_policy_hash",
     "semantic_gold_dataset_hash",
     "semantic_gold_split_hash",
     "source_corpus_hash",
