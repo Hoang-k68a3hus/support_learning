@@ -1,0 +1,109 @@
+name: Backend CI
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/backend-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/backend-ci.yml'
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: support_learning_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d support_learning_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      PORT: '3001'
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/support_learning_test?schema=public
+      JWT_ACCESS_SECRET: ci-only-access-secret-with-more-than-32-characters
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_SECRET: ci-only-refresh-secret-with-more-than-32-characters-different
+      JWT_REFRESH_TTL: 7d
+      CORS_ORIGIN: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Migrate clean PostgreSQL database
+        run: npm run db:migrate:deploy
+
+      - name: Check migration status
+        run: npm run db:migrate:status
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Integration and E2E tests
+        run: npm run test:e2e
+
+      - name: Production build
+        run: npm run build
+
+      - name: Fresh-start migration and health check
+        shell: bash
+        run: |
+          npx prisma migrate reset --force --skip-seed
+          npm start > /tmp/support-learning-backend.log 2>&1 &
+          APP_PID=$!
+          trap 'kill $APP_PID || true' EXIT
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:3001/api/v1/health/ready >/dev/null; then
+              curl --fail --silent http://127.0.0.1:3001/api/v1/health/live
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/support-learning-backend.log
+          exit 1
+
+      - name: Preserve generated package lock for foundation branch
+        if: always() && hashFiles('backend/package-lock.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-package-lock
+          path: backend/package-lock.json
+          if-no-files-found: ignore

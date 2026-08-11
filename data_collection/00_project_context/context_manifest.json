@@ -1,0 +1,33 @@
+{
+  "schema_version": "crawl-context-manifest-v1",
+  "crawl_run_id": "run_2026_08_10_001",
+  "purpose": "Reproducible project-context snapshot for the controlled crawl pilot",
+  "documents": [
+    {
+      "source_name": "AI_Study_Assistant_2.0_Full_Graduation_Project_Idea.md",
+      "destination": "documents/AI_Study_Assistant_2.0_Full_Graduation_Project_Idea.md",
+      "role": "project scope, goals, and graduation-project constraints"
+    },
+    {
+      "source_name": "AI_Study_Assistant_2.0_FULL_AI_SYSTEM_DESIGN.md",
+      "destination": "documents/AI_Study_Assistant_2.0_FULL_AI_SYSTEM_DESIGN.md",
+      "role": "system architecture and data-flow constraints"
+    },
+    {
+      "source_name": "UNIVERSAL_SOURCE_UNDERSTANDING_RAG_PARSER_DESIGN.md",
+      "destination": "documents/UNIVERSAL_SOURCE_UNDERSTANDING_RAG_PARSER_DESIGN.md",
+      "role": "source-understanding, structure, retrieval, and provenance design"
+    },
+    {
+      "source_name": "ROLE-AI-ENGINEERING-PARTNER-FOR-SUPPORT_LEARNING.md",
+      "destination": "documents/ROLE-AI-ENGINEERING-PARTNER-FOR-SUPPORT_LEARNING.md",
+      "role": "engineering workflow and repository collaboration rules"
+    },
+    {
+      "source_name": "HUONG_DAN_SETUP_GEMINI_SPARK_CRAWL_TRAINING_DATA.md",
+      "destination": "documents/HUONG_DAN_SETUP_GEMINI_SPARK_CRAWL_TRAINING_DATA.md",
+      "role": "crawl setup, benchmark coverage, and dataset field contracts"
+    }
+  ],
+  "privacy_note": "Private Drive/Library identifiers and credentials are intentionally not copied."
+}

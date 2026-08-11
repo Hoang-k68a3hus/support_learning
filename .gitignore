@@ -1,2 +1,22 @@
 __pycache__/
 *.py[cod]
+
+# Node.js
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Runtime / editor noise
+*.log
+.DS_Store
+.idea/
+.vscode/
