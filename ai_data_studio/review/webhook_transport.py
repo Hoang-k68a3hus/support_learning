@@ -66,6 +66,10 @@ class VerifiedArgillaWebhook(SchemaModel):
     payload: JsonObject
 
 
+class _VerifiedPayload(SchemaModel):
+    payload: JsonObject
+
+
 class StandardArgillaWebhookVerifier:
     """Verify the exact raw request body before exposing a parsed Argilla event."""
 
@@ -127,9 +131,11 @@ class StandardArgillaWebhookVerifier:
             )
 
         try:
-            payload = JsonObject.__metadata__[0](raw_payload)  # type: ignore[index,call-arg]
-        except Exception:
-            payload = raw_payload
+            payload = _VerifiedPayload(payload=raw_payload).payload
+        except ValueError as exc:
+            raise ArgillaWebhookTransportError(
+                "verified Argilla webhook payload is not JSON-safe"
+            ) from exc
         return VerifiedArgillaWebhook(
             webhook_id=normalized_headers["webhook-id"].strip(),
             payload=payload,
