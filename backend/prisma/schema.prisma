@@ -12,15 +12,22 @@ enum Role {
   ADMIN
 }
 
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
 model User {
-  id           String    @id @default(uuid()) @db.Uuid
-  email        String    @unique @db.VarChar(320)
-  passwordHash String    @map("password_hash") @db.VarChar(255)
-  fullName     String?   @map("full_name") @db.VarChar(120)
-  role         Role      @default(STUDENT)
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  sessions     Session[]
+  id              String     @id @default(uuid()) @db.Uuid
+  email           String     @db.VarChar(320)
+  normalizedEmail String     @unique @map("normalized_email") @db.VarChar(320)
+  passwordHash    String     @map("password_hash") @db.VarChar(255)
+  fullName        String?    @map("full_name") @db.VarChar(120)
+  role            Role       @default(STUDENT)
+  status          UserStatus @default(ACTIVE)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  sessions        Session[]
 
   @@map("users")
 }
@@ -29,6 +36,7 @@ model Session {
   id               String    @id @default(uuid()) @db.Uuid
   userId           String    @map("user_id") @db.Uuid
   refreshTokenHash String    @map("refresh_token_hash") @db.Char(64)
+  rotationVersion  Int       @default(0) @map("rotation_version")
   expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
   revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

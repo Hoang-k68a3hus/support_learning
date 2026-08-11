@@ -2,7 +2,7 @@ import { Transform } from 'class-transformer';
 import { IsEmail, IsString, Length, MaxLength } from 'class-validator';
 
 export class LoginDto {
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @IsEmail()
   @MaxLength(320)
   email!: string;

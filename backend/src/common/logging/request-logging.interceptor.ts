@@ -1,14 +1,8 @@
-import {
-  CallHandler,
-  ExecutionContext,
-  HttpException,
-  HttpStatus,
-  Injectable,
-  NestInterceptor,
-} from '@nestjs/common';
+import { type CallHandler, type ExecutionContext, Injectable, type NestInterceptor } from '@nestjs/common';
 import type { Response } from 'express';
-import { Observable } from 'rxjs';
+import { type Observable } from 'rxjs';
 import { finalize, tap } from 'rxjs/operators';
+import { resolveHttpErrorStatus } from '../errors/http-error';
 import type { RequestContext } from '../types/http-request';
 import { JsonLoggerService } from './json-logger.service';
 
@@ -26,8 +20,7 @@ export class RequestLoggingInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap({
         error: (error: unknown) => {
-          failureStatus =
-            error instanceof HttpException ? error.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+          failureStatus = resolveHttpErrorStatus(error);
         },
       }),
       finalize(() => {

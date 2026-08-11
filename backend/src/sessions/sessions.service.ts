@@ -1,5 +1,5 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import type { Role, Session, User } from '@prisma/client';
+import { UserStatus, type Role, type Session, type User } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 
 export type SessionWithUser = Session & { user: User };
@@ -27,7 +27,9 @@ export class SessionsService {
       },
       include: { user: true },
     });
-    if (!session) throw new UnauthorizedException('Session is not active');
+    if (!session || session.user.status !== UserStatus.ACTIVE) {
+      throw new UnauthorizedException('Session is not active');
+    }
     return session;
   }
 
@@ -42,6 +44,7 @@ export class SessionsService {
     sessionId: string;
     userId: string;
     expectedRefreshTokenHash: string;
+    expectedRotationVersion: number;
     nextRefreshTokenHash: string;
     nextExpiresAt: Date;
     now?: Date;
@@ -52,11 +55,13 @@ export class SessionsService {
         id: input.sessionId,
         userId: input.userId,
         refreshTokenHash: input.expectedRefreshTokenHash,
+        rotationVersion: input.expectedRotationVersion,
         revokedAt: null,
         expiresAt: { gt: now },
       },
       data: {
         refreshTokenHash: input.nextRefreshTokenHash,
+        rotationVersion: { increment: 1 },
         expiresAt: input.nextExpiresAt,
         lastUsedAt: now,
       },

@@ -13,6 +13,13 @@ export interface ValidatedEnvironment {
 
 const SECRET_MIN_LENGTH = 32;
 const TTL_PATTERN = /^(\d+)(s|m|h|d)?$/;
+const UNSAFE_SECRET_PATTERNS = [
+  /REPLACE[_\s-]*ME/i,
+  /REPLACE[_\s-]*WITH/i,
+  /CHANGE[_\s-]*ME/i,
+  /PLACEHOLDER/i,
+  /GENERATE[_\s-]*RANDOM/i,
+];
 type DurationUnit = 's' | 'm' | 'h' | 'd';
 
 function requireString(env: Record<string, unknown>, key: string): string {
@@ -21,6 +28,15 @@ function requireString(env: Record<string, unknown>, key: string): string {
     throw new Error(`Environment variable ${key} is required`);
   }
   return value.trim();
+}
+
+function validateJwtSecret(value: string, key: string): void {
+  if (value.length < SECRET_MIN_LENGTH) {
+    throw new Error(`${key} must be at least ${SECRET_MIN_LENGTH} characters`);
+  }
+  if (UNSAFE_SECRET_PATTERNS.some((pattern) => pattern.test(value))) {
+    throw new Error(`${key} must not use a placeholder or example value`);
+  }
 }
 
 export function parseDurationSeconds(value: string, key: string): number {
@@ -98,9 +114,8 @@ export function validateEnvironment(env: Record<string, unknown>): ValidatedEnvi
 
   const accessSecret = requireString(env, 'JWT_ACCESS_SECRET');
   const refreshSecret = requireString(env, 'JWT_REFRESH_SECRET');
-  if (accessSecret.length < SECRET_MIN_LENGTH || refreshSecret.length < SECRET_MIN_LENGTH) {
-    throw new Error(`JWT secrets must be at least ${SECRET_MIN_LENGTH} characters`);
-  }
+  validateJwtSecret(accessSecret, 'JWT_ACCESS_SECRET');
+  validateJwtSecret(refreshSecret, 'JWT_REFRESH_SECRET');
   if (accessSecret === refreshSecret) {
     throw new Error('JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different');
   }

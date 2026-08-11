@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Role } from '@prisma/client';
+import { Role, UserStatus } from '@prisma/client';
 import { createHash, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { AppConfigService } from '../../src/config/app-config.service';
@@ -13,7 +13,6 @@ type SupertestTest = request.Test;
 const student = {
   email: 'student@example.com',
   password: 'correct horse battery staple',
-  fullName: 'Student One',
 };
 
 function refreshCookie(response: SupertestResponse): string {
@@ -61,23 +60,28 @@ describe('Auth and RBAC E2E', () => {
       .send({ email: student.email, password: student.password });
   }
 
-  it('registers a canonical STUDENT with a password hash and sanitized response', async () => {
+  it('registers an ACTIVE STUDENT with normalized identity and a sanitized response', async () => {
     const response = await register().expect(201);
     expect(response.body.user).toMatchObject({
       email: student.email,
-      fullName: student.fullName,
+      fullName: null,
       role: Role.STUDENT,
+      status: UserStatus.ACTIVE,
     });
     expect(response.body.user).not.toHaveProperty('passwordHash');
     expect(response.body.user).not.toHaveProperty('password_hash');
+    expect(response.body.user).not.toHaveProperty('normalizedEmail');
 
-    const stored = await prisma.user.findUniqueOrThrow({ where: { email: student.email } });
+    const stored = await prisma.user.findUniqueOrThrow({ where: { normalizedEmail: student.email } });
+    expect(stored.email).toBe(student.email);
+    expect(stored.normalizedEmail).toBe(student.email);
     expect(stored.passwordHash).not.toBe(student.password);
     expect(stored.passwordHash.startsWith('$argon2id$')).toBe(true);
     expect(stored.role).toBe(Role.STUDENT);
+    expect(stored.status).toBe(UserStatus.ACTIVE);
   });
 
-  it('enforces unique canonical email at the database boundary', async () => {
+  it('enforces unique canonical normalized email at the database boundary', async () => {
     await register().expect(201);
     await request(app.getHttpServer())
       .post('/api/v1/auth/register')
@@ -88,6 +92,7 @@ describe('Auth and RBAC E2E', () => {
       prisma.user.create({
         data: {
           email: 'Upper@Example.com',
+          normalizedEmail: 'Upper@Example.com',
           passwordHash: '$argon2id$invalid-but-non-null',
           role: Role.STUDENT,
         },
@@ -95,7 +100,7 @@ describe('Auth and RBAC E2E', () => {
     ).rejects.toBeDefined();
   });
 
-  it('allows only one concurrent registration for the same canonical email', async () => {
+  it('allows only one concurrent registration for the same normalized email', async () => {
     const [first, second] = await Promise.all([
       request(app.getHttpServer()).post('/api/v1/auth/register').send(student),
       request(app.getHttpServer())
@@ -107,10 +112,15 @@ describe('Auth and RBAC E2E', () => {
     expect(await prisma.user.count()).toBe(1);
   });
 
-  it('rejects malformed registration and public role escalation', async () => {
+  it('rejects malformed registration, profile injection, and public role escalation', async () => {
     await request(app.getHttpServer())
       .post('/api/v1/auth/register')
       .send({ ...student, password: 'short' })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({ ...student, fullName: 'Should be profile-owned later' })
       .expect(400);
 
     await request(app.getHttpServer())
@@ -128,10 +138,32 @@ describe('Auth and RBAC E2E', () => {
       .expect(400);
   });
 
-  it('logs in, creates a server-side session, and stores only the refresh-token hash', async () => {
+  it('uses RFC 9457 Problem Details for public REST errors', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({ ...student, password: 'short' })
+      .expect(400);
+
+    expect(response.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(response.body).toMatchObject({
+      type: 'urn:support-learning:problem:validation-error',
+      title: 'Bad Request',
+      status: 400,
+      detail: 'Request validation failed',
+      instance: '/api/v1/auth/register',
+      code: 'VALIDATION_ERROR',
+      requestId: expect.any(String),
+      errors: expect.any(Array),
+    });
+    expect(response.body).not.toHaveProperty('error');
+    expect(response.headers['x-request-id']).toBe(response.body.requestId);
+  });
+
+  it('logs in, creates a versioned server-side session, and stores only the refresh-token hash', async () => {
     await register();
     const response = await login().expect(200);
     expect(response.body.accessToken).toEqual(expect.any(String));
+    expect(response.body.user).toMatchObject({ status: UserStatus.ACTIVE });
     expect(response.body.user).not.toHaveProperty('passwordHash');
 
     const serializedCookie = Array.isArray(response.headers['set-cookie'])
@@ -146,9 +178,10 @@ describe('Auth and RBAC E2E', () => {
     const session = await prisma.session.findFirstOrThrow();
     expect(session.refreshTokenHash).not.toBe(rawRefresh);
     expect(session.refreshTokenHash).toBe(createHash('sha256').update(rawRefresh).digest('hex'));
+    expect(session.rotationVersion).toBe(0);
   });
 
-  it('uses a generic credential error for unknown users and wrong passwords', async () => {
+  it('uses a generic credential error for unknown users, wrong passwords, and suspended users', async () => {
     const unknown = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
       .send({ email: 'unknown@example.com', password: student.password })
@@ -160,8 +193,18 @@ describe('Auth and RBAC E2E', () => {
       .send({ email: student.email, password: 'definitely-the-wrong-password' })
       .expect(401);
 
-    expect(unknown.body.error.message).toBe('Invalid email or password');
-    expect(wrong.body.error.message).toBe('Invalid email or password');
+    await prisma.user.update({
+      where: { normalizedEmail: student.email },
+      data: { status: UserStatus.SUSPENDED },
+    });
+    const suspended = await login().expect(401);
+
+    expect(unknown.body.detail).toBe('Invalid email or password');
+    expect(wrong.body.detail).toBe('Invalid email or password');
+    expect(suspended.body.detail).toBe('Invalid email or password');
+    expect(unknown.body.code).toBe('AUTHENTICATION_ERROR');
+    expect(wrong.body.code).toBe('AUTHENTICATION_ERROR');
+    expect(suspended.body.code).toBe('AUTHENTICATION_ERROR');
   });
 
   it('accepts a valid access token and rejects missing, malformed, tampered, expired, or wrong-signature tokens', async () => {
@@ -176,7 +219,9 @@ describe('Auth and RBAC E2E', () => {
       .expect(({ body }: SupertestResponse) => {
         expect(body.email).toBe(student.email);
         expect(body.role).toBe(Role.STUDENT);
+        expect(body.status).toBe(UserStatus.ACTIVE);
         expect(body).not.toHaveProperty('passwordHash');
+        expect(body).not.toHaveProperty('normalizedEmail');
       });
 
     await request(app.getHttpServer()).get('/api/v1/users/me').expect(401);
@@ -233,10 +278,11 @@ describe('Auth and RBAC E2E', () => {
       .expect(401);
   });
 
-  it('rotates refresh tokens: R1 succeeds once, R1 reuse fails, and R2 succeeds', async () => {
+  it('rotates refresh tokens with hash + rotationVersion CAS', async () => {
     await register();
     const loginResponse = await login();
     const r1 = refreshCookie(loginResponse);
+    expect((await prisma.session.findFirstOrThrow()).rotationVersion).toBe(0);
 
     const firstRefresh = await request(app.getHttpServer())
       .post('/api/v1/auth/refresh')
@@ -245,9 +291,16 @@ describe('Auth and RBAC E2E', () => {
       .expect(200);
     const r2 = refreshCookie(firstRefresh);
     expect(r2).not.toBe(r1);
+    expect((await prisma.session.findFirstOrThrow()).rotationVersion).toBe(1);
 
     await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Cookie', r1).send({}).expect(401);
-    await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Cookie', r2).send({}).expect(200);
+    const secondRefresh = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', r2)
+      .send({})
+      .expect(200);
+    expect(refreshCookie(secondRefresh)).not.toBe(r2);
+    expect((await prisma.session.findFirstOrThrow()).rotationVersion).toBe(2);
   });
 
   it('allows exactly one winner when two refresh requests race with the same token', async () => {
@@ -260,9 +313,57 @@ describe('Auth and RBAC E2E', () => {
     ]);
 
     expect([a.status, b.status].sort()).toEqual([200, 401]);
+    expect((await prisma.session.findFirstOrThrow()).rotationVersion).toBe(1);
     const winner = a.status === 200 ? a : b;
     const r2 = refreshCookie(winner);
     await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Cookie', r2).send({}).expect(200);
+  });
+
+  it('rejects access and refresh immediately when the persisted user becomes SUSPENDED', async () => {
+    await register();
+    const loginResponse = await login();
+    const accessToken = loginResponse.body.accessToken as string;
+    const refresh = refreshCookie(loginResponse);
+
+    await prisma.user.update({
+      where: { normalizedEmail: student.email },
+      data: { status: UserStatus.SUSPENDED },
+    });
+
+    await request(app.getHttpServer()).get('/api/v1/users/me').set('Authorization', `Bearer ${accessToken}`).expect(401);
+    await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Cookie', refresh).send({}).expect(401);
+  });
+
+  it('re-resolves the persisted role and rejects an access token with stale role context', async () => {
+    await register();
+    const loginResponse = await login();
+    const oldAccessToken = loginResponse.body.accessToken as string;
+    const refresh = refreshCookie(loginResponse);
+
+    await prisma.user.update({
+      where: { normalizedEmail: student.email },
+      data: { role: Role.ADMIN },
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/users/me')
+      .set('Authorization', `Bearer ${oldAccessToken}`)
+      .expect(401);
+
+    const refreshResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', refresh)
+      .send({})
+      .expect(200);
+    const newAccessToken = refreshResponse.body.accessToken as string;
+    const decoded = new JwtService().decode(newAccessToken) as { role: Role };
+    expect(decoded.role).toBe(Role.ADMIN);
+
+    await request(app.getHttpServer())
+      .get('/api/v1/users/me')
+      .set('Authorization', `Bearer ${newAccessToken}`)
+      .expect(200)
+      .expect(({ body }: SupertestResponse) => expect(body.role).toBe(Role.ADMIN));
   });
 
   it('leaves the session revoked when logout races with refresh', async () => {
@@ -349,13 +450,27 @@ describe('Auth and RBAC E2E', () => {
     await request(app.getHttpServer()).post('/api/v1/auth/refresh').set('Cookie', r2).send({}).expect(401);
   });
 
-  it('enforces the Session -> User foreign key', async () => {
+  it('enforces Session -> User foreign key and nonnegative rotationVersion', async () => {
     await expect(
       prisma.session.create({
         data: {
           id: randomUUID(),
           userId: randomUUID(),
           refreshTokenHash: 'a'.repeat(64),
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      }),
+    ).rejects.toBeDefined();
+
+    await register();
+    const user = await prisma.user.findUniqueOrThrow({ where: { normalizedEmail: student.email } });
+    await expect(
+      prisma.session.create({
+        data: {
+          id: randomUUID(),
+          userId: user.id,
+          refreshTokenHash: 'b'.repeat(64),
+          rotationVersion: -1,
           expiresAt: new Date(Date.now() + 60_000),
         },
       }),

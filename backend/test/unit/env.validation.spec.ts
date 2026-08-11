@@ -37,6 +37,16 @@ describe('validateEnvironment', () => {
     expect(() => validateEnvironment(env)).toThrow('JWT_ACCESS_SECRET');
   });
 
+  it('rejects placeholder JWT secrets even when they are long enough', () => {
+    const accessPlaceholder = validEnv();
+    accessPlaceholder.JWT_ACCESS_SECRET = 'REPLACE_ME_WITH_RANDOM_ACCESS_SECRET_AT_LEAST_32_CHARS';
+    expect(() => validateEnvironment(accessPlaceholder)).toThrow('placeholder');
+
+    const refreshPlaceholder = validEnv();
+    refreshPlaceholder.JWT_REFRESH_SECRET = 'CHANGE_ME_TO_A_DIFFERENT_REFRESH_SECRET_VALUE_123456';
+    expect(() => validateEnvironment(refreshPlaceholder)).toThrow('placeholder');
+  });
+
   it('rejects invalid TTL syntax and access TTL >= refresh TTL', () => {
     expect(() => parseDurationSeconds('tomorrow', 'TTL')).toThrow('TTL');
     const env = validEnv();

@@ -1,8 +1,4 @@
-import {
-  type CallHandler,
-  type ExecutionContext,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { type CallHandler, type ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import type { Response } from 'express';
 import { firstValueFrom, throwError } from 'rxjs';
 import { JsonLoggerService } from '../../src/common/logging/json-logger.service';
@@ -43,6 +39,33 @@ describe('RequestLoggingInterceptor', () => {
         requestId: 'request-1',
         route: '/api/v1/users/me',
         status: 401,
+      }),
+    );
+  });
+
+  it('preserves framework statusCode errors instead of reporting them as 500', async () => {
+    const log = jest.fn();
+    const logger = { log } as unknown as JsonLoggerService;
+    const interceptor = new RequestLoggingInterceptor(logger);
+    const request = {
+      requestId: 'request-2',
+      method: 'POST',
+      originalUrl: '/api/v1/auth/login',
+    } as RequestContext;
+    const response = { statusCode: 200 } as Response;
+    const transportError = Object.assign(new Error('request entity too large'), { statusCode: 413 });
+    const next = { handle: () => throwError(() => transportError) } as CallHandler;
+
+    await expect(firstValueFrom(interceptor.intercept(createContext(request, response), next))).rejects.toBe(
+      transportError,
+    );
+
+    expect(log).toHaveBeenCalledWith(
+      'http_request',
+      expect.objectContaining({
+        requestId: 'request-2',
+        route: '/api/v1/auth/login',
+        status: 413,
       }),
     );
   });

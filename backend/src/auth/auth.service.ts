@@ -1,4 +1,5 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { UserStatus } from '@prisma/client';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { SessionsService } from '../sessions/sessions.service';
 import type { PublicUser } from '../users/user.types';
@@ -30,17 +31,13 @@ export class AuthService {
 
   async register(dto: RegisterDto): Promise<PublicUser> {
     const passwordHash = await this.passwords.hash(dto.password);
-    return this.users.createStudent({
-      email: dto.email,
-      passwordHash,
-      ...(dto.fullName ? { fullName: dto.fullName } : {}),
-    });
+    return this.users.createStudent({ email: dto.email, passwordHash });
   }
 
   async login(dto: LoginDto): Promise<LoginResult> {
     const user = await this.users.findByEmailForAuthentication(dto.email);
     const passwordValid = await this.passwords.verifyForAuthentication(user?.passwordHash ?? null, dto.password);
-    if (!user || !passwordValid) {
+    if (!user || !passwordValid || user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -78,6 +75,7 @@ export class AuthService {
       sessionId: session.id,
       userId: session.userId,
       expectedRefreshTokenHash: presentedHash,
+      expectedRotationVersion: session.rotationVersion,
       nextRefreshTokenHash: nextRefreshToken.hash,
       nextExpiresAt: nextRefreshToken.expiresAt,
     });

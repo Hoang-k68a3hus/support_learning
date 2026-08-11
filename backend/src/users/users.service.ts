@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Role, type User } from '@prisma/client';
+import { Prisma, Role, UserStatus, type User } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import type { PublicUser } from './user.types';
 
@@ -11,18 +11,15 @@ export function normalizeEmail(email: string): string {
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createStudent(input: {
-    email: string;
-    passwordHash: string;
-    fullName?: string;
-  }): Promise<PublicUser> {
+  async createStudent(input: { email: string; passwordHash: string }): Promise<PublicUser> {
     try {
       const user = await this.prisma.user.create({
         data: {
-          email: normalizeEmail(input.email),
+          email: input.email.trim(),
+          normalizedEmail: normalizeEmail(input.email),
           passwordHash: input.passwordHash,
-          fullName: input.fullName?.trim() || null,
           role: Role.STUDENT,
+          status: UserStatus.ACTIVE,
         },
       });
       return this.toPublicUser(user);
@@ -35,7 +32,7 @@ export class UsersService {
   }
 
   findByEmailForAuthentication(email: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { email: normalizeEmail(email) } });
+    return this.prisma.user.findUnique({ where: { normalizedEmail: normalizeEmail(email) } });
   }
 
   async getPublicById(id: string): Promise<PublicUser> {
@@ -50,6 +47,7 @@ export class UsersService {
       email: user.email,
       fullName: user.fullName,
       role: user.role,
+      status: user.status,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
