@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ai_data_studio.validation import ValidationReport
+from ai_data_studio.validation.issues import ValidationReport
 from source_understanding.schemas.context import Identifier
 
 
