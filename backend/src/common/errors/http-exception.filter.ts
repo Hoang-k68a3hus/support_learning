@@ -16,6 +16,7 @@ interface ProblemDetails {
 }
 
 const INTERNAL_SERVER_ERROR_STATUS = Number(HttpStatus.INTERNAL_SERVER_ERROR);
+const PAYLOAD_TOO_LARGE_STATUS = Number(HttpStatus.PAYLOAD_TOO_LARGE);
 
 const STATUS_CODES: Partial<Record<number, string>> = {
   [HttpStatus.BAD_REQUEST]: 'VALIDATION_ERROR',
@@ -79,7 +80,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const extracted = extractHttpDetail(exception);
       detail = extracted.detail;
       errors = extracted.errors;
-    } else if (status === HttpStatus.PAYLOAD_TOO_LARGE) {
+    } else if (status === PAYLOAD_TOO_LARGE_STATUS) {
       detail = 'Request payload is too large';
     }
 
