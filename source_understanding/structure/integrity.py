@@ -17,6 +17,9 @@ from source_understanding.source_attributes import (
     SourceAttributeError,
     source_integrity_group_id,
     source_integrity_parent_group_id,
+    source_numbering_format,
+    source_numbering_level,
+    source_zone,
 )
 
 from .grouping import GroupingResult
@@ -25,8 +28,10 @@ if TYPE_CHECKING:
     from .boundary import BoundarySet
 
 
-INTEGRITY_CONSOLIDATION_VERSION = "2"
-INTEGRITY_CONSOLIDATION_POLICY_VERSION = "2"
+INTEGRITY_CONSOLIDATION_VERSION = "3"
+INTEGRITY_CONSOLIDATION_POLICY_VERSION = "3"
+
+
 class IntegrityConsolidationError(ValueError):
     """Existing grouping cannot be consolidated without changing trusted membership."""
 
@@ -47,6 +52,7 @@ class _IntegritySpan:
     boundary_classes: tuple[str, ...]
     native_group_id: str | None = None
     native_parent_group_id: str | None = None
+    native_group_ids: tuple[str, ...] = ()
 
 
 _FAMILIES = (
@@ -95,6 +101,10 @@ class IntegrityConsolidationPolicy(SchemaModel):
     split_on_repeated_container: bool = True
     prefer_native_group_identity: bool = True
     require_native_parent_present: bool = True
+    merge_contiguous_native_list_fragments: bool = True
+    merge_native_list_fragments_across_blank_spacers: bool = True
+    max_native_list_blank_spacers: int = Field(default=2, ge=0, le=8)
+    list_indentation_tolerance: float = Field(default=1.0, ge=0.0, le=100.0)
 
 
 class IntegrityConsolidationReport(SchemaModel):
@@ -106,6 +116,7 @@ class IntegrityConsolidationReport(SchemaModel):
     replaced_unit_ids: tuple[str, ...] = Field(default_factory=tuple)
     native_group_count: int = Field(default=0, ge=0)
     nested_native_group_count: int = Field(default=0, ge=0)
+    merged_native_list_group_count: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def validate_ids(self) -> "IntegrityConsolidationReport":
@@ -123,7 +134,7 @@ def unresolved_integrity_boundary_ids(
     """Return integrity-warning boundaries not resolved by structural ownership.
 
     A warning is resolved when both sides are in one LogicalUnit *or* both sides
-    belong to distinct source-native integrity groups.  In the latter case the
+    belong to distinct source-native integrity groups. In the latter case the
     source has explicitly told us there is a block boundary; merging is not the
     resolution, preserving the distinct blocks is.
     """
@@ -169,7 +180,7 @@ def unresolved_integrity_boundary_ids(
 
 
 class IntegrityGroupConsolidator:
-    """Preserve native multi-element table/list/code/formula/key-value integrity."""
+    """Preserve native integrity while reconciling conservative visual list continuity."""
 
     version = INTEGRITY_CONSOLIDATION_VERSION
 
@@ -203,6 +214,7 @@ class IntegrityGroupConsolidator:
         family_counts: Counter[str] = Counter()
         native_count = 0
         nested_count = 0
+        merged_native_list_count = 0
 
         for span in spans:
             member_set = set(span.member_ids)
@@ -219,14 +231,14 @@ class IntegrityGroupConsolidator:
                 replaced.extend(unit.id for unit in overlapping)
                 existing = [unit for unit in existing if unit not in overlapping]
 
-            created.append(
-                self._make_unit(span, by_id, overlapping)
-            )
+            created.append(self._make_unit(span, by_id, overlapping))
             family_counts[span.family.name] += 1
-            if span.native_group_id is not None:
+            if span.native_group_ids or span.native_group_id is not None:
                 native_count += 1
             if span.native_parent_group_id is not None:
                 nested_count += 1
+            if span.family.name == "list" and len(span.native_group_ids) > 1:
+                merged_native_list_count += len(span.native_group_ids) - 1
 
         units = [*existing, *created]
         units.sort(key=lambda unit: order[unit.element_ids[0]])
@@ -250,6 +262,7 @@ class IntegrityGroupConsolidator:
             replaced_unit_ids=tuple(dict.fromkeys(replaced)),
             native_group_count=native_count,
             nested_native_group_count=nested_count,
+            merged_native_list_group_count=merged_native_list_count,
         )
         return consolidated, report
 
@@ -259,6 +272,9 @@ class IntegrityGroupConsolidator:
         boundary_set: "BoundarySet",
     ) -> tuple[_IntegritySpan, ...]:
         native_spans, keyed_ids = self._native_spans(elements, boundary_set)
+        native_spans = self._coalesce_native_list_spans(
+            native_spans, elements, boundary_set
+        )
         heuristic_spans = self._heuristic_spans(elements, boundary_set, keyed_ids)
         position = {element.id: index for index, element in enumerate(elements)}
         return tuple(
@@ -327,7 +343,7 @@ class IntegrityGroupConsolidator:
             seen: set[str] = set()
             current: str | None = candidate_group
             while current is not None:
-                if current in seen:  # cycle already validated; defensive only.
+                if current in seen:
                     return False
                 seen.add(current)
                 current = parents.get(current)
@@ -335,10 +351,6 @@ class IntegrityGroupConsolidator:
                     return True
             return False
 
-        # Non-contiguous membership is only valid for a source-native container
-        # surrounding nested descendant groups (for example an outer table around
-        # a nested table).  Never use a repeated group id to jump over unrelated
-        # source content.
         element_group = {
             element.id: native_integrity_group_id(element)
             for element in elements
@@ -386,9 +398,150 @@ class IntegrityGroupConsolidator:
                     boundary_classes=tuple(boundary_classes),
                     native_group_id=group_id,
                     native_parent_group_id=parents[group_id],
+                    native_group_ids=(group_id,),
                 )
             )
         return tuple(spans), keyed_ids
+
+    def _coalesce_native_list_spans(
+        self,
+        spans: tuple[_IntegritySpan, ...],
+        elements: tuple[Element, ...],
+        boundary_set: "BoundarySet",
+    ) -> tuple[_IntegritySpan, ...]:
+        if not self._policy.merge_contiguous_native_list_fragments:
+            return spans
+        position = {element.id: index for index, element in enumerate(elements)}
+        ordered = sorted(spans, key=lambda span: position[span.member_ids[0]])
+        output: list[_IntegritySpan] = []
+        for span in ordered:
+            if not output:
+                output.append(span)
+                continue
+            previous = output[-1]
+            if not self._can_merge_native_list_spans(
+                previous, span, elements, boundary_set, position
+            ):
+                output.append(span)
+                continue
+            bridge_ids, bridge_classes = self._bridge_boundaries(
+                previous, span, boundary_set, position
+            )
+            native_ids = tuple(
+                dict.fromkeys(
+                    (
+                        *(previous.native_group_ids or (() if previous.native_group_id is None else (previous.native_group_id,))),
+                        *(span.native_group_ids or (() if span.native_group_id is None else (span.native_group_id,))),
+                    )
+                )
+            )
+            parent_id = (
+                previous.native_parent_group_id
+                if previous.native_parent_group_id == span.native_parent_group_id
+                else None
+            )
+            output[-1] = _IntegritySpan(
+                family=previous.family,
+                member_ids=(*previous.member_ids, *span.member_ids),
+                boundary_ids=(*previous.boundary_ids, *bridge_ids, *span.boundary_ids),
+                boundary_classes=(
+                    *previous.boundary_classes,
+                    *bridge_classes,
+                    *span.boundary_classes,
+                ),
+                native_group_id=native_ids[0] if len(native_ids) == 1 else None,
+                native_parent_group_id=parent_id,
+                native_group_ids=native_ids,
+            )
+        return tuple(output)
+
+    def _can_merge_native_list_spans(
+        self,
+        left: _IntegritySpan,
+        right: _IntegritySpan,
+        elements: tuple[Element, ...],
+        boundary_set: "BoundarySet",
+        position: dict[str, int],
+    ) -> bool:
+        if left.family.name != "list" or right.family.name != "list":
+            return False
+        left_pos = position[left.member_ids[-1]]
+        right_pos = position[right.member_ids[0]]
+        if right_pos <= left_pos:
+            return False
+        left_element = elements[left_pos]
+        right_element = elements[right_pos]
+        if not self._same_story(left_element, right_element):
+            return False
+        boundaries = boundary_set.boundaries[left_pos:right_pos]
+        if any(not self._can_cross(boundary.classification) for boundary in boundaries):
+            return False
+
+        gap = elements[left_pos + 1 : right_pos]
+        if not gap:
+            return True
+        if not self._policy.merge_native_list_fragments_across_blank_spacers:
+            return False
+        if len(gap) > self._policy.max_native_list_blank_spacers:
+            return False
+        if any(
+            element.type != ElementType.PARAGRAPH
+            or (element.text is not None and element.text.strip())
+            for element in gap
+        ):
+            return False
+        return self._compatible_list_edges(left_element, right_element)
+
+    def _compatible_list_edges(self, left: Element, right: Element) -> bool:
+        try:
+            left_level = source_numbering_level(left)
+            right_level = source_numbering_level(right)
+            left_format = source_numbering_format(left)
+            right_format = source_numbering_format(right)
+        except SourceAttributeError as exc:
+            raise IntegrityConsolidationError(str(exc)) from exc
+        if left_level is None or right_level is None or left_level != right_level:
+            return False
+        if (
+            left_format is None
+            or right_format is None
+            or left_format.casefold() != right_format.casefold()
+        ):
+            return False
+        left_indent = None if left.style is None else left.style.indentation
+        right_indent = None if right.style is None else right.style.indentation
+        if left_indent is None or right_indent is None:
+            return left_indent is None and right_indent is None
+        return abs(left_indent - right_indent) <= self._policy.list_indentation_tolerance
+
+    @staticmethod
+    def _same_story(left: Element, right: Element) -> bool:
+        left_part = left.attributes.get("opc_part")
+        right_part = right.attributes.get("opc_part")
+        if left_part != right_part:
+            return False
+        try:
+            return source_zone(left) == source_zone(right)
+        except SourceAttributeError as exc:
+            raise IntegrityConsolidationError(str(exc)) from exc
+
+    @staticmethod
+    def _bridge_boundaries(
+        left: _IntegritySpan,
+        right: _IntegritySpan,
+        boundary_set: "BoundarySet",
+        position: dict[str, int],
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        left_pos = position[left.member_ids[-1]]
+        right_pos = position[right.member_ids[0]]
+        bridge = boundary_set.boundaries[left_pos:right_pos]
+        return (
+            tuple(boundary.id for boundary in bridge),
+            tuple(
+                getattr(boundary.classification, "value", str(boundary.classification))
+                for boundary in bridge
+            ),
+        )
 
     def _heuristic_spans(
         self,
@@ -465,16 +618,21 @@ class IntegrityGroupConsolidator:
                 confidences.append(element.confidence.type)
             elif element.provenance.confidence is not None:
                 confidences.append(element.provenance.confidence)
+        native_ids = span.native_group_ids or (
+            () if span.native_group_id is None else (span.native_group_id,)
+        )
         identity_parts = [span.family.name, span.family.unit_type.value, *span.member_ids]
-        if span.native_group_id is not None:
-            identity_parts.extend(("native", span.native_group_id))
+        if native_ids:
+            identity_parts.extend(("native", *native_ids))
         digest = hashlib.sha256("|".join(identity_parts).encode("utf-8")).hexdigest()[:20]
+        if len(native_ids) > 1 and span.family.name == "list":
+            grouping_rule = "source_native_list_continuity"
+        elif native_ids:
+            grouping_rule = "source_native_integrity_group"
+        else:
+            grouping_rule = "contiguous_integrity_family"
         metadata: dict[str, object] = {
-            "grouping_rule": (
-                "source_native_integrity_group"
-                if span.native_group_id is not None
-                else "contiguous_integrity_family"
-            ),
+            "grouping_rule": grouping_rule,
             "integrity_family": span.family.name,
             "replaced_unit_ids": [unit.id for unit in replaced_units],
             "boundary_ids": list(span.boundary_ids),
@@ -482,8 +640,10 @@ class IntegrityGroupConsolidator:
             "token_target_used": False,
             "confidence_policy": "uncalibrated_baseline_capped_by_upstream",
         }
-        if span.native_group_id is not None:
-            metadata[INTEGRITY_GROUP_ID_ATTRIBUTE] = span.native_group_id
+        if len(native_ids) == 1:
+            metadata[INTEGRITY_GROUP_ID_ATTRIBUTE] = native_ids[0]
+        elif native_ids:
+            metadata["source_native_integrity_group_ids"] = list(native_ids)
         if span.native_parent_group_id is not None:
             metadata[INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE] = span.native_parent_group_id
         return LogicalUnit(
