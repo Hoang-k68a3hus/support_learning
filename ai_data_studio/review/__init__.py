@@ -65,12 +65,6 @@ from .errors import (
     StaleArgillaReviewTaskError,
     StaleReviewSubmissionError,
 )
-from .fastapi_app import (
-    ARGILLA_WEBHOOK_PATH,
-    REVIEW_LIVENESS_PATH,
-    REVIEW_READINESS_PATH,
-    create_argilla_review_fastapi_app,
-)
 from .service import HumanReviewWorkflow
 from .webhook_transport import (
     DEFAULT_ARGILLA_WEBHOOK_MAX_BODY_BYTES,
@@ -86,15 +80,12 @@ __all__ = [
     "ARGILLA_RESPONSE_EVENT_TYPES",
     "ARGILLA_REVIEW_CONTRACT_VERSION",
     "ARGILLA_REVIEW_TASK_HASH_VERSION",
-    "ARGILLA_WEBHOOK_PATH",
     "ARGILLA_WEBHOOK_VERSION",
     "DEFAULT_ARGILLA_REVIEW_DATASET",
     "DEFAULT_ARGILLA_WEBHOOK_MAX_BODY_BYTES",
     "DEFAULT_ARGILLA_WORKSPACE",
     "HUMAN_REVIEW_SUBMISSION_SCHEMA_VERSION",
     "HUMAN_REVIEW_TASK_SCHEMA_VERSION",
-    "REVIEW_LIVENESS_PATH",
-    "REVIEW_READINESS_PATH",
     "ArgillaDatasetContractError",
     "ArgillaImportResult",
     "ArgillaQuestionKind",
@@ -138,7 +129,6 @@ __all__ = [
     "argilla_settings_spec",
     "build_argilla_record",
     "build_argilla_settings",
-    "create_argilla_review_fastapi_app",
     "parse_argilla_response_webhook",
     "parse_decisions_json",
     "response_to_submission",
