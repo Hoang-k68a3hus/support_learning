@@ -20,6 +20,7 @@ from ._docx_postprocess import DocxPostprocessMixin
 from ._docx_preservation import DocxPreservationMixin
 from ._docx_styles import DocxStyleMixin
 from ._docx_text import DocxTextMixin
+from ._docx_textbox import DocxTextboxMixin
 from .base import AdapterDiagnostic, AdapterError, SourceAdapterResult
 
 
@@ -27,6 +28,7 @@ class DocxAdapter(
     DocxStyleMixin,
     DocxPackageMixin,
     DocxPostprocessMixin,
+    DocxTextboxMixin,
     DocxFixupMixin,
     DocxPreservationMixin,
     DocxExtractMixin,

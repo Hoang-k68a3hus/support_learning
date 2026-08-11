@@ -28,7 +28,11 @@ class DocxStyleMixin:
             based = style.find("w:basedOn", NS)
             outline = style.find("w:pPr/w:outlineLvl", NS)
             num_pr = style.find("w:pPr/w:numPr", NS)
-            num_id, ilvl = self._num_pr(num_pr)
+            if num_pr is None:
+                num_id: str | None = None
+                ilvl: int | None = None
+            else:
+                num_id, ilvl = self._num_pr(num_pr)
             current = StyleDef(
                 style_id=style_id,
                 name=name_node.attrib.get(W + "val") if name_node is not None else None,
