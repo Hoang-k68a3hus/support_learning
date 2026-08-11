@@ -8,7 +8,6 @@ from source_understanding.pipeline import (
     SourceUnderstandingPipelinePolicy,
 )
 from source_understanding.profiling.regions import ContentRegionSegmenter
-from source_understanding.schemas.logical_unit import LogicalUnitType
 
 from ._corpus import FIXED_EVALUATION_TIME, SOURCES, _download
 
@@ -38,12 +37,13 @@ def main() -> None:
             for region in regions.regions
             for element_id in region.element_ids
         }
-        by_id = {element.id: element for element in understanding.document.elements}
-        order = {element.id: element.order for element in understanding.document.elements}
+        order = {
+            element.id: element.order for element in understanding.document.elements
+        }
         for unit in understanding.grouping_result.logical_units:
-            if unit.type != LogicalUnitType.LIST_GROUP:
-                continue
-            touched = {region_by_element[element_id].id for element_id in unit.element_ids}
+            touched = {
+                region_by_element[element_id].id for element_id in unit.element_ids
+            }
             if len(touched) <= 1:
                 continue
             member_orders = [order[element_id] for element_id in unit.element_ids]
@@ -58,6 +58,7 @@ def main() -> None:
                 {
                     "document_id": source["id"],
                     "unit_id": unit.id,
+                    "unit_type": unit.type.value,
                     "unit_member_ids": list(unit.element_ids),
                     "unit_metadata": unit.metadata,
                     "region_ids": sorted(touched),
