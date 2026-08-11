@@ -29,6 +29,7 @@ class SemanticGoldCompilerScopeTests(unittest.TestCase):
         negative_element = adjudicated_record(
             document=document,
             record_id="record-element",
+            batch_id="batch-element",
             target_id="e-1",
             target_kind=SemanticTargetKind.ELEMENT,
             decisions=(negative_decision(SemanticAnnotationType.DEFINITION),),
@@ -36,6 +37,7 @@ class SemanticGoldCompilerScopeTests(unittest.TestCase):
         positive_logical = adjudicated_record(
             document=document,
             record_id="record-logical",
+            batch_id="batch-logical",
             decisions=(positive_decision(SemanticAnnotationType.EXAMPLE),),
         )
         gold = SemanticGoldCompiler().compile_document(

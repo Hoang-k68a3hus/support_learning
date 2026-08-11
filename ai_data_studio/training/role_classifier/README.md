@@ -1,11 +1,11 @@
-# Role classifier training dataset format v2
+# Role classifier training dataset format v3
 
 `RoleClassifierTrainingDataset` is the canonical JSON envelope for the Phase A
 multi-label classifier. It belongs to AI Data Studio and is separate from the
 production semantic runtime and from `benchmarks/semantic_roles_v0_1/gold.json`,
 which remains an evaluation benchmark.
 
-The Phase A label order is fixed for schema version `2`:
+The Phase A label order is fixed for schema version `3`:
 
 ```text
 DEFINITION, EXAMPLE, PROCEDURE, NOTE, WARNING, EXERCISE
@@ -15,13 +15,19 @@ Each example stores:
 
 - exact `document_id`, `content_hash`, and optional `source_revision`;
 - required `source_family_id` and strongest-leakage `split_group_id` identities;
-- a source-stable `LOGICAL_UNIT` target expressed by canonical element orders;
+- a source-stable `LOGICAL_UNIT` target containing `target_id`, canonical
+  `element_ids`, and canonical `element_orders`;
 - the complete, source-grounded `SemanticRequest` used as model input, including
   reversible target/context segments;
 - zero or more labels (an empty tuple is a required, valid negative example);
 - generic `DatasetSplit` (`train`, `dev`, or `test`) identity resolved from a
   separate split manifest by the downstream exporter;
 - either `HUMAN_GOLD` or `LLM_SILVER` label provenance.
+
+The training target and request are one contract: `request.target_id` must equal
+the stored target ID and `request.element_ids` must exactly equal the stored
+canonical target element IDs. This prevents a request from being paired with a
+different logical unit that merely has the same number of elements.
 
 `LLM_SILVER` rows require the teacher provider name, version, and configuration
 hash. `test` rows reject silver labels and the dataset serializes the

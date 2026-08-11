@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from enum import StrEnum
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from ai_data_studio.schemas import (
     AdjudicationConfidence,
@@ -10,11 +12,14 @@ from ai_data_studio.schemas import (
     SemanticWorkingRecord,
     WorkingRecordStatus,
 )
-from source_understanding.schemas.context import SchemaModel
+from source_understanding.schemas.context import ContentHash, SchemaModel
 from source_understanding.schemas.document import (
     SemanticPayloadMode,
     semantic_payload_mode_for_type,
 )
+
+
+GOLD_ELIGIBILITY_POLICY_HASH_VERSION = "1"
 
 
 class GoldIneligibilityReason(StrEnum):
@@ -28,6 +33,8 @@ class GoldIneligibilityReason(StrEnum):
 
 
 class GoldEligibilityPolicy(SchemaModel):
+    name: str = Field(default="semantic-gold-strict", min_length=1, max_length=128)
+    version: str = Field(default="1", min_length=1, max_length=128)
     allowed_statuses: tuple[WorkingRecordStatus, ...] = (
         WorkingRecordStatus.PASS,
     )
@@ -41,6 +48,10 @@ class GoldEligibilityPolicy(SchemaModel):
 
     @model_validator(mode="after")
     def validate_policy(self) -> "GoldEligibilityPolicy":
+        for field_name in ("name", "version"):
+            value = getattr(self, field_name)
+            if not value.strip() or value.strip() != value:
+                raise ValueError(f"gold eligibility policy {field_name} must be trimmed")
         if not self.allowed_statuses:
             raise ValueError("gold eligibility allowed_statuses must not be empty")
         if len(self.allowed_statuses) != len(set(self.allowed_statuses)):
@@ -144,6 +155,20 @@ class GoldEligibilityEvaluator:
             eligible=not ordered_reasons,
             reasons=ordered_reasons,
         )
+
+
+def gold_eligibility_policy_hash(policy: GoldEligibilityPolicy) -> ContentHash:
+    payload = {
+        "hash_version": GOLD_ELIGIBILITY_POLICY_HASH_VERSION,
+        "policy": policy.model_dump(mode="json"),
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
 _CONFIDENCE_RANK = {

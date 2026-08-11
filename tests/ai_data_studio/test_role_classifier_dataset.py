@@ -69,14 +69,20 @@ def training_example(
     target_order: int = 0,
     teacher: RoleClassifierTeacher | None = None,
 ) -> RoleClassifierTrainingExample:
+    request_index = int(example_id.removeprefix("ex"))
+    request = logical_request(request_index)
     return RoleClassifierTrainingExample(
         example_id=example_id,
         document_id=document_id or f"doc-{example_id}",
         content_hash=content_hash,
         source_family_id=source_family_id or f"family-{example_id}",
         split_group_id=split_group_id or f"group-{example_id}",
-        target=RoleClassifierTrainingTarget(element_orders=(target_order,)),
-        request=logical_request(int(example_id.removeprefix("ex"))),
+        target=RoleClassifierTrainingTarget(
+            target_id=request.target_id,
+            element_ids=request.element_ids,
+            element_orders=(target_order,),
+        ),
+        request=request,
         labels=(SemanticAnnotationType.DEFINITION,),
         split=split,
         label_source=label_source,
@@ -119,6 +125,30 @@ class RoleClassifierDatasetTests(unittest.TestCase):
                     provider_version="1",
                     configuration_hash=TEACHER_HASH,
                 ),
+            )
+
+    def test_request_target_id_must_match_source_stable_target(self) -> None:
+        valid = training_example(
+            example_id="ex0",
+            split=RoleClassifierDatasetSplit.TRAIN,
+            label_source=RoleClassifierLabelSource.HUMAN_GOLD,
+        )
+        mismatched = valid.target.model_copy(update={"target_id": "different-lu"})
+        with self.assertRaisesRegex(ValidationError, "target_id must match"):
+            RoleClassifierTrainingExample.model_validate(
+                {**valid.model_dump(mode="python"), "target": mismatched}
+            )
+
+    def test_request_element_ids_must_match_source_stable_target(self) -> None:
+        valid = training_example(
+            example_id="ex0",
+            split=RoleClassifierDatasetSplit.TRAIN,
+            label_source=RoleClassifierLabelSource.HUMAN_GOLD,
+        )
+        mismatched = valid.target.model_copy(update={"element_ids": ("other",)})
+        with self.assertRaisesRegex(ValidationError, "element_ids must exactly match"):
+            RoleClassifierTrainingExample.model_validate(
+                {**valid.model_dump(mode="python"), "target": mismatched}
             )
 
     def test_rejects_same_source_target_across_splits(self) -> None:

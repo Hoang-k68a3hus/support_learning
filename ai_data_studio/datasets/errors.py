@@ -1,8 +1,24 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ai_data_studio.validation import ValidationReport
+
 
 class GoldCompilationError(ValueError):
     """Working annotations cannot be compiled into authoritative gold."""
+
+
+class GoldValidationError(GoldCompilationError):
+    """Working inputs failed mandatory cross-object validation."""
+
+    def __init__(self, report: "ValidationReport") -> None:
+        self.report = report
+        details = "; ".join(
+            f"{issue.code.value}: {issue.message}" for issue in report.errors
+        )
+        super().__init__(f"working inputs are not valid for gold compilation: {details}")
 
 
 class GoldEligibilityError(GoldCompilationError):
