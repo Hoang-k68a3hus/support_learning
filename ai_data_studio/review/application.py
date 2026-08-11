@@ -33,11 +33,13 @@ class ArgillaReviewApplicationContext(SchemaModel):
 class ArgillaReviewContextResolver(Protocol):
     def resolve(self, batch_id: Identifier) -> ArgillaReviewApplicationContext | None:
         """Resolve the authoritative batch/document snapshot for one review batch."""
+        ...
 
 
 class ArgillaReviewReadinessProbe(Protocol):
     def check(self) -> "ArgillaReviewReadiness":
         """Return dependency readiness without mutating application state."""
+        ...
 
 
 class ArgillaReviewReadiness(SchemaModel):
