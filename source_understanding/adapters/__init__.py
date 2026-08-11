@@ -31,6 +31,15 @@ from .markdown import (
     MarkdownDialect,
     MarkdownEncoding,
 )
+from .pdf import (
+    PDF_ADAPTER_VERSION,
+    PDF_BLOCK_RECONSTRUCTION_VERSION,
+    PDF_MEDIA_TYPE,
+    PDF_POLICY_VERSION,
+    PDF_READING_ORDER_VERSION,
+    PdfAdapter,
+    PdfAdapterPolicy,
+)
 from .plaintext import (
     PLAIN_TEXT_ADAPTER_VERSION,
     PLAIN_TEXT_MEDIA_TYPE,
@@ -64,6 +73,13 @@ __all__ = [
     "MarkdownAdapterPolicy",
     "MarkdownDialect",
     "MarkdownEncoding",
+    "PDF_ADAPTER_VERSION",
+    "PDF_BLOCK_RECONSTRUCTION_VERSION",
+    "PDF_MEDIA_TYPE",
+    "PDF_POLICY_VERSION",
+    "PDF_READING_ORDER_VERSION",
+    "PdfAdapter",
+    "PdfAdapterPolicy",
     "PLAIN_TEXT_ADAPTER_VERSION",
     "PLAIN_TEXT_MEDIA_TYPE",
     "PLAIN_TEXT_POLICY_VERSION",
