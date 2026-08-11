@@ -35,12 +35,20 @@ Safety invariants:
 
 ## M3.2 — Real Argilla synchronization
 
-The concrete integration uses the Argilla 2.x SDK public API. Review records use
-stable WorkingRecord IDs, `expected_decision_hash`, and a full `review_task_hash`.
-Existing remote tasks are updated only while no active human response exists.
-Submitted responses return through the provenance-preserving Argilla webhook
-payload, which supplies the real response `updated_at` timestamp and stable user
-identity.
+The concrete integration uses the Argilla 2.x SDK public API:
+
+- `rg.Argilla(api_url=..., api_key=...)` for the remote client;
+- `rg.Settings` + `rg.TextField` + `rg.LabelQuestion`/`rg.TextQuestion` for the
+  review dataset contract;
+- `rg.Dataset(...).create()` to create the review dataset when absent;
+- `rg.Record(id=<working_record_id>, ...)` and `dataset.records.log(...)` for
+  stable external-id upserts.
+
+CI pins `argilla==2.8.0` so SDK construction drift is caught by the test suite.
+The runtime module still imports Argilla lazily so non-review RAG workflows do
+not require the SDK merely to import `ai_data_studio`.
+
+### Runtime configuration
 
 `ArgillaReviewConfig.from_env()` reads:
 
@@ -51,6 +59,96 @@ ARGILLA_WORKSPACE           default: argilla
 ARGILLA_REVIEW_DATASET      default: support-learning-semantic-review
 ARGILLA_TIMEOUT_SECONDS     default: 60
 ARGILLA_RETRIES             default: 5
+```
+
+The API key is stored as Pydantic `SecretStr` and is not included as plain text
+in normal model representations.
+
+### Dataset contract
+
+The integration creates exactly three fields:
+
+1. `raw_text`
+2. `normalized_text`
+3. `review_context_json`
+
+and exactly three questions:
+
+1. `review_outcome` — `ACCEPT/MODIFY/CONFLICT/REJECT`;
+2. `review_decisions_json` — optional canonical `AnnotationDecision[]` JSON;
+3. `review_notes` — optional reviewer notes.
+
+Existing datasets are fail-closed validated before reuse. Field/question drift,
+outcome-label drift, or disabled extra metadata causes
+`ArgillaDatasetContractError` rather than silently writing into an incompatible
+annotation project.
+
+### Idempotent task synchronization
+
+Each exported record contains both:
+
+- `expected_decision_hash` — protects the reviewed decision revision;
+- `review_task_hash` — SHA-256 fingerprint of the full immutable
+  `HumanReviewTask`, including source/target snapshot and guideline.
+
+`ArgillaReviewRemote.sync_tasks()` therefore behaves as follows:
+
+```text
+remote id missing                    → create
+same review_task_hash                → skip
+changed review_task_hash, no review  → update
+changed review_task_hash, active UI response → fail closed
+```
+
+The last rule prevents a new local source/task revision from silently replacing
+what a human is currently reviewing.
+
+### Response synchronization and provenance
+
+The public `rg.Response` SDK object exposes user/value/status but not the review
+resource timestamp. M3.2 therefore does **not** invent `reviewed_at` during a
+polling import. The provenance-preserving import path is an Argilla webhook:
+
+```text
+response.created / response.updated webhook
+        ↓
+parse_argilla_response_webhook
+        ↓ response updated_at + stable Argilla user id + exported metadata
+ArgillaReviewOrchestrator.apply_response_webhook
+        ↓ compare review_task_hash against current local task
+HumanReviewWorkflow.apply_submission
+        ↓
+WorkingRecordRepository
+```
+
+Only webhook responses with `status=submitted` are accepted. The parser requires
+the response `updated_at` timestamp and converts the reviewer identity to the
+stable `argilla:<user-id>` form. Duplicate delivery of the same applied review is
+recognized from the review-chain terminal transition and becomes a no-op rather
+than appending a second `ReviewAttempt`.
+
+A later edit of an already imported terminal Argilla response is intentionally
+fail-closed and requires explicit reconciliation; M3.2 does not rewrite a
+previous human adjudication silently.
+
+### M3.2 orchestration example
+
+```python
+from ai_data_studio.review import (
+    ArgillaReviewConfig,
+    ArgillaReviewOrchestrator,
+    ArgillaReviewRemote,
+)
+
+config = ArgillaReviewConfig.from_env()
+remote = ArgillaReviewRemote(config)
+orchestrator = ArgillaReviewOrchestrator(repository, remote)
+
+orchestrator.export_batch(
+    batch=batch,
+    documents=documents,
+    guidelines="Apply semantic-role guideline roles-v1.",
+)
 ```
 
 ## M3.3 — Authenticated application/API boundary
