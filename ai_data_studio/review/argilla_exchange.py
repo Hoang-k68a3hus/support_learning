@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime
 from enum import StrEnum
@@ -14,6 +15,7 @@ from .errors import ReviewContractError
 
 
 ARGILLA_REVIEW_CONTRACT_VERSION = "1"
+ARGILLA_REVIEW_TASK_HASH_VERSION = "1"
 ARGILLA_OUTCOME_QUESTION = "review_outcome"
 ARGILLA_DECISIONS_QUESTION = "review_decisions_json"
 ARGILLA_NOTES_QUESTION = "review_notes"
@@ -99,6 +101,15 @@ def argilla_settings_spec() -> ArgillaReviewSettingsSpec:
     )
 
 
+def argilla_review_task_hash(task: HumanReviewTask) -> ContentHash:
+    payload = {
+        "hash_version": ARGILLA_REVIEW_TASK_HASH_VERSION,
+        "task": task.model_dump(mode="json"),
+    }
+    digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+    return f"sha256:{digest}"
+
+
 def task_to_argilla_record(task: HumanReviewTask) -> JsonObject:
     record = task.record
     context = {
@@ -117,6 +128,7 @@ def task_to_argilla_record(task: HumanReviewTask) -> JsonObject:
         },
         "metadata": {
             "review_contract_version": ARGILLA_REVIEW_CONTRACT_VERSION,
+            "review_task_hash": argilla_review_task_hash(task),
             "record_id": record.record_id,
             "batch_id": record.batch_id,
             "guideline_version": task.guideline_version,
@@ -145,6 +157,10 @@ def response_to_submission(
         decisions=decisions,
         notes=response.notes,
     )
+
+
+def parse_decisions_json(value: str | None) -> tuple[AnnotationDecision, ...] | None:
+    return _parse_decisions(value)
 
 
 def _parse_decisions(value: str | None) -> tuple[AnnotationDecision, ...] | None:
