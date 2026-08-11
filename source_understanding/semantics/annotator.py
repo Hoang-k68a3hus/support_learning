@@ -27,6 +27,24 @@ _PROVIDER_CONFIGURATION_ADAPTER = TypeAdapter(JsonObject)
 
 class SemanticAnnotationError(ValueError):
     pass
+
+
+def _metadata_string_list(metadata: JsonObject, key: str) -> list[str]:
+    value = metadata.get(key, [])
+    if not isinstance(value, list):
+        raise SemanticAnnotationError(
+            f'semantic request metadata {key!r} must be a list of strings'
+        )
+    result: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise SemanticAnnotationError(
+                f'semantic request metadata {key!r} must contain only strings'
+            )
+        result.append(item)
+    return result
+
+
 _DEFAULT_TYPES = tuple((annotation_type for annotation_type in SemanticAnnotationType if annotation_type != SemanticAnnotationType.CUSTOM))
 
 class SemanticAnnotationPolicy(SchemaModel):
@@ -260,7 +278,7 @@ class SemanticAnnotator:
         if collision:
             raise SemanticAnnotationError(f'provider candidate metadata uses reserved semantic keys: {sorted(collision)}')
         payload_mode = candidate.payload_mode or SemanticPayloadMode.LABEL_ONLY
-        metadata = {**candidate_metadata, 'semantic_provider': self._provider_name, 'semantic_provider_version': self._provider_version, 'semantic_provider_configuration_hash': self._provider_configuration_hash, 'semantic_annotator_version': self.version, 'semantic_annotator_policy_hash': self._policy_configuration_hash, 'semantic_provider_protocol_version': self._provider_capabilities.protocol_version, 'request_target_kind': request.target_kind.value, 'semantic_request_language': request.language or 'und', 'semantic_capability': capability_name, 'semantic_payload_mode': payload_mode.value, 'semantic_request_truncated': bool(request.metadata.get('request_truncated', False)), 'semantic_truncated_element_ids': list(request.metadata.get('truncated_element_ids', [])), 'semantic_omitted_target_element_ids': list(request.metadata.get('omitted_target_element_ids', [])), 'semantic_omitted_context_element_ids': list(request.metadata.get('omitted_context_element_ids', []))}
+        metadata = {**candidate_metadata, 'semantic_provider': self._provider_name, 'semantic_provider_version': self._provider_version, 'semantic_provider_configuration_hash': self._provider_configuration_hash, 'semantic_annotator_version': self.version, 'semantic_annotator_policy_hash': self._policy_configuration_hash, 'semantic_provider_protocol_version': self._provider_capabilities.protocol_version, 'request_target_kind': request.target_kind.value, 'semantic_request_language': request.language or 'und', 'semantic_capability': capability_name, 'semantic_payload_mode': payload_mode.value, 'semantic_request_truncated': bool(request.metadata.get('request_truncated', False)), 'semantic_truncated_element_ids': _metadata_string_list(request.metadata, 'truncated_element_ids'), 'semantic_omitted_target_element_ids': _metadata_string_list(request.metadata, 'omitted_target_element_ids'), 'semantic_omitted_context_element_ids': _metadata_string_list(request.metadata, 'omitted_context_element_ids')}
         if candidate.ontology is not None:
             metadata['semantic_ontology_namespace'] = candidate.ontology.namespace
             metadata['semantic_ontology_label'] = candidate.ontology.label
