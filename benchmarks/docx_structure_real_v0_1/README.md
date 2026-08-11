@@ -6,61 +6,61 @@ It is intentionally separate from `benchmarks/docx_structure_v0_1/`, which conta
 
 ## Scope
 
-The real pilot currently contains five public Microsoft Word documents from official UK government sources. `sources.json` pins the exact URL, byte length and SHA-256 source revision used by the benchmark.
+The real pilot contains five public Microsoft Word documents from official UK government sources. `sources.json` pins the exact URL, byte length and SHA-256 source revision used by the benchmark.
 
 The selected landing pages state Open Government Licence v3.0. That does not create a blanket claim over third-party material that may be embedded in a source document; source licensing must still be reviewed before redistributing document bytes elsewhere.
 
-The benchmark currently downloads the exact public source revision at execution time and verifies the pinned digest. The source documents are not vendored into this repository.
+The benchmark downloads the exact public source revision at execution time and verifies the pinned digest. The source documents are not vendored into this repository.
 
 ## Gold workflow
 
 The evaluation oracle is **not** the production DOCX adapter.
 
-The intended workflow is:
-
 ```text
 public DOCX source
     ↓
-independent OOXML audit (`source_audit.py`)
-    ↓
-candidate structural observations
+source-document inspection + independent OOXML audit
     ↓
 review / adjudication
     ↓
-`gold_contracts.json` (frozen)
+FINAL reviewed structural gold
     ↓
-production DOCX adapter + pipeline
+production DOCX adapter + source-understanding pipeline
     ↓
-comparison against frozen contracts
+comparison against frozen reviewed gold
 ```
 
-`source_audit.py` is an annotation assistant. It is deliberately independent of `DocxAdapter`, but it is **not evaluated dynamically as the gold oracle**. Changing audit code must not silently rewrite benchmark expectations. Adjudicated expectations live in `gold_contracts.json` and change only through an explicit benchmark-gold review.
+`source_audit.py` is an annotation assistant. It is deliberately independent of `DocxAdapter`, but it is not automatically gold. `production_prediction` in an adjudication bundle is also not gold. A disagreement is resolved against the pinned source document and independent source evidence.
+
+The older `gold_contracts.json` is retained as a frozen partial compatibility contract. SU4.1 reviewed L2/L3 gold is stored separately in `reviewed_gold/*.review.json`; those files preserve the FINAL review status, source/bundle fingerprints, declared coverage, decision notes and validated `GoldDocumentStructure` in one artifact.
 
 ## Evaluation layers
 
-The real pilot reports errors by structural layer:
+- **L0 — Source fidelity**: pinned revision, tables/rows/cells, notes, referenced stories and explicit structural-loss diagnostics. The existing frozen contract and real-corpus validation cover this layer.
+- **L1 — Element understanding**: SU4.1 marks this `PARTIAL`; source-near facts needed to align reviewed L2/L3 targets are retained, and explicitly reviewed disagreements remain visible.
+- **L2 — Structural grouping**: SU4.1 has `FULL` review coverage for the declared integrity-unit types in each of the five documents, including visible/native list groups, source-native table blocks and the labelled key-value form group where applicable.
+- **L3 — Document structure**: SU4.1 has `FULL` review coverage for the declared context hierarchy, full-cover modality regions, supported positive structural relations, structure mode and structural readiness.
 
-- **L0 — Source fidelity**: pinned source revision, tables/rows/cells, notes, referenced header/footer stories, structural-loss diagnostics and other source-preservation contracts.
-- **L1 — Element understanding**: currently frozen heading/level and Word navigation-role expectations.
-- **L2 — Structural grouping**: LogicalUnit/integrity grouping. Full real-document gold is not yet adjudicated in V0.1.
-- **L3 — Document structure**: hierarchy/regions/relations/readiness. V0.1 currently freezes only selected readiness expectations; full hierarchy/region/relation gold remains future work.
+`FULL` means full coverage of the **declared SU4.1 scope on these five pinned documents**. It does not mean population-level accuracy and does not make this a statistically representative benchmark.
 
-The coverage flags in `gold_contracts.json` are part of the benchmark contract. A green V0.1 result therefore means **the frozen partial contracts pass**, not that all structural decisions across the documents are correct. In particular, `errors_by_level.L2_structural_grouping == 0` while L2 coverage is `NOT_YET_FULLY_ADJUDICATED` must not be interpreted as a measured L2 accuracy of 100%.
+## Context/source-fact separation
+
+A ContextNode is inferred structure; a `GoldElement` is source-near representation. They must not be collapsed into one label.
+
+Native `TITLE`/`HEADING` anchors are preferred. A non-heading source element may anchor a reviewed ContextNode only when source rendering plus independent structural evidence makes the role defensible—for example, a numbered legal clause that functions as an outline section. The source-near element remains `PARAGRAPH` or `LIST_ITEM`; adjudication does not rewrite it into `HEADING` merely to make hierarchy convenient.
 
 ## TOC / outline policy
 
 Word outline metadata does not automatically mean a paragraph is a canonical content heading.
 
-Built-in table-of-contents styles are treated as navigation material:
+Built-in table-of-contents styles are navigation material:
 
 - `TOCHeading` / `TOC Heading` → `docx_navigation_role = "toc_title"`
 - `TOC1` through `TOC9` → `docx_navigation_role = "toc_entry"`
 
-Their style and outline observations are preserved, but they remain source `PARAGRAPH` elements and do not become canonical document-hierarchy nodes merely because a TOC style carries `outlineLvl`.
+Their source style/outline observations are preserved, but they remain source `PARAGRAPH` elements and do not become canonical content-hierarchy nodes merely because a TOC style carries `outlineLvl`.
 
-This rule was adjudicated after the real flexible-working policy exposed `Contents` with style `TOCHeading`. Treating every outline-bearing paragraph as a content heading would incorrectly insert navigation structure into the document hierarchy. The frozen L1 contract includes the observed TOC title and TOC entries for the two real pilot documents that contain them.
-
-## Running
+## Running the frozen partial compatibility benchmark
 
 The benchmark requires internet access because it verifies the pinned public source revisions:
 
@@ -70,24 +70,32 @@ python -m benchmarks.docx_structure_real_v0_1.run_benchmark \
   --report /tmp/docx-structure-real-v0.1-report.json
 ```
 
-For source inspection during annotation/adjudication:
+## Running the SU4.1 reviewed benchmark
+
+```bash
+python -m benchmarks.docx_structure_real_v0_1.run_reviewed_benchmark \
+  --report /tmp/docx-structure-real-su4.1-report.json
+```
+
+Do **not** add `--fail-on-error` merely to get a green baseline. The purpose of SU4.1 is to expose production disagreements with frozen reviewed gold. After an implementation fix is independently justified, the strict option can be used as a regression gate:
+
+```bash
+python -m benchmarks.docx_structure_real_v0_1.run_reviewed_benchmark \
+  --fail-on-error
+```
+
+The report contains the existing document-structure evaluator metrics plus reviewed-benchmark extensions for ContextNode anchor detection/level accuracy and LogicalUnit metrics broken down by evaluated type so large table blocks cannot hide list/key-value failures.
+
+## Source inspection / adjudication commands
+
+For independent source inspection:
 
 ```bash
 python -m benchmarks.docx_structure_real_v0_1.source_audit \
   --source real-docx-01-flexible-policy
 ```
 
-## L2/L3 adjudication artifacts
-
-Use the adjudication command when preparing full LogicalUnit, hierarchy,
-region, or structural-relation gold. It downloads the pinned revision once,
-verifies its byte length and SHA-256, and then records two deliberately separate
-views of those exact bytes:
-
-1. independent OOXML observations from `source_audit.py`;
-2. the current production parser output, clearly labelled as a prediction.
-
-Create a bundle and an explicitly non-gold review template:
+Create an adjudication bundle and a DRAFT review template:
 
 ```bash
 python -m benchmarks.docx_structure_real_v0_1.adjudication create \
@@ -96,11 +104,7 @@ python -m benchmarks.docx_structure_real_v0_1.adjudication create \
   --decision-template /tmp/real-docx-01.review.json
 ```
 
-The generated review template has `status: DRAFT` and `gold: null`. A reviewer
-must inspect the source document, use benchmark-only ids, fill a valid
-`GoldDocumentStructure`, state the exact L2/L3 coverage, and record decisions.
-The production ids in the bundle are debugging aids and must never be copied
-into gold. See `ADJUDICATION_GUIDELINE.md` for the field-level workflow.
+A reviewer must inspect the source document, use benchmark-only ids, fill a valid `GoldDocumentStructure`, state exact coverage and record decisions. Production ids in the bundle are debugging aids and must never be copied into gold. See `ADJUDICATION_GUIDELINE.md`.
 
 Validate a completed decision:
 
@@ -110,32 +114,32 @@ python -m benchmarks.docx_structure_real_v0_1.adjudication validate \
   --decision /tmp/real-docx-01.review.json
 ```
 
-Export the reviewed per-document annotation to a new file for code review:
+`export-reviewed-gold` still refuses to overwrite `gold_contracts.json`; reviewed-gold integration is a separate code-review step.
 
-```bash
-python -m benchmarks.docx_structure_real_v0_1.adjudication export-reviewed-gold \
-  --bundle /tmp/real-docx-01.bundle.json \
-  --decision /tmp/real-docx-01.review.json \
-  --output /tmp/real-docx-01.gold.json
-```
+## SU4.1 adjudication findings encoded in gold
 
-The command refuses to overwrite files and specifically refuses to write
-`gold_contracts.json`. Export is not benchmark integration: the reviewed file
-must still be inspected, versioned, and wired into evaluation in a separate
-gold-contract change. This prevents a production run or an unreviewed draft from
-silently changing the oracle.
+The reviewed set intentionally preserves disagreements with the current implementation. Examples include:
+
+- one visually continuous nested flexible-working list is a single gold `LIST_GROUP` even though Word changes `numId` internally;
+- `numId=0` in the academy form disables numbering and therefore does not make those paragraphs gold `LIST_ITEM`s;
+- the IVD form begins with a labelled `KEY_VALUE_GROUP`, not generic narrative text;
+- the EPS guidance has a document-title/section hierarchy even though native heading levels are irregular;
+- the contractor licence uses numbered legal clauses as defensible inferred context anchors while their source-near element type remains `LIST_ITEM`.
+
+These are oracle decisions based on source inspection plus independent evidence, not post-hoc changes made to fit production.
 
 ## CI policy
 
 Network-dependent corpus evaluation is intentionally separated from deterministic required CI.
 
-- `source-understanding-ci.yml` runs unit tests and the generated reproducible DOCX benchmark without depending on external document hosts.
+- `source-understanding-ci.yml` runs unit tests and generated deterministic benchmarks without depending on external document hosts.
 - `source-understanding-real-docx.yml` runs the pinned real corpus on relevant pull requests, weekly schedule and manual dispatch.
-- On a pull request, the external-corpus benchmark step is non-blocking so a source-host/network outage cannot masquerade as a deterministic code regression. Review the benchmark JSON/exit status in its log rather than treating a green workflow badge alone as evidence that all real contracts passed.
-- Scheduled/manual real-corpus runs remain strict and fail when a frozen contract fails.
+- The frozen partial benchmark remains strict on scheduled/manual runs.
+- The SU4.1 reviewed benchmark should run as a measured comparison and publish its report; until the known gold disagreements are fixed, its non-zero structural disagreement count is expected evidence rather than a reason to change the oracle.
+- A source-host/network outage must not be presented as a parser regression.
 
 ## Current limitations
 
-V0.1 is a **five-document, assistant-adjudicated, partial real-world structural contract**, not a statistically meaningful accuracy benchmark and not a human double-annotated corpus.
+SU4.1 is a **five-document, assistant-adjudicated real-world structural benchmark** with full declared L2/L3 coverage, not a human double-annotated corpus and not a statistically meaningful estimate of general real-world accuracy.
 
-The next real-data milestone is to adjudicate full element/grouping/hierarchy/region/relation gold for these five documents, then expand coverage toward roughly 30 diverse DOCX files before making a real-world accuracy claim.
+The next milestone is to use the reviewed metrics/error matrix to fix the weakest structural stage without changing gold, rerun the same frozen five documents, and then expand reviewed coverage toward roughly 30 diverse DOCX files before making broader accuracy claims.

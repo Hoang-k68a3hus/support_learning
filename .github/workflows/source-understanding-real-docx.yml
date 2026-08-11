@@ -16,7 +16,7 @@ permissions:
 jobs:
   real-docx:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,3 +29,14 @@ jobs:
       - name: Run pinned real-world DOCX frozen-contract benchmark
         continue-on-error: ${{ github.event_name == 'pull_request' }}
         run: python -m benchmarks.docx_structure_real_v0_1.run_benchmark --fail-on-error --report /tmp/docx-structure-real-v0.1-report.json
+      - name: Run SU4.1 reviewed structural benchmark
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        run: python -m benchmarks.docx_structure_real_v0_1.run_reviewed_benchmark --report /tmp/docx-structure-real-su4.1-report.json
+      - name: Upload real-DOCX benchmark reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-docx-structure-reports
+          path: /tmp/docx-structure-real-*.json
+          if-no-files-found: warn
+          retention-days: 14
