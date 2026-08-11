@@ -14,14 +14,20 @@ class DocxPostprocessMixin:
 
     Numbering metadata is not sufficient to make a heading a list member. Word
     documents in the wild can attach numPr to heading styles (including numId=0).
-    Rebuild only list integrity runs from contiguous LIST_ITEM elements so an
-    explicit heading always remains a structural boundary while retaining its
-    numbering metadata as a source observation.
+    Rebuild list integrity from contiguous LIST_ITEM elements while retaining each
+    element's original numbering_id as a source observation.
+
+    A change of Word ``numId`` alone is not a trustworthy logical-list boundary:
+    authoring tools routinely switch numbering definitions inside one visible
+    list. Contiguous fragments may therefore share one integrity run when their
+    observed numbering level/format remain compatible. Headings and all non-list
+    material still terminate the run.
     """
 
     def _normalize_list_integrity(self, emitter: Emitter) -> None:
-        current_key: tuple[str, str, str] | None = None
+        current_part_zone: tuple[str, str] | None = None
         current_group: str | None = None
+        previous_numbering: tuple[str, int | None, str | None] | None = None
         rewritten = []
 
         for raw in emitter.elements:
@@ -32,23 +38,45 @@ class DocxPostprocessMixin:
                 num_id = attributes.get("numbering_id")
                 part = attributes.get("opc_part")
                 zone = attributes.get(SOURCE_ZONE_ATTRIBUTE) or attributes.get("zone")
-                if isinstance(num_id, str) and isinstance(part, str) and isinstance(zone, str):
-                    key = (part, zone, num_id)
-                    if current_key != key or current_group is None:
+                level = attributes.get("numbering_level")
+                number_format = attributes.get("number_format")
+                if (
+                    isinstance(num_id, str)
+                    and num_id != "0"
+                    and isinstance(part, str)
+                    and isinstance(zone, str)
+                    and (level is None or isinstance(level, int))
+                    and (number_format is None or isinstance(number_format, str))
+                ):
+                    part_zone = (part, zone)
+                    numbering = (num_id, level, number_format)
+                    compatible = (
+                        current_part_zone == part_zone
+                        and current_group is not None
+                        and previous_numbering is not None
+                        and self._compatible_contiguous_numbering(
+                            previous_numbering,
+                            numbering,
+                        )
+                    )
+                    if not compatible:
                         current_group = stable_group_id(
                             "list", part, zone, num_id, str(raw.order)
                         )
-                    current_key = key
+                    current_part_zone = part_zone
+                    previous_numbering = numbering
                     attributes[INTEGRITY_GROUP_ID_ATTRIBUTE] = current_group
                     attributes.pop(INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE, None)
                 else:
-                    current_key = None
+                    current_part_zone = None
                     current_group = None
+                    previous_numbering = None
                     attributes.pop(INTEGRITY_GROUP_ID_ATTRIBUTE, None)
                     attributes.pop(INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE, None)
             else:
-                current_key = None
+                current_part_zone = None
                 current_group = None
+                previous_numbering = None
                 if type_hint == "HEADING":
                     attributes.pop(INTEGRITY_GROUP_ID_ATTRIBUTE, None)
                     attributes.pop(INTEGRITY_PARENT_GROUP_ID_ATTRIBUTE, None)
@@ -59,3 +87,20 @@ class DocxPostprocessMixin:
                 rewritten.append(raw.model_copy(update={"attributes": attributes}))
 
         emitter.elements[:] = rewritten
+
+    @staticmethod
+    def _compatible_contiguous_numbering(
+        previous: tuple[str, int | None, str | None],
+        current: tuple[str, int | None, str | None],
+    ) -> bool:
+        previous_id, previous_level, previous_format = previous
+        current_id, current_level, current_format = current
+        if previous_id == current_id:
+            return True
+        if previous_level is None or current_level is None:
+            return False
+        if previous_level != current_level:
+            return False
+        if previous_format is None or current_format is None:
+            return False
+        return previous_format.casefold() == current_format.casefold()
