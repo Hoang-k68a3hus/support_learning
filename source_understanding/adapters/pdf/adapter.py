@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 
 from pydantic import Field
 
@@ -16,13 +17,14 @@ from ..base import (
 from .backend import PdfBackendError, PyMuPdfNativeBackend
 from .emit import PdfRawElementEmitter
 from .metadata import PdfMetadataBuilder
-from .order import PdfReadingOrderPolicy, PdfReadingOrderResolver
+from .order_v3 import PdfReadingOrderPolicyV3, PdfReadingOrderResolverV3
+from .visibility import PdfVisibilityPolicy, PdfVisibilityResolver
 
 
-PDF_ADAPTER_VERSION = "1"
-PDF_POLICY_VERSION = "2"
+PDF_ADAPTER_VERSION = "2"
+PDF_POLICY_VERSION = "3"
 PDF_MEDIA_TYPE = "application/pdf"
-PDF_READING_ORDER_VERSION = "geometric-columns-v2"
+PDF_READING_ORDER_VERSION = "geometric-columns-v3"
 PDF_BLOCK_RECONSTRUCTION_VERSION = "textpage-block-v1"
 
 
@@ -49,12 +51,17 @@ class PdfAdapterPolicy(SchemaModel):
     aligned_row_gap_ratio: float = Field(default=0.01, ge=0.0, le=0.25)
     aligned_layout_many_rows: int = Field(default=6, ge=2, le=100)
     aligned_layout_multi_cell_rows: int = Field(default=3, ge=1, le=100)
+    minimum_column_width_balance_ratio: float = Field(default=0.35, ge=0.0, le=1.0)
+    minimum_column_block_count: int = Field(default=2, ge=2, le=100)
+    minimum_trace_overlap_ratio: float = Field(default=0.50, gt=0.0, le=1.0)
+    minimum_occlusion_coverage_ratio: float = Field(default=0.95, gt=0.0, le=1.0)
+    minimum_fill_opacity: float = Field(default=0.98, ge=0.0, le=1.0)
     bbox_tolerance_points: float = Field(default=1.0, ge=0.0, le=10.0)
     preserve_span_metadata: bool = True
 
 
 class PdfAdapter:
-    """Preserve native PDF spatial text facts before structural interpretation."""
+    """Preserve visible native PDF spatial text facts before structural interpretation."""
 
     name = "pdf-native-pymupdf"
     version = PDF_ADAPTER_VERSION
@@ -69,8 +76,8 @@ class PdfAdapter:
     ) -> None:
         self.policy = policy if policy is not None else PdfAdapterPolicy()
         self._backend = backend
-        self._order_resolver = PdfReadingOrderResolver(
-            PdfReadingOrderPolicy(
+        self._order_resolver = PdfReadingOrderResolverV3(
+            PdfReadingOrderPolicyV3(
                 full_width_ratio=self.policy.full_width_ratio,
                 minimum_column_gap_ratio=self.policy.minimum_column_gap_ratio,
                 minimum_vertical_overlap_ratio=self.policy.minimum_vertical_overlap_ratio,
@@ -82,6 +89,19 @@ class PdfAdapter:
                 aligned_row_gap_ratio=self.policy.aligned_row_gap_ratio,
                 aligned_layout_many_rows=self.policy.aligned_layout_many_rows,
                 aligned_layout_multi_cell_rows=self.policy.aligned_layout_multi_cell_rows,
+                minimum_column_width_balance_ratio=(
+                    self.policy.minimum_column_width_balance_ratio
+                ),
+                minimum_column_block_count=self.policy.minimum_column_block_count,
+            )
+        )
+        self._visibility_resolver = PdfVisibilityResolver(
+            PdfVisibilityPolicy(
+                minimum_trace_overlap_ratio=self.policy.minimum_trace_overlap_ratio,
+                minimum_occlusion_coverage_ratio=(
+                    self.policy.minimum_occlusion_coverage_ratio
+                ),
+                minimum_fill_opacity=self.policy.minimum_fill_opacity,
             )
         )
         self._emitter = PdfRawElementEmitter(
@@ -111,6 +131,7 @@ class PdfAdapter:
             page_metadata: list[dict[str, object]] = []
             pages_with_native_text = 0
             pages_with_images = 0
+            pages_with_occluded_text = 0
 
             for page_index in range(page_count):
                 try:
@@ -122,6 +143,41 @@ class PdfAdapter:
                     raise AdapterError(
                         f"failed to inspect PDF page {page_index + 1}: {exc}"
                     ) from exc
+
+                visible_blocks, occluded_blocks = self._visibility_resolver.partition(
+                    page,
+                    observation.native_text_blocks,
+                )
+                if occluded_blocks:
+                    pages_with_occluded_text += 1
+                    observation = replace(
+                        observation,
+                        native_text_blocks=visible_blocks,
+                        occluded_text_blocks=occluded_blocks,
+                    )
+                    diagnostics.append(
+                        AdapterDiagnostic(
+                            code="PDF_OCCLUDED_TEXT_EXCLUDED_M1",
+                            message=(
+                                f"PDF page {observation.page_number} contains native text "
+                                "objects that are fully covered by later opaque paint. M1 "
+                                "keeps the source audit metadata but excludes those objects "
+                                "from visible RawElement text"
+                            ),
+                            level=AdapterDiagnosticLevel.INFO,
+                            part=f"page:{observation.page_number}",
+                            metadata={
+                                "page": observation.page_number,
+                                "occluded_block_count": len(occluded_blocks),
+                                "native_block_numbers": [
+                                    item.native_block_number for item in occluded_blocks
+                                ],
+                                "coverage_ratios": [
+                                    item.coverage_ratio for item in occluded_blocks
+                                ],
+                            },
+                        )
+                    )
 
                 aligned_layout = self._order_resolver.looks_aligned_layout(
                     observation.native_text_blocks,
@@ -180,8 +236,8 @@ class PdfAdapter:
                         AdapterDiagnostic(
                             code="PDF_PAGE_NO_NATIVE_TEXT",
                             message=(
-                                f"PDF page {observation.page_number} produced no native text "
-                                "blocks; OCR is intentionally outside M1"
+                                f"PDF page {observation.page_number} produced no visible "
+                                "native text blocks; OCR is intentionally outside M1"
                             ),
                             affects_structural_completeness=True,
                             part=f"page:{observation.page_number}",
@@ -238,6 +294,7 @@ class PdfAdapter:
                 page_metadata=page_metadata,
                 pages_with_native_text=pages_with_native_text,
                 pages_with_images=pages_with_images,
+                pages_with_occluded_text=pages_with_occluded_text,
                 diagnostics=diagnostics,
                 reading_order_version=PDF_READING_ORDER_VERSION,
                 block_reconstruction_version=PDF_BLOCK_RECONSTRUCTION_VERSION,
