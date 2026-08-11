@@ -316,7 +316,11 @@ class LogicalGroupBuilder:
                     cursor -= 1
                     continue
                 text = candidate.text
-                return bool(text and text.rstrip().endswith(":"))
+                return bool(
+                    candidate.type == ElementType.LIST_ITEM
+                    and text
+                    and text.rstrip().endswith(":")
+                )
             return False
 
         def can_cross(boundary_index: int) -> bool:
@@ -384,7 +388,7 @@ class LogicalGroupBuilder:
                         "evidence_rule": (
                             "parenthesized_enumeration"
                             if parenthesized
-                            else "introduced_numbering_sequence"
+                            else "introduced_native_list_subsequence"
                         ),
                         "signal_ids": signal_ids,
                         "marker_count": marker_count,
