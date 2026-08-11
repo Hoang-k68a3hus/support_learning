@@ -13,7 +13,6 @@ from .issues import (
     ValidationSeverity,
 )
 from .review import validate_review_chain, validate_review_guideline
-from .working_record import WorkingRecordValidator
 from .split import (
     DatasetSplitValidator,
     InvalidDatasetSplitError,
@@ -21,6 +20,7 @@ from .split import (
     resolve_record_splits,
     working_source_target_key,
 )
+from .working_record import WorkingRecordValidator
 
 __all__ = [
     "WORKING_ELEMENT_SNAPSHOT_HASH_VERSION",
