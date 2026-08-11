@@ -49,9 +49,16 @@ class DocxTextMixin:
     ) -> tuple[str | None, int]:
         direct = ppr.find("w:numPr", NS) if ppr is not None else None
         num_id, ilvl = self._num_pr(direct)
+        if num_id == "0":
+            # In WordprocessingML, numId=0 explicitly suppresses numbering for
+            # this paragraph. Do not inherit a list style or expose it as an
+            # active LIST_ITEM downstream.
+            return None, 0
         if num_id is not None:
             return num_id, ilvl
         if style_def is not None and style_def.num_id is not None:
+            if style_def.num_id == "0":
+                return None, 0
             return style_def.num_id, style_def.ilvl or 0
         return None, 0
 
