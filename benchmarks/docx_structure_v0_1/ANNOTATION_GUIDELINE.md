@@ -76,15 +76,22 @@ Nested table blocks are separate LogicalUnits. Parent/child membership is repres
 
 ## 5. Context hierarchy
 
-A gold ContextNode is anchored to a gold heading/title element.
+A gold `ContextNode` must be anchored to a source-observed `GoldElement`. The anchor element type and the inferred structural role are separate layers.
 
-Annotate:
+Prefer native `TITLE` / `HEADING` anchors when the source provides them. A non-heading source element may anchor a ContextNode only when **strong independent structural evidence** makes the role defensible, for example:
 
-- node `type`;
-- heading `level` where known;
-- canonical `parent_id`.
+- a rendered standalone document title/section label with stable layout evidence;
+- an explicit numbered legal clause that behaves as an outline section rather than an ordinary bullet item;
+- another source-observed structural marker whose context role is corroborated by source inspection and independent audit evidence.
 
-Do not add synthetic hierarchy nodes merely to make levels contiguous. If the source defensibly jumps from level 1 to level 3, gold should preserve that fact and the expected hierarchy policy should be adjudicated explicitly.
+When a non-heading element anchors inferred structure:
+
+- keep its `GoldElement.type` source-near; do not rewrite a `PARAGRAPH` or `LIST_ITEM` into `HEADING` merely because it anchors context;
+- record the inference/rationale in adjudication metadata or decision notes;
+- require evidence stronger than bold text, font size, or a single lexical guess;
+- never promote arbitrary list items, labels, or body paragraphs into hierarchy simply to make the tree look complete.
+
+Annotate node `type`, defensible `level`, and canonical `parent_id`. Do not add synthetic hierarchy nodes merely to make levels contiguous. If the source defensibly jumps from level 1 to level 3, gold should preserve that fact and the expected hierarchy policy should be adjudicated explicitly.
 
 ## 6. ContentRegion rules
 
@@ -145,6 +152,8 @@ For every real-document disagreement added after this synthetic pilot, record:
 - reason;
 - guideline revision if the rule was unclear.
 
+A production disagreement is evidence to investigate, not a reason to move gold toward the implementation.
+
 ## 11. What V0.1 does not annotate
 
 - topics/concepts/entities;
@@ -159,4 +168,4 @@ For every real-document disagreement added after this synthetic pilot, record:
 
 The five generated pilot files validate the **evaluation machinery** and exercise known OOXML structures. They must not be used to claim real-world accuracy.
 
-Before publishing accuracy claims, build a separately versioned human-reviewed real DOCX set drawn from multiple document families and report results separately from the synthetic pilot.
+Before publishing accuracy claims, build a separately versioned reviewed real DOCX set drawn from multiple document families and report results separately from the synthetic pilot.

@@ -1,0 +1,40 @@
+{
+  "benchmark": "docx_structure_real_v0_1",
+  "benchmark_version": "0.1",
+  "schema_version": "0.1",
+  "adjudication_version": "SU4.1-2026-08-12",
+  "reviewer_model": "GPT-5.6 Sol",
+  "review_policy": "source inspection + independent OOXML audit; production comparison only after/alongside adjudication and never as oracle",
+  "documents": [
+    {
+      "id": "real-docx-01-flexible-policy",
+      "review_file": "real-docx-01-flexible-policy.review.json",
+      "source_sha256": "sha256:6df2c0ca6589ea053456cc7568e8e7611880f55dad00a62d517d7739a265cdc5",
+      "bundle_sha256": "sha256:b76e9cf0d3a22beedcadfa1d88f9e51b7c30365c5db9b2f0aaf5d78297f96d07"
+    },
+    {
+      "id": "real-docx-02-academy-form",
+      "review_file": "real-docx-02-academy-form.review.json",
+      "source_sha256": "sha256:18634e11e24c3e9c1b67e6f7f51132ab1fe953f30f6f857df36cfe9badf70448",
+      "bundle_sha256": "sha256:4de39bc20a81a647098d6d7cb78b3f9066cacc3ceb5273fdbbb13e7a123cf5e4"
+    },
+    {
+      "id": "real-docx-03-ivd-tabular",
+      "review_file": "real-docx-03-ivd-tabular.review.json",
+      "source_sha256": "sha256:51994b23c89a5aaf4e017596990300bfa248d05690c978c5fb4d050a85ffddeb",
+      "bundle_sha256": "sha256:9948d9a025bd91f84708eccb32dab75ee0577f899a75657d4e96ee318298432a"
+    },
+    {
+      "id": "real-docx-04-eps-guidance",
+      "review_file": "real-docx-04-eps-guidance.review.json",
+      "source_sha256": "sha256:eac3f63dd367e1f933051522eb3461a71cbddeda229410ccee49fa19095b9a60",
+      "bundle_sha256": "sha256:2a96fac10545f728b0040ff3757268d7bc43440a82f076ccd0bd2abd695a23c9"
+    },
+    {
+      "id": "real-docx-05-contractor-licence",
+      "review_file": "real-docx-05-contractor-licence.review.json",
+      "source_sha256": "sha256:c4f4ed0e853b38cd21d1bc5a5247b91d56aacddf1bd025888ea3338ff9798dfa",
+      "bundle_sha256": "sha256:ebeac394a1708cffd2d84dca8503723e88965e7a99ca421f6af25ac2c205e2ba"
+    }
+  ]
+}
