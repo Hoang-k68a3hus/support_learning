@@ -55,28 +55,31 @@ class _FakeSettings:
 
 
 class _FakeTextField:
-    def __init__(self, *, name, title, required, use_markdown) -> None:
+    def __init__(self, *, name, title, required, use_markdown, client) -> None:
         self.name = name
         self.title = title
         self.required = required
         self.use_markdown = use_markdown
+        self.client = client
 
 
 class _FakeLabelQuestion:
-    def __init__(self, *, name, title, labels, required) -> None:
+    def __init__(self, *, name, title, labels, required, client) -> None:
         self.name = name
         self.title = title
         self.labels = tuple(labels)
         self.required = required
+        self.client = client
 
 
 class _FakeTextQuestion:
-    def __init__(self, *, name, title, required, use_markdown) -> None:
+    def __init__(self, *, name, title, required, use_markdown, client) -> None:
         self.name = name
         self.title = title
         self.required = required
         self.use_markdown = use_markdown
         self.labels = ()
+        self.client = client
 
 
 class _FakeRecord:
@@ -197,7 +200,11 @@ class ArgillaRemoteTests(unittest.TestCase):
     def test_real_argilla_2_8_settings_and_record_construction(self) -> None:
         import argilla as rg
 
-        settings = build_argilla_settings(rg, guidelines="Review semantic roles.")
+        settings = build_argilla_settings(
+            rg,
+            guidelines="Review semantic roles.",
+            client=SimpleNamespace(),
+        )
         self.assertEqual(
             tuple(field.name for field in settings.fields),
             ("raw_text", "normalized_text", "review_context_json"),
@@ -286,6 +293,7 @@ class ArgillaRemoteTests(unittest.TestCase):
                         title="Wrong",
                         required=True,
                         use_markdown=False,
+                        client=self.client,
                     )
                 ],
                 questions=[],
