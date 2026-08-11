@@ -4,6 +4,11 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "17 3 * * 1"
+  push:
+    paths:
+      - "source_understanding/**"
+      - "benchmarks/docx_structure_real_v0_1/**"
+      - ".github/workflows/source-understanding-real-docx.yml"
   pull_request:
     paths:
       - "source_understanding/**"
