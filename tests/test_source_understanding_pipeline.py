@@ -199,12 +199,11 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
 
     def test_stage_errors_are_localized_and_preserve_original_cause(self):
         class BrokenProfiler:
-            class Result:
-                version = "2"
-                element_count = 99
+            def analyze(self, elements):
+                raise ValueError("bad profile")
         with self.assertRaisesRegex(SourceUnderstandingPipelineError, "content profiling failed") as ctx:
             SourceUnderstandingPipeline(profiler=BrokenProfiler()).understand(document_id="doc1", content_hash=HASH, processing=processing(), elements=make_elements())
-        self.assertIsInstance(ctx.exception.__cause__, AttributeError)
+        self.assertIsInstance(ctx.exception.__cause__, ValueError)
 
     def test_explicit_falsey_stage_dependency_is_not_replaced(self):
         class FalseyProfiler:
