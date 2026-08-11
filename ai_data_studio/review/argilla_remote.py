@@ -14,10 +14,10 @@ from .argilla_exchange import (
     ARGILLA_OUTCOME_QUESTION,
     ARGILLA_REVIEW_CONTRACT_VERSION,
     ArgillaQuestionKind,
-    HumanReviewTask,
     argilla_settings_spec,
     task_to_argilla_record,
 )
+from .contracts import HumanReviewTask
 from .errors import (
     ArgillaDatasetContractError,
     ArgillaRemoteError,
