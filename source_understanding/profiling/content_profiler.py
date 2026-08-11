@@ -11,7 +11,7 @@ from source_understanding.schemas.element import Element, ElementType
 from source_understanding.source_attributes import SourceAttributeError, source_zone
 
 
-CONTENT_PROFILER_VERSION = "2"
+CONTENT_PROFILER_VERSION = "3"
 
 
 class ContentProfilingError(ValueError):
@@ -78,11 +78,15 @@ def content_category_for_type(element_type: ElementType) -> ContentCategory:
 
 
 def content_category_for_element(element: Element) -> ContentCategory:
-    """Return routing category while respecting explicit source-zone facts.
+    """Return a source-local routing category without mutating the Element type.
 
     Header/footer material remains typed (TABLE, FIGURE, CODE, ...) so no source
     structure is lost, but it routes as boilerplate instead of changing the main
     document modality merely because a header contains a layout table or logo.
+
+    A blank source PARAGRAPH is layout whitespace rather than narrative content.
+    Route it as a SEPARATOR so region segmentation can bridge it into an adjacent
+    modality while preserving the source-near PARAGRAPH fact unchanged.
     """
 
     try:
@@ -91,6 +95,10 @@ def content_category_for_element(element: Element) -> ContentCategory:
         raise ContentProfilingError(str(exc)) from exc
     if zone is not None and zone.casefold() in {"header", "footer"}:
         return ContentCategory.BOILERPLATE
+    if element.type == ElementType.PARAGRAPH:
+        text = element.text
+        if text is None or not text.strip():
+            return ContentCategory.SEPARATOR
     return content_category_for_type(element.type)
 
 
@@ -192,7 +200,7 @@ class ContentProfiler:
             log_entry_count=type_counts[ElementType.LOG_ENTRY],
             key_value_count=type_counts[ElementType.KEY_VALUE],
             visual_count=type_counts[ElementType.FIGURE] + type_counts[ElementType.CHART],
-            separator_count=type_counts[ElementType.SEPARATOR],
+            separator_count=category_counts[ContentCategory.SEPARATOR],
             boilerplate_count=category_counts[ContentCategory.BOILERPLATE],
             unknown_count=unknown_count,
             text_present_count=text_present_count,
