@@ -135,7 +135,7 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
         manifest = result.document.processing.configuration["source_understanding_pipeline"]
         self.assertEqual(manifest["content_regions"]["source"], "AUTO")
         self.assertEqual(manifest["content_regions"]["count"], 2)
-        self.assertEqual(manifest["content_regions"]["segmenter_version"], "3")
+        self.assertEqual(manifest["content_regions"]["segmenter_version"], "4")
 
     def test_auto_content_regions_can_be_disabled(self):
         result = SourceUnderstandingPipeline(policy=SourceUnderstandingPipelinePolicy(auto_segment_regions=False)).understand(document_id="doc1", content_hash=HASH, processing=processing(), elements=make_elements())
@@ -188,7 +188,7 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
         manifest = result.document.processing.configuration["source_understanding_pipeline"]
         self.assertEqual(manifest["pipeline_version"], "3")
         self.assertEqual(manifest["content_profiler_version"], "2")
-        self.assertEqual(manifest["content_regions"]["segmenter_version"], "3")
+        self.assertEqual(manifest["content_regions"]["segmenter_version"], "4")
         self.assertEqual(manifest["structure_signal_version"], "3")
         self.assertEqual(manifest["boundary_version"], "2")
         self.assertEqual(manifest["hierarchy_version"], "5")
@@ -199,11 +199,12 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
 
     def test_stage_errors_are_localized_and_preserve_original_cause(self):
         class BrokenProfiler:
-            def analyze(self, elements):
-                raise ValueError("bad profile")
+            class Result:
+                version = "2"
+                element_count = 99
         with self.assertRaisesRegex(SourceUnderstandingPipelineError, "content profiling failed") as ctx:
             SourceUnderstandingPipeline(profiler=BrokenProfiler()).understand(document_id="doc1", content_hash=HASH, processing=processing(), elements=make_elements())
-        self.assertIsInstance(ctx.exception.__cause__, ValueError)
+        self.assertIsInstance(ctx.exception.__cause__, AttributeError)
 
     def test_explicit_falsey_stage_dependency_is_not_replaced(self):
         class FalseyProfiler:
