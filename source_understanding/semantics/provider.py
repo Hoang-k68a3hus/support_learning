@@ -156,7 +156,7 @@ class SemanticProviderCapabilities(SchemaModel):
                 "semantic candidate matches multiple capabilities; provider must set "
                 f"capability_name explicitly: {[item.name for item in matches]}"
             )
-        return matches[0]
+        return next(iter(matches))
 
 
 class SemanticRequestSegment(SchemaModel):

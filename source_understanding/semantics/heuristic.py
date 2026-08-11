@@ -223,7 +223,7 @@ class HeuristicSemanticProvider:
                 values["max_value_chars"] = max_value_chars
             if languages is not None:
                 values["enabled_languages"] = tuple(languages)
-            policy = HeuristicSemanticPolicy(**values)
+            policy = HeuristicSemanticPolicy.model_validate(values)
         self._policy = policy
         enabled = set(policy.enabled_languages)
         annotation_types = tuple(
