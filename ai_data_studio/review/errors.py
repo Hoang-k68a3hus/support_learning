@@ -26,6 +26,49 @@ class ReviewContractError(ReviewWorkflowError):
     """Raised when an external review payload violates the exchange contract."""
 
 
+class ArgillaReviewError(ReviewWorkflowError):
+    """Base error for concrete Argilla integration failures."""
+
+
+class ArgillaSdkUnavailableError(ArgillaReviewError):
+    """Raised when the optional Argilla SDK dependency is unavailable."""
+
+
+class ArgillaRemoteError(ArgillaReviewError):
+    """Raised when an Argilla remote operation fails."""
+
+
+class ArgillaDatasetContractError(ArgillaReviewError):
+    """Raised when an existing Argilla dataset has an incompatible schema."""
+
+
+class ArgillaRemoteReviewConflictError(ArgillaReviewError):
+    def __init__(self, record_id: Identifier) -> None:
+        self.record_id = record_id
+        super().__init__(
+            "refusing to replace Argilla review task because the remote record already "
+            f"has a submitted response: record_id={record_id!r}"
+        )
+
+
+class StaleArgillaReviewTaskError(ArgillaReviewError):
+    def __init__(
+        self,
+        *,
+        record_id: Identifier,
+        remote_task_hash: str,
+        current_task_hash: str,
+    ) -> None:
+        self.record_id = record_id
+        self.remote_task_hash = remote_task_hash
+        self.current_task_hash = current_task_hash
+        super().__init__(
+            "stale Argilla review task for "
+            f"record_id={record_id!r}: remote task hash {remote_task_hash!r}, "
+            f"current task hash {current_task_hash!r}"
+        )
+
+
 class StaleReviewSubmissionError(ReviewWorkflowError):
     def __init__(
         self,
