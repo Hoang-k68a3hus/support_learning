@@ -37,10 +37,10 @@ export class WorkerRuntimeService implements OnModuleDestroy {
     if (this.started) return;
 
     const control = this.createRedisConnection(`support-learning-worker-control:${this.config.workerInstanceId}`, true);
+    this.controlConnection = control;
     control.on('error', (error: Error) => this.logger.error('worker_redis_connection_error', { error }));
     await control.connect();
     await control.ping();
-    this.controlConnection = control;
 
     for (const queueName of this.registry.queueNames()) {
       const connection = this.createRedisConnection(
