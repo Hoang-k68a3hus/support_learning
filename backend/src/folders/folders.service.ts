@@ -124,12 +124,12 @@ export class FoldersService {
       if (cursor === movingFolderId) throw new UnprocessableEntityException('Folder move would create a cycle');
       if (visited.has(cursor)) throw new UnprocessableEntityException('Existing folder hierarchy contains a cycle');
       visited.add(cursor);
-      const parent = await this.prisma.folder.findFirst({
+      const ancestor: { parentId: string | null } | null = await this.prisma.folder.findFirst({
         where: { id: cursor, ownerId, deletedAt: null },
         select: { parentId: true },
       });
-      if (!parent) throw new NotFoundException('Parent folder not found');
-      cursor = parent.parentId;
+      if (!ancestor) throw new NotFoundException('Parent folder not found');
+      cursor = ancestor.parentId;
     }
   }
 
