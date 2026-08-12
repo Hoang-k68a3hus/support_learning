@@ -52,7 +52,7 @@ export class JobEnvelopeValidatorService {
     const eventType = this.requireLiteral(envelope, 'eventType', AsyncEventType.DOCUMENT_VERSION_RECEIVED);
     const jobName = this.requireLiteral(envelope, 'jobName', JobName.PROCESS_DOCUMENT_VERSION);
     const queueName = this.requireLiteral(envelope, 'queueName', QueueName.PROCESSING);
-    if (delivery.queueName !== queueName || delivery.bullMqJobName !== jobName) {
+    if (delivery.queueName !== queueName || delivery.bullMqJobName !== String(jobName)) {
       throw new AsyncContractError(
         'WORKER_DELIVERY_IDENTITY_MISMATCH',
         `BullMQ delivery identity does not match envelope: ${delivery.queueName}/${delivery.bullMqJobName}`,
