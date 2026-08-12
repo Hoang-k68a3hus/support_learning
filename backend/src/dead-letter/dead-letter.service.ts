@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHash, randomUUID } from 'node:crypto';
 import { AsyncContractError } from '../async/contracts/async-contract.error';
+import { PrismaService } from '../database/prisma.service';
 
 export interface PersistDeadLetterInput {
   eventId: string;
@@ -44,7 +45,7 @@ export function fingerprintDeadLetterError(error: Error): string {
 
 @Injectable()
 export class DeadLetterService {
-  constructor(private readonly prisma: import('../database/prisma.service').PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async persistActive(input: PersistDeadLetterInput): Promise<string> {
     return this.prisma.$transaction(async (tx) => {
