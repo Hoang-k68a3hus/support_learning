@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "benchmark": "pdf_tables_real_v0_1",
+  "coverage": "PARTIAL_PILOT",
+  "oracle_policy": "Source truth is frozen from upstream published fixture expectations, not from support_learning detector output. Unknown page-level counts remain null. Capability expectation is separate and may never change source truth.",
+  "cases": [
+    {
+      "source_id": "camelot-foo",
+      "page": 1,
+      "source_truth_table_count": 1,
+      "capability_expectation": "MUST_PRESERVE_UNSTRUCTURED",
+      "oracle_evidence": "Camelot quickstart/fixture publishes one 7x7 ruled table. PDF M2 v1 currently classifies its topology as complex/merged and must not emit a partial table.",
+      "tables": [
+        {
+          "row_count": 7,
+          "column_count": 7,
+          "anchors": [
+            {"row": 2, "column": 0, "text": "2012_2"},
+            {"row": 2, "column": 1, "text": "3.30"},
+            {"row": 6, "column": 6, "text": "0.5%"}
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "camelot-two-tables",
+      "page": 1,
+      "source_truth_table_count": 2,
+      "capability_expectation": "OBSERVE",
+      "oracle_evidence": "Camelot lattice regression explicitly asserts two tables for twotables_2.pdf. M2 v1 does not yet expose a defensible candidate for this page, so this remains a recall observation rather than a fail-closed prohibition.",
+      "tables": []
+    },
+    {
+      "source_id": "camelot-row-span",
+      "page": 1,
+      "source_truth_table_count": 1,
+      "capability_expectation": "MUST_PRESERVE_UNSTRUCTURED",
+      "oracle_evidence": "Camelot lattice regression uses row_span_1.pdf as a row-spanning table fixture. Row spans are explicitly outside PDF M2 v1 capability.",
+      "tables": []
+    },
+    {
+      "source_id": "camelot-column-span",
+      "page": 1,
+      "source_truth_table_count": 1,
+      "capability_expectation": "MUST_PRESERVE_UNSTRUCTURED",
+      "oracle_evidence": "Camelot lattice regression uses column_span_2.pdf as a column-spanning table fixture. Column spans are explicitly outside PDF M2 v1 capability.",
+      "tables": []
+    },
+    {
+      "source_id": "camelot-image-only",
+      "page": 1,
+      "source_truth_table_count": 0,
+      "capability_expectation": "MUST_PRESERVE_UNSTRUCTURED",
+      "oracle_evidence": "Image-only fixture is a hard negative for native-text M2 table structure.",
+      "tables": []
+    },
+    {
+      "source_id": "pymupdf-strict-yes-no",
+      "page": 1,
+      "source_truth_table_count": null,
+      "capability_expectation": "SUPPORTED_REQUIRED",
+      "oracle_evidence": "PyMuPDF test_strict_lines uses lines_strict on this fixture, and test_markdown publishes the complete 5x3 extracted table content. Upstream does not assert the total number of tables on the page, so page-level count is intentionally unknown.",
+      "tables": [
+        {
+          "row_count": 5,
+          "column_count": 3,
+          "anchors": [
+            {"row": 0, "column": 0, "text": "Header1"},
+            {"row": 0, "column": 1, "text": "Header2"},
+            {"row": 0, "column": 2, "text": "Header3"},
+            {"row": 1, "column": 0, "text": "Col11\nCol12"},
+            {"row": 1, "column": 1, "text": "Col21\nCol22"},
+            {"row": 1, "column": 2, "text": "Col31\nCol32\nCol33"},
+            {"row": 2, "column": 0, "text": "Col13"},
+            {"row": 2, "column": 1, "text": "Col23"},
+            {"row": 2, "column": 2, "text": "Col34\nCol35"},
+            {"row": 3, "column": 0, "text": "Col14"},
+            {"row": 3, "column": 1, "text": "Col24"},
+            {"row": 3, "column": 2, "text": "Col36"},
+            {"row": 4, "column": 0, "text": "Col15"},
+            {"row": 4, "column": 1, "text": "Col25\nCol26"},
+            {"row": 4, "column": 2, "text": ""}
+          ]
+        }
+      ]
+    }
+  ]
+}

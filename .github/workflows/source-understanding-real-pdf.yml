@@ -1,0 +1,49 @@
+name: Real PDF Table Check
+
+on:
+  pull_request:
+    paths:
+      - "source_understanding/adapters/pdf/**"
+      - "benchmarks/pdf_tables_real_v0_1/**"
+      - "tests/test_pdf_real_table_benchmark_contracts.py"
+      - ".github/workflows/source-understanding-real-pdf.yml"
+  push:
+    branches: [main]
+    paths:
+      - "source_understanding/adapters/pdf/**"
+      - "benchmarks/pdf_tables_real_v0_1/**"
+      - "tests/test_pdf_real_table_benchmark_contracts.py"
+      - ".github/workflows/source-understanding-real-pdf.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-pdf-tables:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned PDF benchmark dependencies
+        run: python -m pip install --disable-pip-version-check "pydantic>=2,<3" "pymupdf==1.28.0"
+      - name: Compile real PDF benchmark
+        run: python -m compileall -q source_understanding benchmarks/pdf_tables_real_v0_1 tests/test_pdf_real_table_benchmark_contracts.py
+      - name: Run real PDF benchmark contract tests
+        run: python -m unittest tests.test_pdf_real_table_benchmark_contracts -v
+      - name: Run pinned real PDF table benchmark
+        run: |
+          mkdir -p reports
+          python -m benchmarks.pdf_tables_real_v0_1.run_benchmark \
+            --output reports/pdf-table-benchmark.json \
+            --enforce-capability-gate
+      - name: Upload real PDF benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-pdf-table-benchmark
+          path: reports/pdf-table-benchmark.json
+          if-no-files-found: warn

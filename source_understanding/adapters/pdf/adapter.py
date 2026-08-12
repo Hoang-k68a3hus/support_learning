@@ -18,18 +18,27 @@ from .backend import PdfBackendError, PyMuPdfNativeBackend
 from .emit import PdfRawElementEmitter
 from .metadata import PdfMetadataBuilder
 from .order_v3 import PdfReadingOrderPolicyV3, PdfReadingOrderResolverV3
+from .table_emit import PdfTableRawElementEmitter
+from .tables import (
+    PDF_TABLE_STRUCTURE_VERSION,
+    PDF_TABLE_TEXT_RECONSTRUCTION_VERSION,
+    PdfTableDetectionError,
+    PdfTableDetectionResult,
+    PdfTableDetector,
+    PdfTablePolicy,
+)
 from .visibility import PdfVisibilityPolicy, PdfVisibilityResolver
 
 
-PDF_ADAPTER_VERSION = "2"
-PDF_POLICY_VERSION = "3"
+PDF_ADAPTER_VERSION = "3"
+PDF_POLICY_VERSION = "4"
 PDF_MEDIA_TYPE = "application/pdf"
 PDF_READING_ORDER_VERSION = "geometric-columns-v3"
 PDF_BLOCK_RECONSTRUCTION_VERSION = "textpage-block-v1"
 
 
 class PdfAdapterPolicy(SchemaModel):
-    """Deterministic M1 policy for born-digital/native-text PDFs only."""
+    """Deterministic PDF policy through M2 line-bordered table structure."""
 
     version: str = PDF_POLICY_VERSION
     max_source_bytes: int = Field(
@@ -59,9 +68,20 @@ class PdfAdapterPolicy(SchemaModel):
     bbox_tolerance_points: float = Field(default=1.0, ge=0.0, le=10.0)
     preserve_span_metadata: bool = True
 
+    enable_table_structure: bool = True
+    minimum_table_rows: int = Field(default=2, ge=2, le=1000)
+    minimum_table_columns: int = Field(default=2, ge=2, le=1000)
+    minimum_table_cells: int = Field(default=6, ge=4, le=100_000)
+    minimum_populated_table_rows: int = Field(default=2, ge=1, le=1000)
+    minimum_populated_table_columns: int = Field(default=2, ge=1, le=1000)
+    minimum_populated_table_cells: int = Field(default=4, ge=1, le=100_000)
+    minimum_span_cell_overlap_ratio: float = Field(default=0.50, gt=0.0, le=1.0)
+    table_visual_line_overlap_ratio: float = Field(default=0.60, gt=0.0, le=1.0)
+    table_topology_tolerance_points: float = Field(default=3.0, ge=0.0, le=20.0)
+
 
 class PdfAdapter:
-    """Preserve visible native PDF spatial text facts before structural interpretation."""
+    """Preserve visible PDF facts and add only high-confidence structural projections."""
 
     name = "pdf-native-pymupdf"
     version = PDF_ADAPTER_VERSION
@@ -112,6 +132,29 @@ class PdfAdapter:
             bbox_tolerance_points=self.policy.bbox_tolerance_points,
             preserve_span_metadata=self.policy.preserve_span_metadata,
         )
+        self._table_detector = PdfTableDetector(
+            PdfTablePolicy(
+                minimum_rows=self.policy.minimum_table_rows,
+                minimum_columns=self.policy.minimum_table_columns,
+                minimum_cells=self.policy.minimum_table_cells,
+                minimum_populated_rows=self.policy.minimum_populated_table_rows,
+                minimum_populated_columns=(
+                    self.policy.minimum_populated_table_columns
+                ),
+                minimum_populated_cells=self.policy.minimum_populated_table_cells,
+                minimum_span_cell_overlap_ratio=(
+                    self.policy.minimum_span_cell_overlap_ratio
+                ),
+                visual_line_overlap_ratio=self.policy.table_visual_line_overlap_ratio,
+                topology_tolerance_points=self.policy.table_topology_tolerance_points,
+            )
+        )
+        self._table_emitter = PdfTableRawElementEmitter(
+            adapter_name=self.name,
+            adapter_version=self.version,
+            base_emitter=self._emitter,
+            reading_order_version=PDF_READING_ORDER_VERSION,
+        )
         self._metadata_builder = PdfMetadataBuilder()
 
     def adapt(
@@ -132,6 +175,8 @@ class PdfAdapter:
             pages_with_native_text = 0
             pages_with_images = 0
             pages_with_occluded_text = 0
+            pages_with_extracted_tables = 0
+            extracted_table_count = 0
 
             for page_index in range(page_count):
                 try:
@@ -179,55 +224,169 @@ class PdfAdapter:
                         )
                     )
 
-                aligned_layout = self._order_resolver.looks_aligned_layout(
-                    observation.native_text_blocks,
-                    page_width=observation.width_points,
+                table_detection = self._detect_tables(
+                    page,
+                    observation,
+                    diagnostics=diagnostics,
                 )
-                ordered = self._order_resolver.resolve(
-                    observation.native_text_blocks,
-                    page_width=observation.width_points,
-                )
-                if aligned_layout:
+                if table_detection.rejected:
+                    reason_counts = Counter(
+                        item.reason for item in table_detection.rejected
+                    )
                     diagnostics.append(
                         AdapterDiagnostic(
-                            code="PDF_ALIGNED_LAYOUT_NOT_STRUCTURED_M1",
+                            code="PDF_TABLE_CANDIDATE_UNSUPPORTED_M2",
                             message=(
-                                f"PDF page {observation.page_number} contains repeated "
-                                "row-aligned native text geometry consistent with a grid, "
-                                "form, equation array, or table-like layout. M1 preserves "
-                                "native block order and does not infer rows, cells, or "
-                                "higher-order structure"
+                                f"PDF page {observation.page_number} contains vector-grid "
+                                "table candidates that M2 cannot bind to a simple rectangular "
+                                "source-span topology with high confidence. Original native "
+                                "text blocks are preserved instead"
                             ),
                             affects_structural_completeness=True,
                             part=f"page:{observation.page_number}",
                             metadata={
                                 "page": observation.page_number,
-                                "native_text_block_count": len(
-                                    observation.native_text_blocks
+                                "rejected_candidate_count": len(
+                                    table_detection.rejected
                                 ),
-                                "reading_order_action": "preserve_native_order",
+                                "reason_counts": dict(sorted(reason_counts.items())),
+                                "candidates": [
+                                    {
+                                        "table_index": item.table_index,
+                                        "reason": item.reason,
+                                        "bbox_points": (
+                                            list(item.bbox)
+                                            if item.bbox is not None
+                                            else None
+                                        ),
+                                        "row_count": item.row_count,
+                                        "column_count": item.column_count,
+                                        "detail": item.detail,
+                                    }
+                                    for item in table_detection.rejected
+                                ],
                             },
                         )
                     )
 
-                emitted_on_page = 0
-                suspect_codepoints: Counter[str] = Counter()
-                suspect_block_count = 0
-                for reading_index, block in enumerate(ordered):
-                    raw = self._emitter.emit(
-                        block,
+                table_structure_element_count = 0
+                if table_detection.tables:
+                    pages_with_extracted_tables += 1
+                    extracted_table_count += len(table_detection.tables)
+                    diagnostics.append(
+                        AdapterDiagnostic(
+                            code="PDF_TABLE_STRUCTURE_EXTRACTED_M2",
+                            message=(
+                                f"PDF page {observation.page_number} contains "
+                                f"{len(table_detection.tables)} high-confidence line-bordered "
+                                "table(s). M2 emits TABLE/TABLE_ROW/TABLE_CELL structure and "
+                                "preserves the owning source spans in cell audit metadata"
+                            ),
+                            level=AdapterDiagnosticLevel.INFO,
+                            part=f"page:{observation.page_number}",
+                            metadata={
+                                "page": observation.page_number,
+                                "table_structure_version": PDF_TABLE_STRUCTURE_VERSION,
+                                "table_count": len(table_detection.tables),
+                                "tables": [
+                                    {
+                                        "table_index": item.table_index,
+                                        "row_count": item.row_count,
+                                        "column_count": item.column_count,
+                                        "source_native_orders": list(
+                                            item.source_native_orders
+                                        ),
+                                    }
+                                    for item in table_detection.tables
+                                ],
+                            },
+                        )
+                    )
+
+                suspect_codepoints, suspect_block_count = self._source_text_suspicions(
+                    observation
+                )
+
+                if table_detection.tables:
+                    emitted_on_page, table_structure_element_count = (
+                        self._emit_page_with_tables(
+                            observation,
+                            table_detection,
+                            raw_elements=raw_elements,
+                            backend=backend,
+                        )
+                    )
+                    consumed_orders = {
+                        order
+                        for table in table_detection.tables
+                        for order in table.source_native_orders
+                    }
+                    residual_blocks = tuple(
+                        block
+                        for block in observation.native_text_blocks
+                        if block.native_order not in consumed_orders
+                    )
+                    if self._order_resolver.looks_aligned_layout(
+                        residual_blocks,
+                        page_width=observation.width_points,
+                    ):
+                        diagnostics.append(
+                            AdapterDiagnostic(
+                                code="PDF_ALIGNED_LAYOUT_REMAINS_UNSTRUCTURED_M2",
+                                message=(
+                                    f"PDF page {observation.page_number} contains additional "
+                                    "row-aligned geometry outside accepted M2 tables. The "
+                                    "remaining native blocks preserve source order rather than "
+                                    "being forced into table structure"
+                                ),
+                                affects_structural_completeness=True,
+                                part=f"page:{observation.page_number}",
+                                metadata={
+                                    "page": observation.page_number,
+                                    "residual_native_text_block_count": len(
+                                        residual_blocks
+                                    ),
+                                    "reading_order_action": "preserve_native_order",
+                                },
+                            )
+                        )
+                else:
+                    aligned_layout = self._order_resolver.looks_aligned_layout(
+                        observation.native_text_blocks,
+                        page_width=observation.width_points,
+                    )
+                    ordered = self._order_resolver.resolve(
+                        observation.native_text_blocks,
+                        page_width=observation.width_points,
+                    )
+                    if aligned_layout:
+                        diagnostics.append(
+                            AdapterDiagnostic(
+                                code="PDF_ALIGNED_LAYOUT_NOT_STRUCTURED_M1",
+                                message=(
+                                    f"PDF page {observation.page_number} contains repeated "
+                                    "row-aligned native text geometry consistent with a grid, "
+                                    "form, equation array, or table-like layout. M2 found no "
+                                    "high-confidence supported table, so native block order is "
+                                    "preserved and rows/cells are not invented"
+                                ),
+                                affects_structural_completeness=True,
+                                part=f"page:{observation.page_number}",
+                                metadata={
+                                    "page": observation.page_number,
+                                    "native_text_block_count": len(
+                                        observation.native_text_blocks
+                                    ),
+                                    "reading_order_action": "preserve_native_order",
+                                },
+                            )
+                        )
+                    emitted_on_page = self._emit_ordered_blocks(
+                        ordered,
                         page=observation,
-                        reading_index=reading_index,
-                        global_order=len(raw_elements),
+                        raw_elements=raw_elements,
                         backend=backend,
                     )
-                    if raw is not None:
-                        suspicions = self._suspect_native_text_codepoints(raw.text)
-                        if suspicions:
-                            suspect_block_count += 1
-                            suspect_codepoints.update(suspicions)
-                        raw_elements.append(raw)
-                        emitted_on_page += 1
 
                 if emitted_on_page:
                     pages_with_native_text += 1
@@ -237,7 +396,7 @@ class PdfAdapter:
                             code="PDF_PAGE_NO_NATIVE_TEXT",
                             message=(
                                 f"PDF page {observation.page_number} produced no visible "
-                                "native text blocks; OCR is intentionally outside M1"
+                                "native text blocks; OCR is intentionally outside M2"
                             ),
                             affects_structural_completeness=True,
                             part=f"page:{observation.page_number}",
@@ -252,14 +411,16 @@ class PdfAdapter:
                                 f"PDF page {observation.page_number} native text contains "
                                 "non-printing or replacement code points; the embedded "
                                 "font-to-Unicode mapping may be incomplete. Extracted text "
-                                "is preserved unchanged and OCR is intentionally outside M1"
+                                "is preserved unchanged and OCR is intentionally outside M2"
                             ),
                             affects_structural_completeness=True,
                             part=f"page:{observation.page_number}",
                             metadata={
                                 "page": observation.page_number,
                                 "affected_block_count": suspect_block_count,
-                                "codepoint_counts": dict(sorted(suspect_codepoints.items())),
+                                "codepoint_counts": dict(
+                                    sorted(suspect_codepoints.items())
+                                ),
                             },
                         )
                     )
@@ -270,7 +431,8 @@ class PdfAdapter:
                             code="PDF_IMAGE_CONTENT_NOT_EXTRACTED_M1",
                             message=(
                                 f"PDF page {observation.page_number} contains image blocks; "
-                                "M1 preserves native text only and does not claim image content"
+                                "M2 preserves native text/table structure only and does not "
+                                "claim image content"
                             ),
                             affects_structural_completeness=True,
                             part=f"page:{observation.page_number}",
@@ -284,6 +446,10 @@ class PdfAdapter:
                     self._metadata_builder.page_record(
                         observation,
                         emitted_block_count=emitted_on_page,
+                        extracted_table_count=len(table_detection.tables),
+                        emitted_table_structure_element_count=(
+                            table_structure_element_count
+                        ),
                     )
                 )
 
@@ -295,9 +461,15 @@ class PdfAdapter:
                 pages_with_native_text=pages_with_native_text,
                 pages_with_images=pages_with_images,
                 pages_with_occluded_text=pages_with_occluded_text,
+                pages_with_extracted_tables=pages_with_extracted_tables,
+                extracted_table_count=extracted_table_count,
                 diagnostics=diagnostics,
                 reading_order_version=PDF_READING_ORDER_VERSION,
                 block_reconstruction_version=PDF_BLOCK_RECONSTRUCTION_VERSION,
+                table_structure_version=PDF_TABLE_STRUCTURE_VERSION,
+                table_text_reconstruction_version=(
+                    PDF_TABLE_TEXT_RECONSTRUCTION_VERSION
+                ),
             )
             return SourceAdapterResult(
                 adapter_name=self.name,
@@ -312,6 +484,125 @@ class PdfAdapter:
             )
         finally:
             document.close()
+
+    def _detect_tables(
+        self,
+        page: object,
+        observation: object,
+        *,
+        diagnostics: list[AdapterDiagnostic],
+    ) -> PdfTableDetectionResult:
+        if not self.policy.enable_table_structure:
+            return PdfTableDetectionResult()
+        native_text_blocks = getattr(observation, "native_text_blocks")
+        page_number = int(getattr(observation, "page_number"))
+        try:
+            return self._table_detector.detect(page, native_text_blocks)
+        except PdfTableDetectionError as exc:
+            diagnostics.append(
+                AdapterDiagnostic(
+                    code="PDF_TABLE_DETECTION_FAILED_M2",
+                    message=(
+                        f"PDF page {page_number} table detection failed safely; original "
+                        f"native text blocks are preserved: {exc}"
+                    ),
+                    affects_structural_completeness=True,
+                    part=f"page:{page_number}",
+                    metadata={
+                        "page": page_number,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+            )
+            return PdfTableDetectionResult()
+
+    def _source_text_suspicions(
+        self,
+        observation,
+    ) -> tuple[Counter[str], int]:
+        suspect_codepoints: Counter[str] = Counter()
+        suspect_block_count = 0
+        for block in observation.native_text_blocks:
+            text, _lines, _spans, _offsets = self._emitter.reconstruct_block(
+                block,
+                page=observation,
+            )
+            suspicions = self._suspect_native_text_codepoints(text)
+            if suspicions:
+                suspect_block_count += 1
+                suspect_codepoints.update(suspicions)
+        return suspect_codepoints, suspect_block_count
+
+    def _emit_ordered_blocks(
+        self,
+        ordered,
+        *,
+        page,
+        raw_elements: list[RawElement],
+        backend: object,
+    ) -> int:
+        emitted = 0
+        for reading_index, block in enumerate(ordered):
+            raw = self._emitter.emit(
+                block,
+                page=page,
+                reading_index=reading_index,
+                global_order=len(raw_elements),
+                backend=backend,
+            )
+            if raw is not None:
+                raw_elements.append(raw)
+                emitted += 1
+        return emitted
+
+    def _emit_page_with_tables(
+        self,
+        page,
+        detection: PdfTableDetectionResult,
+        *,
+        raw_elements: list[RawElement],
+        backend: object,
+    ) -> tuple[int, int]:
+        consumed_orders = {
+            order
+            for table in detection.tables
+            for order in table.source_native_orders
+        }
+        table_by_first_order = {
+            table.source_native_orders[0]: table for table in detection.tables
+        }
+        emitted = 0
+        table_structure_elements = 0
+        reading_index = 0
+        for block in page.native_text_blocks:
+            table = table_by_first_order.get(block.native_order)
+            if table is not None:
+                projected = self._table_emitter.emit(
+                    table,
+                    page=page,
+                    global_order=len(raw_elements),
+                    reading_index=reading_index,
+                    backend=backend,
+                )
+                raw_elements.extend(projected)
+                emitted += len(projected)
+                table_structure_elements += len(projected)
+                reading_index += 1
+                continue
+            if block.native_order in consumed_orders:
+                continue
+            raw = self._emitter.emit(
+                block,
+                page=page,
+                reading_index=reading_index,
+                global_order=len(raw_elements),
+                backend=backend,
+            )
+            reading_index += 1
+            if raw is not None:
+                raw_elements.append(raw)
+                emitted += 1
+        return emitted, table_structure_elements
 
     def _validate_payload(self, data: bytes) -> bytes:
         if not isinstance(data, (bytes, bytearray)):
@@ -356,7 +647,7 @@ class PdfAdapter:
             if authentication <= 0:
                 raise AdapterError(
                     "password-protected PDF requires a non-empty password; "
-                    "M1 does not accept passwords at the adapter boundary"
+                    "M2 does not accept passwords at the adapter boundary"
                 )
             diagnostics.append(
                 AdapterDiagnostic(
