@@ -15,6 +15,12 @@ interface ProblemDetails {
   errors?: string[];
 }
 
+interface ExtractedHttpDetail {
+  detail: string;
+  errors?: string[];
+  code?: string;
+}
+
 const INTERNAL_SERVER_ERROR_STATUS = Number(HttpStatus.INTERNAL_SERVER_ERROR);
 const PAYLOAD_TOO_LARGE_STATUS = Number(HttpStatus.PAYLOAD_TOO_LARGE);
 
@@ -49,17 +55,18 @@ function problemType(code: string): string {
   return `urn:support-learning:problem:${code.toLowerCase().replaceAll('_', '-')}`;
 }
 
-function extractHttpDetail(exception: HttpException): { detail: string; errors?: string[] } {
+function extractHttpDetail(exception: HttpException): ExtractedHttpDetail {
   const exceptionResponse = exception.getResponse();
   if (typeof exceptionResponse === 'string') return { detail: exceptionResponse };
   if (typeof exceptionResponse !== 'object' || exceptionResponse === null) return { detail: 'Request failed' };
 
-  const value = exceptionResponse as { message?: string | string[] };
+  const value = exceptionResponse as { message?: string | string[]; code?: unknown };
+  const code = typeof value.code === 'string' && value.code.length > 0 ? value.code : undefined;
   if (Array.isArray(value.message)) {
-    return { detail: 'Request validation failed', errors: value.message };
+    return { detail: 'Request validation failed', errors: value.message, ...(code ? { code } : {}) };
   }
-  if (typeof value.message === 'string') return { detail: value.message };
-  return { detail: 'Request failed' };
+  if (typeof value.message === 'string') return { detail: value.message, ...(code ? { code } : {}) };
+  return { detail: 'Request failed', ...(code ? { code } : {}) };
 }
 
 @Catch()
@@ -71,7 +78,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const request = http.getRequest<RequestContext>();
     const response = http.getResponse<Response>();
     const status = resolveHttpErrorStatus(exception);
-    const code = STATUS_CODES[status] ?? (status >= INTERNAL_SERVER_ERROR_STATUS ? 'INTERNAL_ERROR' : 'HTTP_ERROR');
+    let code = STATUS_CODES[status] ?? (status >= INTERNAL_SERVER_ERROR_STATUS ? 'INTERNAL_ERROR' : 'HTTP_ERROR');
     const title = STATUS_TITLES[status] ?? (status >= INTERNAL_SERVER_ERROR_STATUS ? 'Internal Server Error' : 'Request Failed');
 
     let detail = status >= INTERNAL_SERVER_ERROR_STATUS ? 'Internal server error' : title;
@@ -80,6 +87,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const extracted = extractHttpDetail(exception);
       detail = extracted.detail;
       errors = extracted.errors;
+      code = extracted.code ?? code;
     } else if (status === PAYLOAD_TOO_LARGE_STATUS) {
       detail = 'Request payload is too large';
     }

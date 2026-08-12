@@ -7,11 +7,25 @@ import { RequestLoggingInterceptor } from './common/logging/request-logging.inte
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { ConfigModule } from './config/config.module';
 import { PrismaModule } from './database/prisma.module';
+import { DocumentsModule } from './documents/documents.module';
+import { FoldersModule } from './folders/folders.module';
 import { HealthModule } from './health/health.module';
+import { TagsModule } from './tags/tags.module';
 import { UsersModule } from './users/users.module';
+import { WorkspacesModule } from './workspaces/workspaces.module';
 
 @Module({
-  imports: [ConfigModule, PrismaModule, HealthModule, AuthModule, UsersModule],
+  imports: [
+    ConfigModule,
+    PrismaModule,
+    HealthModule,
+    AuthModule,
+    UsersModule,
+    WorkspacesModule,
+    FoldersModule,
+    TagsModule,
+    DocumentsModule,
+  ],
   providers: [
     JsonLoggerService,
     { provide: APP_FILTER, useClass: HttpExceptionFilter },

@@ -9,14 +9,26 @@ const validEnv = (): Record<string, unknown> => ({
   JWT_REFRESH_SECRET: 'b'.repeat(32),
   JWT_REFRESH_TTL: '7d',
   CORS_ORIGIN: 'http://localhost:3000',
+  STORAGE_ENDPOINT: 'http://localhost:9000',
+  STORAGE_ACCESS_KEY: 'test-access',
+  STORAGE_SECRET_KEY: 'test-secret',
+  STORAGE_BUCKET: 'support-learning-test',
+  STORAGE_UPLOAD_TTL: '15m',
+  STORAGE_MAX_UPLOAD_BYTES: '104857600',
+  STORAGE_ALLOWED_MEDIA_TYPES: 'application/pdf,text/plain',
+  IDEMPOTENCY_TTL: '24h',
 });
 
 describe('validateEnvironment', () => {
-  it('accepts valid configuration and parses TTLs', () => {
+  it('accepts valid configuration and parses TTLs and storage policy', () => {
     const result = validateEnvironment(validEnv());
     expect(result.PORT).toBe(3001);
     expect(result.JWT_ACCESS_TTL_SECONDS).toBe(900);
     expect(result.JWT_REFRESH_TTL_SECONDS).toBe(604800);
+    expect(result.STORAGE_UPLOAD_TTL_SECONDS).toBe(900);
+    expect(result.STORAGE_MAX_UPLOAD_BYTES).toBe(104857600);
+    expect(result.STORAGE_ALLOWED_MEDIA_TYPES).toEqual(['application/pdf', 'text/plain']);
+    expect(result.IDEMPOTENCY_TTL_SECONDS).toBe(86400);
   });
 
   it('rejects an invalid port', () => {
@@ -62,5 +74,23 @@ describe('validateEnvironment', () => {
     const sameSecrets = validEnv();
     sameSecrets.JWT_REFRESH_SECRET = sameSecrets.JWT_ACCESS_SECRET;
     expect(() => validateEnvironment(sameSecrets)).toThrow('must be different');
+  });
+
+  it('rejects malformed storage settings', () => {
+    const endpoint = validEnv();
+    endpoint.STORAGE_ENDPOINT = 'http://localhost:9000/path';
+    expect(() => validateEnvironment(endpoint)).toThrow('STORAGE_ENDPOINT');
+
+    const bucket = validEnv();
+    bucket.STORAGE_BUCKET = 'INVALID_BUCKET';
+    expect(() => validateEnvironment(bucket)).toThrow('STORAGE_BUCKET');
+
+    const media = validEnv();
+    media.STORAGE_ALLOWED_MEDIA_TYPES = 'not-a-mime';
+    expect(() => validateEnvironment(media)).toThrow('STORAGE_ALLOWED_MEDIA_TYPES');
+
+    const size = validEnv();
+    size.STORAGE_MAX_UPLOAD_BYTES = '0';
+    expect(() => validateEnvironment(size)).toThrow('STORAGE_MAX_UPLOAD_BYTES');
   });
 });

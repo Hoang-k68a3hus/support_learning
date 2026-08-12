@@ -43,6 +43,14 @@ jobs:
       JWT_REFRESH_SECRET: ci-only-refresh-secret-with-more-than-32-characters-different
       JWT_REFRESH_TTL: 7d
       CORS_ORIGIN: http://localhost:3000
+      STORAGE_ENDPOINT: http://localhost:9000
+      STORAGE_ACCESS_KEY: ci-minio-access
+      STORAGE_SECRET_KEY: ci-minio-secret
+      STORAGE_BUCKET: support-learning-test
+      STORAGE_UPLOAD_TTL: 15m
+      STORAGE_MAX_UPLOAD_BYTES: '104857600'
+      STORAGE_ALLOWED_MEDIA_TYPES: application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      IDEMPOTENCY_TTL: 24h
 
     steps:
       - uses: actions/checkout@v4
@@ -100,7 +108,7 @@ jobs:
           cat /tmp/support-learning-backend.log
           exit 1
 
-      - name: Preserve generated package lock for foundation branch
+      - name: Preserve generated package lock
         if: always() && hashFiles('backend/package-lock.json') != ''
         uses: actions/upload-artifact@v4
         with:

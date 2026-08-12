@@ -38,6 +38,38 @@ export class AppConfigService {
     return this.config.get('CORS_ORIGINS', { infer: true });
   }
 
+  get storageEndpoint(): string {
+    return this.config.get('STORAGE_ENDPOINT', { infer: true });
+  }
+
+  get storageAccessKey(): string {
+    return this.config.get('STORAGE_ACCESS_KEY', { infer: true });
+  }
+
+  get storageSecretKey(): string {
+    return this.config.get('STORAGE_SECRET_KEY', { infer: true });
+  }
+
+  get storageBucket(): string {
+    return this.config.get('STORAGE_BUCKET', { infer: true });
+  }
+
+  get storageUploadTtlSeconds(): number {
+    return this.config.get('STORAGE_UPLOAD_TTL_SECONDS', { infer: true });
+  }
+
+  get storageMaxUploadBytes(): number {
+    return this.config.get('STORAGE_MAX_UPLOAD_BYTES', { infer: true });
+  }
+
+  get storageAllowedMediaTypes(): string[] {
+    return this.config.get('STORAGE_ALLOWED_MEDIA_TYPES', { infer: true });
+  }
+
+  get idempotencyTtlSeconds(): number {
+    return this.config.get('IDEMPOTENCY_TTL_SECONDS', { infer: true });
+  }
+
   get isProduction(): boolean {
     return this.nodeEnv === 'production';
   }
