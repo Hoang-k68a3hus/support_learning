@@ -11,6 +11,12 @@ class BenchmarkContractError(ValueError):
     """The independent continuation benchmark contract is invalid."""
 
 
+CONTINUES = "CONTINUES"
+NOT_CONTINUES = "NOT_CONTINUES"
+COVERAGE_BENCHMARK = "pdf_table_continuation_real_v0_1"
+COVERAGE_SCHEMA_VERSION = "0.1"
+
+
 @dataclass(frozen=True)
 class GoldCase:
     id: str
@@ -21,6 +27,22 @@ class GoldCase:
     family: str
     rationale: str
     chain_id: str | None = None
+
+    @property
+    def key(self) -> tuple[str, int, int]:
+        return self.source_id, self.page_a, self.page_b
+
+
+@dataclass(frozen=True)
+class CoverageAdjudication:
+    id: str
+    source_id: str
+    page_a: int
+    page_b: int
+    truth: str
+    family: str
+    rationale: str
+    review_method: str
 
     @property
     def key(self) -> tuple[str, int, int]:
@@ -44,6 +66,23 @@ class ContinuationMetrics:
     promotion_gate_passed: bool
 
 
+@dataclass(frozen=True)
+class CoverageMetrics:
+    adjudicated_count: int
+    currently_predicted_adjudicated_count: int
+    confirmed_true_continuation_count: int
+    confirmed_false_continuation_count: int
+    adjudicated_not_currently_predicted_count: int
+    zero_confirmed_false_continuation_gate: bool
+
+
+@dataclass(frozen=True)
+class PredictionClassification:
+    core: frozenset[tuple[str, int, int]]
+    coverage: frozenset[tuple[str, int, int]]
+    unknown: frozenset[tuple[str, int, int]]
+
+
 def load_gold(path: Path) -> tuple[GoldCase, ...]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -65,6 +104,138 @@ def load_gold(path: Path) -> tuple[GoldCase, ...]:
         raise BenchmarkContractError("gold contract has an invalid JSON shape") from exc
     _validate_gold(cases, requirements)
     return cases
+
+
+def load_coverage_adjudications(
+    path: Path,
+    *,
+    core_gold: tuple[GoldCase, ...],
+) -> tuple[CoverageAdjudication, ...]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise BenchmarkContractError("coverage contract must be a JSON object")
+        if payload.get("benchmark") != COVERAGE_BENCHMARK:
+            raise BenchmarkContractError("coverage contract benchmark name is invalid")
+        if payload.get("schema_version") != COVERAGE_SCHEMA_VERSION:
+            raise BenchmarkContractError("coverage contract schema_version is unsupported")
+        raw_adjudications = payload.get("adjudications")
+        if not isinstance(raw_adjudications, list):
+            raise BenchmarkContractError("coverage adjudications must be a list")
+        adjudications = tuple(
+            CoverageAdjudication(
+                id=item["id"],
+                source_id=item["source_id"],
+                page_a=item["page_a"],
+                page_b=item["page_b"],
+                truth=item["truth"],
+                family=item["family"],
+                rationale=item["rationale"],
+                review_method=item["review_method"],
+            )
+            for item in raw_adjudications
+        )
+    except BenchmarkContractError:
+        raise
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise BenchmarkContractError("coverage contract has an invalid JSON shape") from exc
+    _validate_coverage_adjudications(adjudications, core_gold)
+    return adjudications
+
+
+def evaluate_coverage(
+    adjudications: tuple[CoverageAdjudication, ...],
+    predicted: set[tuple[str, int, int]],
+) -> CoverageMetrics:
+    _validate_coverage_adjudication_identity(adjudications)
+    adjudicated_keys = {item.key for item in adjudications}
+    currently_predicted = predicted & adjudicated_keys
+    true_keys = {item.key for item in adjudications if item.truth == CONTINUES}
+    false_keys = {item.key for item in adjudications if item.truth == NOT_CONTINUES}
+    confirmed_true = currently_predicted & true_keys
+    confirmed_false = currently_predicted & false_keys
+    not_currently_predicted = adjudicated_keys - predicted
+    return CoverageMetrics(
+        adjudicated_count=len(adjudications),
+        currently_predicted_adjudicated_count=len(currently_predicted),
+        confirmed_true_continuation_count=len(confirmed_true),
+        confirmed_false_continuation_count=len(confirmed_false),
+        adjudicated_not_currently_predicted_count=len(not_currently_predicted),
+        zero_confirmed_false_continuation_gate=not confirmed_false,
+    )
+
+
+def classify_predictions(
+    predicted: set[tuple[str, int, int]],
+    core_gold: tuple[GoldCase, ...],
+    coverage_adjudications: tuple[CoverageAdjudication, ...],
+) -> PredictionClassification:
+    core_keys = {case.key for case in core_gold}
+    coverage_keys = {item.key for item in coverage_adjudications}
+    overlap = core_keys & coverage_keys
+    if overlap:
+        raise BenchmarkContractError(
+            f"core gold and coverage ledger overlap on page pairs: {sorted(overlap)!r}"
+        )
+    return PredictionClassification(
+        core=frozenset(predicted & core_keys),
+        coverage=frozenset(predicted & coverage_keys),
+        unknown=frozenset(predicted - core_keys - coverage_keys),
+    )
+
+
+def _validate_coverage_adjudications(
+    adjudications: tuple[CoverageAdjudication, ...],
+    core_gold: tuple[GoldCase, ...],
+) -> None:
+    _validate_coverage_adjudication_identity(adjudications)
+    core_keys = {case.key for case in core_gold}
+    coverage_keys = {item.key for item in adjudications}
+    overlap = core_keys & coverage_keys
+    if overlap:
+        raise BenchmarkContractError(
+            f"coverage ledger overlaps core gold page pairs: {sorted(overlap)!r}"
+        )
+
+
+def _validate_coverage_adjudication_identity(
+    adjudications: tuple[CoverageAdjudication, ...],
+) -> None:
+    for item in adjudications:
+        if (
+            not isinstance(item.id, str)
+            or not item.id.strip()
+            or not isinstance(item.source_id, str)
+            or not item.source_id.strip()
+            or not isinstance(item.page_a, int)
+            or isinstance(item.page_a, bool)
+            or not isinstance(item.page_b, int)
+            or isinstance(item.page_b, bool)
+            or not isinstance(item.truth, str)
+            or not isinstance(item.family, str)
+            or not item.family.strip()
+            or not isinstance(item.rationale, str)
+            or not item.rationale.strip()
+            or not isinstance(item.review_method, str)
+            or not item.review_method.strip()
+        ):
+            raise BenchmarkContractError(
+                "coverage adjudication identity, truth, and review fields are invalid"
+            )
+        if item.page_b != item.page_a + 1:
+            raise BenchmarkContractError(
+                f"coverage adjudication {item.id!r} must use adjacent page pairs"
+            )
+        if item.truth not in {CONTINUES, NOT_CONTINUES}:
+            raise BenchmarkContractError(
+                f"coverage adjudication {item.id!r} has invalid truth"
+            )
+    ids = [item.id for item in adjudications]
+    if len(ids) != len(set(ids)):
+        raise BenchmarkContractError("coverage adjudication ids must be unique")
+    keys = [item.key for item in adjudications]
+    if len(keys) != len(set(keys)):
+        raise BenchmarkContractError("coverage adjudication page-pair keys must be unique")
 
 
 def evaluate(

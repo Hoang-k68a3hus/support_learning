@@ -1,0 +1,7 @@
+{
+  "benchmark": "pdf_table_continuation_real_v0_1",
+  "schema_version": "0.1",
+  "provenance": "INDEPENDENT_VISUAL_LAYOUT_ADJUDICATION",
+  "review_policy": "Production output may identify page pairs requiring review, but truth is assigned independently from rendered source pages and source content without treating detector output, confidence, or detector evidence as gold.",
+  "adjudications": []
+}

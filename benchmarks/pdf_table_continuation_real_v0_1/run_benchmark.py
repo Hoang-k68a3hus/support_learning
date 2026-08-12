@@ -9,7 +9,13 @@ from pathlib import Path
 from source_understanding.adapters import PdfAdapter, SourceAdapterRunner
 from source_understanding.schemas.relation import RelationType
 
-from .evaluate import evaluate, load_gold
+from .evaluate import (
+    classify_predictions,
+    evaluate,
+    evaluate_coverage,
+    load_coverage_adjudications,
+    load_gold,
+)
 
 HERE = Path(__file__).parent
 
@@ -22,6 +28,10 @@ def main() -> int:
     args = parser.parse_args()
     gold_payload = json.loads((HERE / "gold_contracts.json").read_text(encoding="utf-8"))
     gold = load_gold(HERE / "gold_contracts.json")
+    coverage = load_coverage_adjudications(
+        HERE / "coverage_adjudications.json",
+        core_gold=gold,
+    )
     sources = json.loads((HERE / "sources.json").read_text(encoding="utf-8"))["sources"]
     needed_sources = {case.source_id for case in gold}
     predicted: set[tuple[str, int, int]] = set()
@@ -61,22 +71,43 @@ def main() -> int:
                 "continuation_relation_count": len(edges),
             }
         )
-    gold_keys = {case.key for case in gold}
-    unadjudicated_predictions = sorted(predicted - gold_keys)
+    classification = classify_predictions(predicted, gold, coverage)
     metrics = evaluate(
         gold,
-        predicted & gold_keys,
+        set(classification.core),
         tuple(gold_payload.get("chain_requirements", ())),
     )
-    effective_promotion_gate = metrics.promotion_gate_passed and not unadjudicated_predictions
+    coverage_metrics = evaluate_coverage(coverage, predicted)
+    coverage_keys = {item.key for item in coverage}
+    confirmed_false_continuation_edges = sorted(
+        item.key
+        for item in coverage
+        if item.truth == "NOT_CONTINUES" and item.key in predicted
+    )
+    adjudicated_not_currently_predicted_edges = sorted(coverage_keys - predicted)
+    effective_promotion_gate = (
+        metrics.promotion_gate_passed
+        and coverage_metrics.zero_confirmed_false_continuation_gate
+        and not classification.unknown
+    )
     report = {
         "benchmark": "pdf_table_continuation_real_v0_1",
         "gold_provenance": gold_payload["gold_provenance"],
         "source_reports": source_reports,
-        "predicted_edges_adjudicated": sorted(predicted & gold_keys),
-        "unadjudicated_predicted_edges": unadjudicated_predictions,
-        "unadjudicated_predicted_edge_count": len(unadjudicated_predictions),
-        "metrics": asdict(metrics),
+        "core": {
+            "predicted_edges": sorted(classification.core),
+            "metrics": asdict(metrics),
+        },
+        "coverage": {
+            "metrics": asdict(coverage_metrics),
+            "predicted_adjudicated_edges": sorted(classification.coverage),
+            "confirmed_false_continuation_edges": confirmed_false_continuation_edges,
+            "adjudicated_not_currently_predicted_edges": adjudicated_not_currently_predicted_edges,
+        },
+        "unknown": {
+            "predicted_edges": sorted(classification.unknown),
+            "count": len(classification.unknown),
+        },
         "effective_promotion_gate_passed": effective_promotion_gate,
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)

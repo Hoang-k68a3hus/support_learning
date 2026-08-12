@@ -10,6 +10,20 @@ using production `CONTINUES` relations. The corpus contains positive and hard
 negative adjacent-page pairs, including a six-page vocabulary-table chain that
 contains multiple three-page subchains.
 
+The benchmark keeps three prediction namespaces separate:
+
+- **Core gold** is the frozen independent 19-case sample used for precision,
+  recall, F1, and chain regression.
+- **Coverage adjudications** are independently reviewed production-emitted
+  pairs outside core gold. They measure emitted-edge safety only; they must not
+  be used to calculate recall or F1.
+- **Unknown predictions** are emitted pairs that are neither core gold nor in
+  the coverage ledger. They fail closed and block promotion.
+
+The coverage ledger starts empty in this task. It is intentionally populated
+only after independent review of rendered source pages in a later task; the
+absence of a production edge is not itself a negative adjudication.
+
 Run against the user corpus:
 
 ```powershell
