@@ -1,7 +1,8 @@
 import { Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { QueueName } from '../async/contracts/async-contracts';
+import { JobName, QueueName } from '../async/contracts/async-contracts';
+import { JobRetryPolicyService } from '../async/retry/job-retry-policy.service';
 import { JsonLoggerService } from '../common/logging/json-logger.service';
 import { AppConfigService } from '../config/app-config.service';
 import { ConsumerDispatcherService } from './consumer-dispatcher.service';
@@ -25,6 +26,7 @@ export class WorkerRuntimeService implements OnModuleDestroy {
   constructor(
     private readonly config: AppConfigService,
     private readonly registry: ConsumerRegistryService,
+    private readonly retryPolicies: JobRetryPolicyService,
     private readonly dispatcher: ConsumerDispatcherService,
     private readonly logger: JsonLoggerService,
   ) {
@@ -53,17 +55,28 @@ export class WorkerRuntimeService implements OnModuleDestroy {
 
       const worker = new Worker(
         queueName,
-        async (job: Job) =>
-          this.dispatcher.dispatch(job.data as unknown, {
+        async (job: Job) => {
+          const policyMaxAttempts =
+            job.name === JobName.PROCESS_DOCUMENT_VERSION
+              ? this.retryPolicies.forJob(JobName.PROCESS_DOCUMENT_VERSION).maxAttempts
+              : 1;
+          const transportAttempts =
+            typeof job.opts.attempts === 'number' && job.opts.attempts > 0 ? job.opts.attempts : 1;
+          return this.dispatcher.dispatch(job.data as unknown, {
             queueName,
             bullMqJobName: job.name,
             bullMqJobId: job.id,
             attempt: job.attemptsMade + 1,
-          }),
+            maxAttempts: Math.min(policyMaxAttempts, transportAttempts),
+          });
+        },
         {
           connection,
           prefix: this.config.bullMqPrefix,
           concurrency: this.config.workerConcurrency(queueName),
+          settings: {
+            backoffStrategy: (attemptsMade, type) => this.retryPolicies.calculateBackoff(attemptsMade, type),
+          },
         },
       );
       worker.on('error', (error: Error) => this.logger.error('worker_runtime_error', { queueName, error }));
