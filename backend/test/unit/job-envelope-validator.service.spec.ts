@@ -33,6 +33,7 @@ const delivery = {
   bullMqJobName: JobName.PROCESS_DOCUMENT_VERSION,
   bullMqJobId: 'transport-job-1',
   attempt: 1,
+  maxAttempts: 3,
 };
 
 describe('JobEnvelopeValidatorService', () => {
