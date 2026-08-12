@@ -47,6 +47,23 @@ def span_table_prediction(
     )
 
 
+def two_table_predictions() -> tuple[TablePrediction, TablePrediction]:
+    def table(kerala_value: str, pooled_value: str) -> TablePrediction:
+        cells = [["" for _ in range(8)] for _ in range(13)]
+        cells[1][0] = "State"
+        cells[2][0] = "Kerala"
+        cells[2][2] = kerala_value
+        cells[12][0] = "Pooled"
+        cells[12][7] = pooled_value
+        return TablePrediction(
+            row_count=13,
+            column_count=8,
+            cells=tuple(tuple(row) for row in cells),
+        )
+
+    return table("7.2", "6.4"), table("8.8", "3.3")
+
+
 class RealPdfTableBenchmarkContractTests(unittest.TestCase):
     def test_source_manifest_and_gold_cover_the_same_pinned_sources(self) -> None:
         sources = load_sources()
@@ -74,6 +91,22 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
         self.assertEqual((strict.tables[0].row_count, strict.tables[0].column_count), (5, 3))
         self.assertEqual(len(strict.tables[0].anchors), 15)
 
+        two_tables = next(item for item in cases if item.source_id == "camelot-two-tables")
+        self.assertEqual(two_tables.source_truth_table_count, 2)
+        self.assertEqual(two_tables.capability_expectation, "SUPPORTED_REQUIRED")
+        self.assertEqual(len(two_tables.tables), 2)
+        self.assertEqual(
+            {(table.row_count, table.column_count) for table in two_tables.tables},
+            {(13, 8)},
+        )
+        self.assertEqual(
+            {
+                next(anchor.text for anchor in table.anchors if (anchor.row, anchor.column) == (2, 2))
+                for table in two_tables.tables
+            },
+            {"7.2", "8.8"},
+        )
+
         row_span = next(item for item in cases if item.source_id == "camelot-row-span")
         column_span = next(item for item in cases if item.source_id == "camelot-column-span")
         image = next(item for item in cases if item.source_id == "camelot-image-only")
@@ -88,7 +121,7 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
         )
         self.assertEqual(column_span.tables[0].required_span_kinds, ("COLUMN_SPAN",))
         self.assertEqual(image.capability_expectation, "MUST_PRESERVE_UNSTRUCTURED")
-        self.assertTrue(any(item.capability_expectation == "OBSERVE" for item in cases))
+        self.assertFalse(any(item.capability_expectation == "OBSERVE" for item in cases))
 
     def test_evaluator_reports_count_truth_and_capability_independently(self) -> None:
         cases = load_gold_cases()
@@ -96,6 +129,8 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
         for case in cases:
             if case.source_id == "pymupdf-strict-yes-no":
                 tables = (strict_table_prediction(),)
+            elif case.source_id == "camelot-two-tables":
+                tables = two_table_predictions()
             elif case.source_id == "camelot-row-span":
                 tables = (span_table_prediction(40, 4, "ROW_SPAN"),)
             elif case.source_id == "camelot-column-span":
@@ -105,15 +140,28 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
             predictions.append(PagePrediction(case.source_id, case.page, tables))
         result = evaluate(cases, predictions)
         self.assertTrue(result.quality_gate_passed)
-        self.assertEqual(result.capability_checked_cases, 5)
-        self.assertEqual(result.capability_passed_cases, 5)
+        self.assertEqual(result.capability_checked_cases, 6)
+        self.assertEqual(result.capability_passed_cases, 6)
         self.assertEqual(result.known_count_expected_tables, 5)
-        self.assertEqual(result.known_count_predicted_tables, 2)
-        self.assertEqual(result.known_count_missed_source_truth_tables, 3)
+        self.assertEqual(result.known_count_predicted_tables, 4)
+        self.assertEqual(result.known_count_missed_source_truth_tables, 1)
         self.assertEqual(result.known_count_source_truth_precision, 1.0)
-        self.assertEqual(result.known_count_source_truth_recall, 0.4)
-        self.assertEqual(result.structural_contracts, 4)
-        self.assertEqual(result.structural_matches, 3)
+        self.assertEqual(result.known_count_source_truth_recall, 0.8)
+        self.assertEqual(result.structural_contracts, 6)
+        self.assertEqual(result.structural_matches, 5)
+
+    def test_two_table_contract_requires_both_independent_structures(self) -> None:
+        case = next(
+            item for item in load_gold_cases() if item.source_id == "camelot-two-tables"
+        )
+        only_one = two_table_predictions()[0]
+        result = evaluate(
+            (case,),
+            (PagePrediction(case.source_id, case.page, (only_one,)),),
+        )
+        self.assertFalse(result.quality_gate_passed)
+        self.assertEqual(result.structural_matches, 1)
+        self.assertEqual(result.known_count_missed_source_truth_tables, 1)
 
     def test_supported_structural_contract_fails_on_wrong_cell_content(self) -> None:
         strict = next(

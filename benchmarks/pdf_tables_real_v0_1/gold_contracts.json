@@ -9,7 +9,7 @@
       "page": 1,
       "source_truth_table_count": 1,
       "capability_expectation": "MUST_PRESERVE_UNSTRUCTURED",
-      "oracle_evidence": "Camelot quickstart/fixture publishes one 7x7 ruled table. PDF M2.4 still cannot bind its source blocks without crossing the table boundary, so it must fail closed rather than emit partial structure.",
+      "oracle_evidence": "Camelot quickstart/fixture publishes one 7x7 ruled table. PDF M2.5 still cannot bind its source blocks without crossing the table boundary, so it must fail closed rather than emit partial structure.",
       "tables": [
         {
           "row_count": 7,
@@ -26,9 +26,32 @@
       "source_id": "camelot-two-tables",
       "page": 1,
       "source_truth_table_count": 2,
-      "capability_expectation": "OBSERVE",
-      "oracle_evidence": "Camelot lattice regression explicitly asserts two tables for twotables_2.pdf. M2.4 still does not expose a defensible lines_strict candidate for this page, so this remains a recall observation.",
-      "tables": []
+      "capability_expectation": "SUPPORTED_REQUIRED",
+      "oracle_evidence": "Camelot lattice regression explicitly asserts two tables for twotables_2.pdf, and the two pinned published Camelot benchmark CSVs independently establish two 13x8 tables and their cell content. PDF M2.5 must recover both tables from disconnected source-vector regions without using fixture-specific coordinates or text rules.",
+      "tables": [
+        {
+          "row_count": 13,
+          "column_count": 8,
+          "anchors": [
+            {"row": 1, "column": 0, "text": "State"},
+            {"row": 2, "column": 0, "text": "Kerala"},
+            {"row": 2, "column": 2, "text": "7.2"},
+            {"row": 12, "column": 0, "text": "Pooled"},
+            {"row": 12, "column": 7, "text": "6.4"}
+          ]
+        },
+        {
+          "row_count": 13,
+          "column_count": 8,
+          "anchors": [
+            {"row": 1, "column": 0, "text": "State"},
+            {"row": 2, "column": 0, "text": "Kerala"},
+            {"row": 2, "column": 2, "text": "8.8"},
+            {"row": 12, "column": 0, "text": "Pooled"},
+            {"row": 12, "column": 7, "text": "3.3"}
+          ]
+        }
+      ]
     },
     {
       "source_id": "camelot-row-span",
