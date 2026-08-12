@@ -38,7 +38,7 @@ export class InboxReceiptService {
       const [event] = await tx.$queryRaw<
         Array<{
           id: string;
-          eventType: string;
+          eventType: AsyncEventType;
           aggregateType: string;
           aggregateId: string;
         }>
