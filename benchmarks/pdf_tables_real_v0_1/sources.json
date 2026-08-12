@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "benchmark": "pdf_tables_real_v0_1",
+  "sources": [
+    {
+      "id": "camelot-foo",
+      "file_name": "foo.pdf",
+      "url": "https://raw.githubusercontent.com/camelot-dev/camelot/7779eecfdab7a85ba12ec3d1285b305c7e327e3a/tests/files/foo.pdf",
+      "upstream_repository": "camelot-dev/camelot",
+      "upstream_commit": "7779eecfdab7a85ba12ec3d1285b305c7e327e3a",
+      "upstream_path": "tests/files/foo.pdf",
+      "git_blob_sha": "742e01855ef1b8f972bc7d1ae672aba4d01bb7db",
+      "bytes": 84158,
+      "class": "published_table_fixture",
+      "rights_note": "The benchmark does not redistribute this PDF. Rights in the fixture remain with its upstream/rightsholders; only an immutable upstream reference is pinned here."
+    },
+    {
+      "id": "camelot-two-tables",
+      "file_name": "twotables_2.pdf",
+      "url": "https://raw.githubusercontent.com/camelot-dev/camelot/7779eecfdab7a85ba12ec3d1285b305c7e327e3a/tests/files/twotables_2.pdf",
+      "upstream_repository": "camelot-dev/camelot",
+      "upstream_commit": "7779eecfdab7a85ba12ec3d1285b305c7e327e3a",
+      "upstream_path": "tests/files/twotables_2.pdf",
+      "git_blob_sha": "52498878ea623bc95445c5783d0ec3574fc16b3a",
+      "bytes": 23667,
+      "class": "published_multi_table_fixture",
+      "rights_note": "The benchmark does not redistribute this PDF. Rights in the fixture remain with its upstream/rightsholders; only an immutable upstream reference is pinned here."
+    },
+    {
+      "id": "camelot-row-span",
+      "file_name": "row_span_1.pdf",
+      "url": "https://raw.githubusercontent.com/camelot-dev/camelot/7779eecfdab7a85ba12ec3d1285b305c7e327e3a/tests/files/row_span_1.pdf",
+      "upstream_repository": "camelot-dev/camelot",
+      "upstream_commit": "7779eecfdab7a85ba12ec3d1285b305c7e327e3a",
+      "upstream_path": "tests/files/row_span_1.pdf",
+      "git_blob_sha": "ef2c7ce4c79c8284469753d68a62849ad5f8c036",
+      "bytes": 33228,
+      "class": "merged_row_span_challenge",
+      "rights_note": "The benchmark does not redistribute this PDF. Rights in the fixture remain with its upstream/rightsholders; only an immutable upstream reference is pinned here."
+    },
+    {
+      "id": "camelot-column-span",
+      "file_name": "column_span_2.pdf",
+      "url": "https://raw.githubusercontent.com/camelot-dev/camelot/7779eecfdab7a85ba12ec3d1285b305c7e327e3a/tests/files/column_span_2.pdf",
+      "upstream_repository": "camelot-dev/camelot",
+      "upstream_commit": "7779eecfdab7a85ba12ec3d1285b305c7e327e3a",
+      "upstream_path": "tests/files/column_span_2.pdf",
+      "git_blob_sha": "5cab903153627cacc42161353c657f6742d094ce",
+      "bytes": 24313,
+      "class": "merged_column_span_challenge",
+      "rights_note": "The benchmark does not redistribute this PDF. Rights in the fixture remain with its upstream/rightsholders; only an immutable upstream reference is pinned here."
+    },
+    {
+      "id": "camelot-image-only",
+      "file_name": "image.pdf",
+      "url": "https://raw.githubusercontent.com/camelot-dev/camelot/7779eecfdab7a85ba12ec3d1285b305c7e327e3a/tests/files/image.pdf",
+      "upstream_repository": "camelot-dev/camelot",
+      "upstream_commit": "7779eecfdab7a85ba12ec3d1285b305c7e327e3a",
+      "upstream_path": "tests/files/image.pdf",
+      "git_blob_sha": "83f5969799a3e919586abf50b4f65b1448cf2dc7",
+      "bytes": 542301,
+      "class": "image_only_hard_negative",
+      "rights_note": "The benchmark does not redistribute this PDF. Rights in the fixture remain with its upstream/rightsholders; only an immutable upstream reference is pinned here."
+    },
+    {
+      "id": "pymupdf-strict-yes-no",
+      "file_name": "strict-yes-no.pdf",
+      "url": "https://raw.githubusercontent.com/pymupdf/PyMuPDF/53c9aaf539b4fbb6a53010d90de3a2df96e82b5e/tests/resources/strict-yes-no.pdf",
+      "upstream_repository": "pymupdf/PyMuPDF",
+      "upstream_commit": "53c9aaf539b4fbb6a53010d90de3a2df96e82b5e",
+      "upstream_path": "tests/resources/strict-yes-no.pdf",
+      "git_blob_sha": "e00bf6962d789dc04b324538f9fccafd3a64e103",
+      "bytes": 16748,
+      "class": "supported_lines_strict_table",
+      "rights_note": "The benchmark does not redistribute this PDF. Rights in the fixture remain with its upstream/rightsholders; only an immutable upstream reference is pinned here."
+    }
+  ]
+}

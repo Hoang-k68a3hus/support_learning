@@ -22,9 +22,13 @@ class PdfMetadataBuilder:
         pages_with_native_text: int,
         pages_with_images: int,
         pages_with_occluded_text: int,
+        pages_with_extracted_tables: int,
+        extracted_table_count: int,
         diagnostics: list[AdapterDiagnostic],
         reading_order_version: str,
         block_reconstruction_version: str,
+        table_structure_version: str,
+        table_text_reconstruction_version: str,
     ) -> DocumentMetadata:
         standard = self.safe_mapping(getattr(document, "metadata", None))
         xmp_xml = self.xmp_metadata(document, diagnostics=diagnostics)
@@ -51,6 +55,8 @@ class PdfMetadataBuilder:
             "pages_with_native_text": pages_with_native_text,
             "pages_with_image_blocks": pages_with_images,
             "pages_with_occluded_native_text": pages_with_occluded_text,
+            "pages_with_extracted_tables": pages_with_extracted_tables,
+            "extracted_table_count": extracted_table_count,
             "standard_metadata": standard,
             "xmp_metadata": xmp_xml,
             "pages": page_metadata,
@@ -63,6 +69,8 @@ class PdfMetadataBuilder:
             ),
             "reading_order_version": reading_order_version,
             "block_reconstruction_version": block_reconstruction_version,
+            "table_structure_version": table_structure_version,
+            "table_text_reconstruction_version": table_text_reconstruction_version,
         }
         author = self.non_blank(standard.get("author"))
         return DocumentMetadata(
@@ -77,6 +85,8 @@ class PdfMetadataBuilder:
         page: PdfPageObservation,
         *,
         emitted_block_count: int,
+        extracted_table_count: int = 0,
+        emitted_table_structure_element_count: int = 0,
     ) -> dict[str, object]:
         visible_count = len(page.native_text_blocks)
         occluded_count = len(page.occluded_text_blocks)
@@ -93,6 +103,10 @@ class PdfMetadataBuilder:
             "occluded_native_text_block_count": occluded_count,
             "emitted_block_count": emitted_block_count,
             "image_block_count": page.image_block_count,
+            "extracted_table_count": extracted_table_count,
+            "emitted_table_structure_element_count": (
+                emitted_table_structure_element_count
+            ),
         }
 
     @staticmethod

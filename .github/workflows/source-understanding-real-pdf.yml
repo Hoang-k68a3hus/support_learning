@@ -1,0 +1,86 @@
+name: Real PDF Table Check
+
+on:
+  pull_request:
+    paths:
+      - "source_understanding/adapters/pdf/**"
+      - "benchmarks/pdf_tables_real_v0_1/**"
+      - "tests/test_pdf_m2_tables.py"
+      - "tests/test_pdf_m23_text_tables.py"
+      - "tests/test_pdf_real_table_benchmark_contracts.py"
+      - ".github/workflows/source-understanding-real-pdf.yml"
+  push:
+    branches: [main]
+    paths:
+      - "source_understanding/adapters/pdf/**"
+      - "benchmarks/pdf_tables_real_v0_1/**"
+      - "tests/test_pdf_m2_tables.py"
+      - "tests/test_pdf_m23_text_tables.py"
+      - "tests/test_pdf_real_table_benchmark_contracts.py"
+      - ".github/workflows/source-understanding-real-pdf.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-pdf-tables:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned PDF benchmark dependencies
+        run: python -m pip install --disable-pip-version-check "pydantic>=2,<3" "pymupdf==1.28.0"
+      - name: Probe real borderless table fixture
+        run: |
+          python - <<'PY'
+          import hashlib
+          import urllib.request
+          import pymupdf
+          from source_understanding.adapters import PdfAdapter
+
+          url = "https://raw.githubusercontent.com/jsvine/pdfplumber/4c64b92d5caccd71c645e98e0fabb0c4dba7ff45/tests/pdfs/senate-expenditures.pdf"
+          with urllib.request.urlopen(url, timeout=30) as response:
+              payload = response.read()
+          blob = hashlib.sha1(f"blob {len(payload)}\0".encode("ascii") + payload, usedforsecurity=False).hexdigest()
+          print(f"PROBE senate bytes={len(payload)} blob={blob} sha256={hashlib.sha256(payload).hexdigest()}")
+          doc = pymupdf.open(stream=payload, filetype="pdf")
+          try:
+              print(f"PROBE senate pages={doc.page_count}")
+              page = doc[0]
+              print(f"PROBE senate drawings={len(page.get_drawings())}")
+          finally:
+              doc.close()
+          adapted = PdfAdapter().adapt(payload, source_name="senate-expenditures.pdf")
+          tables = [item for item in adapted.raw_elements if item.type_hint == "TABLE"]
+          print("PROBE senate tables=", [(item.location.page if item.location else None, item.attributes.get("row_count"), item.attributes.get("column_count"), item.attributes.get("pdf_table_detection_strategy")) for item in tables])
+          for table in tables:
+              group = table.attributes.get("integrity_group_id")
+              cells = [item for item in adapted.raw_elements if item.type_hint == "TABLE_CELL" and item.attributes.get("integrity_group_id") == group]
+              print("PROBE senate table cells=", [(item.attributes.get("row_index"), item.attributes.get("cell_index"), item.text) for item in cells[-15:]])
+          for item in adapted.diagnostics:
+              if item.code.startswith("PDF_TABLE_"):
+                  print("PROBE senate diagnostic=", item.code, item.part, item.metadata)
+          PY
+      - name: Compile PDF source and benchmark
+        run: python -m compileall -q source_understanding benchmarks/pdf_tables_real_v0_1 tests/test_pdf_m2_tables.py tests/test_pdf_m23_text_tables.py tests/test_pdf_real_table_benchmark_contracts.py
+      - name: Run PDF table unit tests
+        run: python -m unittest tests.test_pdf_m2_tables tests.test_pdf_m23_text_tables -v
+      - name: Run real PDF benchmark contract tests
+        run: python -m unittest tests.test_pdf_real_table_benchmark_contracts -v
+      - name: Run pinned real PDF table benchmark
+        run: |
+          mkdir -p reports
+          python -m benchmarks.pdf_tables_real_v0_1.run_benchmark \
+            --output reports/pdf-table-benchmark.json \
+            --enforce-capability-gate
+      - name: Upload real PDF benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-pdf-table-benchmark
+          path: reports/pdf-table-benchmark.json
+          if-no-files-found: warn

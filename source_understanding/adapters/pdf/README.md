@@ -1,10 +1,11 @@
-# PDF Adapter — M1 Native Text Foundation
+# PDF Adapter — M2 Structural Content
 
 `source_understanding.adapters.pdf` is the born-digital/native-text PDF boundary.
-It is deliberately separate from OCR, layout-model, table-recognition, and semantic
-classification work.
+M1 preserves visible native text, geometry, reading order, and provenance. M2 adds
+structural content only when the PDF provides enough auditable evidence to do so.
+OCR, image understanding, and semantic classification remain separate concerns.
 
-## M1 pipeline
+## Pipeline
 
 ```text
 exact PDF bytes
@@ -13,9 +14,10 @@ exact PDF bytes
   -> PyMuPDF TextPage DICT (sort=False)
   -> native text blocks / lines / spans
   -> paint-order visibility gate
-  -> displayed page bbox normalization
-  -> deterministic fail-closed reading order
-  -> derived block reconstruction
+  -> M2 conservative table detection
+       -> accepted: source-span-bound TABLE / TABLE_ROW / TABLE_CELL
+       -> rejected/ambiguous: preserve M1 native blocks + diagnostic
+  -> deterministic fail-closed reading order for non-table content
   -> RawElement[]
   -> SourceAdapterRunner
   -> format-agnostic SourceUnderstandingPipeline
@@ -23,83 +25,96 @@ exact PDF bytes
 
 ## Source / inference boundary
 
-PDF does not usually expose paragraph or heading semantics as authoritative source
-facts. M1 therefore emits reconstructed visible text blocks as `PARAGRAPH` hints with
-`DERIVED` provenance. It does **not** emit `HEADING`, `TABLE`, `HEADER`, `FOOTER`,
-or semantic roles from font size or position.
+PDF normally does not expose paragraph, heading, or table semantics as authoritative
+tags. Visible text blocks therefore remain `PARAGRAPH` hints with `DERIVED`
+provenance. M2 table elements are also explicitly `DERIVED`: they represent a
+high-confidence structural projection from PDF vector geometry plus exact native
+text-span ownership, not an explicit source tag.
 
-Every emitted block retains:
+The adapter never converts weak layout evidence into a source fact. Unsupported or
+ambiguous candidates remain their original M1 text blocks.
 
-- exact input-byte SHA-256 through `SourceAdapterResult.content_hash`;
-- 1-based page identity;
-- canonical normalized `[0, 1]` bbox in displayed/rotated page coordinates;
-- original PyMuPDF unrotated bbox in points;
-- native block order and resolved reading order;
-- line-break reconstruction offsets;
-- span offsets, bboxes, font name/size, flags, color, alpha and origin when enabled;
-- PyMuPDF / MuPDF versions and deterministic adapter policy in provenance/manifest.
+## M2 table structure v1
 
-## Paint-order visibility
+`pymupdf-lines-strict-v1` is deliberately precision-first. PyMuPDF proposes
+line-bordered table candidates from vector geometry using `lines_strict`. The adapter
+then accepts a candidate only when all of these invariants hold:
 
-A PDF text object can exist in the content stream while being invisible because a later
-drawing operation paints over it. TextPage extraction alone is therefore not sufficient
-evidence that extracted text is visible document content.
+- at least 2 rows and 2 columns;
+- at least 6 total cells (small 2x2 figure/grid layouts are intentionally rejected);
+- simple rectangular topology with no missing/merged/spanning cells;
+- stable column boundaries across rows;
+- enough populated rows, columns, and cells;
+- every native text span inside the candidate maps to exactly one cell;
+- a consumed TextPage block cannot also contain non-blank text outside the table;
+- consumed visible source blocks must form one contiguous source interval;
+- two accepted tables cannot claim the same source block.
 
-M1 uses `get_texttrace()` sequence numbers together with later opaque vector fills. It
-excludes a block only when the evidence is high confidence: the text can be associated
-with paint sequence entries, a later fill is effectively opaque and rectangle-like, and that
-fill covers almost the entire text-block bbox. Ambiguous visibility always preserves the
-native text.
+A verified table replaces the consumed paragraph blocks rather than duplicating them:
 
-High-confidence exclusions are reported as `PDF_OCCLUDED_TEXT_EXCLUDED_M1` and
-retained in page audit metadata, but they are not emitted as retrieval text.
+```text
+TABLE
+TABLE_ROW
+TABLE_CELL ...
+TABLE_ROW
+TABLE_CELL ...
+```
 
-## Reading order
+All table elements share the format-agnostic `integrity_group_id`, allowing the
+existing integrity consolidator to build one `TABLE_BLOCK` downstream without PDF-
+specific logic.
 
-M1 never assumes that PDF content-stream order is natural reading order, but it also does
-not replace native order without strong evidence. The native sequence remains the
-fail-closed fallback.
+### Cell text and provenance
 
-`geometric-columns-v3` only changes order when a defensible prose-column cohort exists.
-Candidate columns must contain repeated blocks, coexist vertically, be separated spatially,
-and have reasonably balanced widths. Narrow equation-number lanes and asymmetric math
-fragments therefore do not count as prose columns.
+Cell text is rebuilt from the exact TextPage spans owned by that cell; it is not
+trusted from a second semantic transcription. `source-spans-v1` preserves source
+block, line, and span native orders plus span text, native/displayed bboxes, fonts,
+flags, colors, alpha, and origins in cell audit metadata. This keeps the table
+projection traceable back to the original PDF observations.
 
-Wide blocks may separate vertical layout bands only when the remaining blocks independently
-establish a defensible column cohort. A long single-column paragraph or formula cannot
-become a false separator merely because it spans most of the page width.
+## Diagnostics
 
-Repeated row-aligned geometry remains conservative: M1 preserves native order and emits
-`PDF_ALIGNED_LAYOUT_NOT_STRUCTURED_M1` rather than flattening probable tables, forms,
-equation arrays, or diagrams column-major.
+M2 adds:
 
-## Native text quality diagnostics
+- `PDF_TABLE_STRUCTURE_EXTRACTED_M2` — a high-confidence table was structured;
+- `PDF_TABLE_CANDIDATE_UNSUPPORTED_M2` — vector geometry proposed a candidate but
+  topology/source ownership was too weak or unsupported;
+- `PDF_TABLE_DETECTION_FAILED_M2` — table inspection failed safely and M1 text was
+  retained;
+- `PDF_ALIGNED_LAYOUT_REMAINS_UNSTRUCTURED_M2` — additional aligned content outside
+  accepted tables remains intentionally unstructured.
 
-Native text is preserved exactly as returned by the PDF backend. M1 does not clean or
-replace suspicious glyph mappings. If extraction contains C0/C1 control code points or
-the Unicode replacement character, the adapter emits `PDF_NATIVE_TEXT_MAPPING_SUSPECT`.
-OCR remains a later milestone rather than a hidden repair path.
+Existing M1 diagnostics remain valid for visibility, suspicious native mappings,
+image content, no-native-text pages, and unresolved aligned layouts.
 
-## Explicit M1 limitations
+## M1 invariants retained
 
-The following are intentionally **not** silently handled:
+Every emitted source unit still retains exact input-byte SHA-256, 1-based page
+identity, normalized displayed-page bbox, original unrotated point geometry, native
+order/provenance, and pinned backend/policy versions. Occluded text is excluded only
+with high-confidence paint-order evidence. Ambiguous reading order falls back to the
+native sequence.
 
+## Explicit limitations after this increment
+
+M2 v1 intentionally does **not** claim support for:
+
+- borderless/text-only tables;
+- merged cells, row spans, or column spans;
+- irregular/non-rectangular tables;
+- cross-page table continuation;
+- semantic header inference;
 - OCR / scanned pages;
-- image understanding;
-- vector-only text;
-- arbitrary-path or image-based occlusion where visibility cannot be established safely;
-- table structure recognition;
+- image or vector-only text understanding;
 - figure/caption pairing;
 - header/footer/page-number classification;
 - heading hierarchy;
-- cross-page paragraph continuation;
-- formulas beyond whatever native Unicode text the PDF already exposes.
+- cross-page paragraph continuation.
 
-Pages without visible native text and pages containing image blocks produce explicit
-structural-loss diagnostics. Suspicious native font mappings and strongly aligned/grid-like
-native text layouts are surfaced instead of silently normalized or flattened.
+Those cases must stay visible as ordinary source content or structural-loss
+diagnostics until a later milestone can prove them safely.
 
 ## Dependency
 
-M1 uses PyMuPDF as the source observation backend. CI pins the supported release so
-extraction behavior does not drift silently.
+PyMuPDF remains the source observation backend. CI pins the supported release so
+native extraction and table-detection behavior cannot drift silently.
