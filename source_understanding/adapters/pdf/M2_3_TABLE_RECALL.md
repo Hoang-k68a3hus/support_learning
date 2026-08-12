@@ -7,9 +7,12 @@ M2.3 expands native-PDF table recall without weakening the source-preservation b
 Detection order is intentionally precision-first:
 
 1. `lines_strict` remains the primary path for simple vector-line tables.
-2. If no supported/rejected line candidate exists, M2.3 inspects page vector evidence.
-3. Text-aligned fallback is allowed only when the page does **not** show strong rectilinear vector-table evidence.
-4. The fallback works only from native TextPage spans. It does not render, OCR, call a VLM, or infer missing source text.
+2. An accepted line table always owns the page region and prevents a competing text projection.
+3. If no line table is accepted, M2.3 inspects page vector evidence. Strong rectilinear evidence keeps the page on the line/topology path; an incidental rejected line candidate alone does not block text fallback.
+4. Text-aligned fallback is allowed only when the page does **not** show strong rectilinear vector-table evidence.
+5. The fallback works only from native TextPage spans. It does not render, OCR, call a VLM, or infer missing source text.
+
+M2.3 intentionally does **not** call full-page `find_tables(strategy="text")`: on prose-heavy real PDFs that strategy can form very large virtual grids. The adapter instead uses a smaller source-near alignment contract below.
 
 ## Text-aligned acceptance contract
 
@@ -31,6 +34,7 @@ The table, rows and cells are `DERIVED` structure. Cell text is reconstructed on
 
 M2.3 deliberately keeps the original M1 blocks instead of projecting a table when evidence is ambiguous. Important failure classes include:
 
+- `complex_or_merged_cells`;
 - `rectilinear_evidence_no_strict_candidate`;
 - `text_aligned_insufficient_column_gap`;
 - `text_aligned_dense_row_spacing`;
@@ -39,7 +43,9 @@ M2.3 deliberately keeps the original M1 blocks instead of projecting a table whe
 - `text_aligned_source_block_crosses_boundary`;
 - `text_aligned_source_blocks_noncontiguous`.
 
-These diagnostics are intended to make future recall work measurable rather than hiding misses behind prompt or semantic heuristics.
+The real-PDF benchmark aggregates these diagnostics only **after independent gold has established a known-count miss**. `m2_3_failure_audit.failure_class_case_counts` counts how many missed source/page cases expose each class, while `candidate_reason_occurrences` keeps raw candidate counts. Production diagnostics explain misses; they never define source truth.
+
+CI requires every remaining known-count missed case in the pilot to have a diagnostic failure classification. This makes recall work debuggable without lowering the table acceptance threshold.
 
 ## OCR boundary
 
@@ -48,3 +54,5 @@ OCR is **not part of M2.3**. Image-only pages remain unparsed for text and conti
 ## Evaluation
 
 The existing `pdf_tables_real_v0_1` benchmark remains authoritative for its frozen source truth and capability contracts. M2.3 may improve recall only when independent gold supports the new behavior; it must not rewrite source-truth labels to match parser output.
+
+The current pilot still has no real borderless fixture promoted to `SUPPORTED_REQUIRED`. Candidate real fixtures were inspected, but none provided both a compatible source layout and an independent full-page oracle strong enough to freeze as new positive gold. Synthetic tests therefore lock the borderless detector's invariants, while real-corpus recall remains visible rather than being improved through speculative annotation or threshold relaxation.

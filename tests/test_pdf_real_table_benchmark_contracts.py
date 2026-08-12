@@ -4,6 +4,7 @@ from pathlib import Path
 import unittest
 
 from benchmarks.pdf_tables_real_v0_1._corpus import git_blob_sha, load_sources
+from benchmarks.pdf_tables_real_v0_1.audit import audit_missed_table_failures
 from benchmarks.pdf_tables_real_v0_1.evaluate import (
     PagePrediction,
     TablePrediction,
@@ -120,6 +121,83 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
         )
         self.assertFalse(result.quality_gate_passed)
         self.assertEqual(result.known_count_false_positive_tables, 1)
+
+    def test_m2_3_failure_audit_counts_cases_separately_from_candidate_reasons(self) -> None:
+        reports = (
+            {
+                "source_id": "alpha",
+                "table_diagnostics": [
+                    {
+                        "metadata": {
+                            "page": 1,
+                            "reason_counts": {
+                                "complex_or_merged_cells": 2,
+                                "source_block_crosses_table_boundary": 1,
+                            },
+                        }
+                    }
+                ],
+            },
+            {
+                "source_id": "beta",
+                "table_diagnostics": [
+                    {
+                        "metadata": {
+                            "page": 2,
+                            "reason_counts": {"complex_or_merged_cells": 1},
+                        }
+                    }
+                ],
+            },
+        )
+        audit = audit_missed_table_failures(
+            (("alpha", 1), ("beta", 2), ("gamma", 1)),
+            reports,
+        )
+        self.assertEqual(audit["missed_case_count"], 3)
+        self.assertEqual(audit["classified_missed_case_count"], 2)
+        self.assertEqual(audit["unclassified_missed_cases"], ["gamma#page:1"])
+        self.assertEqual(
+            audit["failure_class_case_counts"],
+            {
+                "complex_or_merged_cells": 2,
+                "source_block_crosses_table_boundary": 1,
+            },
+        )
+        self.assertEqual(
+            audit["candidate_reason_occurrences"],
+            {
+                "complex_or_merged_cells": 3,
+                "source_block_crosses_table_boundary": 1,
+            },
+        )
+
+    def test_m2_3_failure_audit_is_page_scoped_and_ignores_invalid_counts(self) -> None:
+        audit = audit_missed_table_failures(
+            (("alpha", 1),),
+            (
+                {
+                    "source_id": "alpha",
+                    "table_diagnostics": [
+                        {"metadata": {"page": 2, "reason_counts": {"wrong_page": 1}}},
+                        {
+                            "metadata": {
+                                "page": 1,
+                                "reason_counts": {
+                                    "valid": 1,
+                                    "zero": 0,
+                                    "boolean": True,
+                                    "text": "1",
+                                },
+                            }
+                        },
+                    ],
+                },
+            ),
+        )
+        self.assertEqual(audit["unclassified_missed_cases"], [])
+        self.assertEqual(audit["failure_class_case_counts"], {"valid": 1})
+        self.assertEqual(audit["candidate_reason_occurrences"], {"valid": 1})
 
     def test_independent_evaluator_has_no_production_detector_dependency(self) -> None:
         benchmark_root = Path(__file__).resolve().parents[1] / "benchmarks" / "pdf_tables_real_v0_1"

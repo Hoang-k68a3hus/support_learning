@@ -10,6 +10,7 @@ from benchmarks.pdf_tables_real_v0_1._corpus import (
     load_sources,
     sha256_hex,
 )
+from benchmarks.pdf_tables_real_v0_1.audit import audit_missed_table_failures
 from benchmarks.pdf_tables_real_v0_1.evaluate import (
     PagePrediction,
     TablePrediction,
@@ -63,11 +64,14 @@ def main() -> int:
         )
 
     result = evaluate(gold, predictions)
+    missed_cases = _known_count_missed_cases(gold, predictions)
+    failure_audit = audit_missed_table_failures(missed_cases, source_reports)
     report = {
         "benchmark": "pdf_tables_real_v0_1",
         "source_reports": source_reports,
         "predictions": [asdict(item) for item in predictions],
         "result": asdict(result),
+        "m2_3_failure_audit": failure_audit,
     }
     rendered = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
     print(rendered)
@@ -77,6 +81,22 @@ def main() -> int:
     if args.enforce_capability_gate and not result.quality_gate_passed:
         return 2
     return 0
+
+
+def _known_count_missed_cases(gold_cases, predictions) -> tuple[tuple[str, int], ...]:
+    predicted_by_key = {
+        (item.source_id, item.page): len(item.tables)
+        for item in predictions
+    }
+    missed: list[tuple[str, int]] = []
+    for case in gold_cases:
+        expected = case.source_truth_table_count
+        if expected is None:
+            continue
+        actual = predicted_by_key.get((case.source_id, case.page), 0)
+        if actual < expected:
+            missed.append((case.source_id, case.page))
+    return tuple(missed)
 
 
 def _prediction_from_raw(source_id: str, page: int, raw_elements) -> PagePrediction:
