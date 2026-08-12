@@ -207,8 +207,26 @@ model OutboxEvent {
   publishedAt    DateTime?    @map("published_at") @db.Timestamptz(6)
   lastErrorCode  String?      @map("last_error_code") @db.VarChar(120)
   lastErrorAt    DateTime?    @map("last_error_at") @db.Timestamptz(6)
+  inboxReceipts  InboxReceipt[]
 
   @@map("outbox_events")
+}
+
+model InboxReceipt {
+  id              String      @id @default(uuid()) @db.Uuid
+  consumerName    String      @map("consumer_name") @db.VarChar(160)
+  eventId         String      @map("event_id") @db.Uuid
+  jobName         String      @map("job_name") @db.VarChar(120)
+  contractVersion Int         @map("contract_version")
+  processedAt     DateTime    @default(now()) @map("processed_at") @db.Timestamptz(6)
+  resultHash      String?     @map("result_hash") @db.Char(64)
+  metadata        Json?
+  event           OutboxEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+
+  @@unique([consumerName, eventId, jobName], map: "inbox_receipts_consumer_event_job_key")
+  @@index([eventId], map: "inbox_receipts_event_id_idx")
+  @@index([processedAt], map: "inbox_receipts_processed_at_idx")
+  @@map("inbox_receipts")
 }
 
 model IdempotencyRecord {

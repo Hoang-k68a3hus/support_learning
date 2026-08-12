@@ -26,6 +26,11 @@ export interface ValidatedEnvironment {
   OUTBOX_RELAY_MAX_PUBLISH_ATTEMPTS: number;
   OUTBOX_RELAY_BACKOFF_BASE_MS: number;
   OUTBOX_RELAY_BACKOFF_MAX_MS: number;
+  WORKER_INSTANCE_ID: string;
+  WORKER_PROCESSING_CONCURRENCY: number;
+  WORKER_LEARNING_CONCURRENCY: number;
+  WORKER_MAINTENANCE_CONCURRENCY: number;
+  WORKER_SHUTDOWN_GRACE_MS: number;
 }
 
 const SECRET_MIN_LENGTH = 32;
@@ -286,5 +291,30 @@ export function validateEnvironment(env: Record<string, unknown>): ValidatedEnvi
     ),
     OUTBOX_RELAY_BACKOFF_BASE_MS: outboxRelayBackoffBaseMs,
     OUTBOX_RELAY_BACKOFF_MAX_MS: outboxRelayBackoffMaxMs,
+    WORKER_INSTANCE_ID: parseControlledName(requireString(env, 'WORKER_INSTANCE_ID'), 'WORKER_INSTANCE_ID', 160),
+    WORKER_PROCESSING_CONCURRENCY: parseBoundedPositiveInteger(
+      requireString(env, 'WORKER_PROCESSING_CONCURRENCY'),
+      'WORKER_PROCESSING_CONCURRENCY',
+      1,
+      128,
+    ),
+    WORKER_LEARNING_CONCURRENCY: parseBoundedPositiveInteger(
+      requireString(env, 'WORKER_LEARNING_CONCURRENCY'),
+      'WORKER_LEARNING_CONCURRENCY',
+      1,
+      128,
+    ),
+    WORKER_MAINTENANCE_CONCURRENCY: parseBoundedPositiveInteger(
+      requireString(env, 'WORKER_MAINTENANCE_CONCURRENCY'),
+      'WORKER_MAINTENANCE_CONCURRENCY',
+      1,
+      128,
+    ),
+    WORKER_SHUTDOWN_GRACE_MS: parseBoundedPositiveInteger(
+      requireString(env, 'WORKER_SHUTDOWN_GRACE_MS'),
+      'WORKER_SHUTDOWN_GRACE_MS',
+      1000,
+      300000,
+    ),
   };
 }

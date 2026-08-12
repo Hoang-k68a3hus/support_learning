@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { QueueName } from '../async/contracts/async-contracts';
 import { ConfigService } from '@nestjs/config';
 import type { NodeEnvironment, ValidatedEnvironment } from './env.validation';
 
@@ -104,6 +105,24 @@ export class AppConfigService {
 
   get outboxRelayBackoffMaxMs(): number {
     return this.config.get('OUTBOX_RELAY_BACKOFF_MAX_MS', { infer: true });
+  }
+
+  get workerInstanceId(): string {
+    return this.config.get('WORKER_INSTANCE_ID', { infer: true });
+  }
+
+  get workerShutdownGraceMs(): number {
+    return this.config.get('WORKER_SHUTDOWN_GRACE_MS', { infer: true });
+  }
+
+  workerConcurrency(queueName: QueueName): number {
+    if (queueName === QueueName.PROCESSING) {
+      return this.config.get('WORKER_PROCESSING_CONCURRENCY', { infer: true });
+    }
+    if (queueName === QueueName.LEARNING) {
+      return this.config.get('WORKER_LEARNING_CONCURRENCY', { infer: true });
+    }
+    return this.config.get('WORKER_MAINTENANCE_CONCURRENCY', { infer: true });
   }
 
   get isProduction(): boolean {
