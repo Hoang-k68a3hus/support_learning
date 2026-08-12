@@ -44,7 +44,10 @@ export class IdempotencyService {
     now = new Date(),
   ): Promise<IdempotencyRecord | null> {
     const lockKey = `${userId}:${scope}:${key}`;
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+    await tx.$queryRaw<Array<{ locked: number }>>`
+      SELECT 1 AS "locked"
+      FROM (SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))) AS lock_row
+    `;
     await tx.idempotencyRecord.deleteMany({ where: { userId, scope, key, expiresAt: { lte: now } } });
     const existing = await tx.idempotencyRecord.findUnique({ where: { userId_scope_key: { userId, scope, key } } });
     if (!existing) return null;
