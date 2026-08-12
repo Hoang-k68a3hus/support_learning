@@ -72,7 +72,7 @@ export class WorkerRuntimeService implements OnModuleDestroy {
           queueName,
           bullMqJobId: job?.id,
           bullMqJobName: job?.name,
-          attempt: (job?.attemptsMade ?? 0) + 1,
+          attempt: job?.attemptsMade ?? 0,
           error,
         });
       });
