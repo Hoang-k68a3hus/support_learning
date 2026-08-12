@@ -2,8 +2,9 @@ import { Body, Controller, Delete, Get, Headers, HttpCode, HttpStatus, Param, Pa
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AuthPrincipal, RequestContext } from '../common/types/http-request';
-import { DocumentUploadService } from './document-upload.service';
-import { DocumentsService } from './documents.service';
+import type { CursorPage } from '../common/types/pagination';
+import { DocumentUploadService, type CompleteUploadResponse, type InitUploadResponse } from './document-upload.service';
+import { DocumentsService, type DocumentDto, type DocumentStatusDto, type VersionDto } from './documents.service';
 import { InitUploadDto, ListDocumentsQueryDto, ListVersionsQueryDto, NewVersionInitUploadDto, UpdateDocumentDto } from './dto/document.dto';
 
 @Controller('documents')
@@ -19,17 +20,17 @@ export class DocumentsController {
     @CurrentUser() principal: AuthPrincipal,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() dto: InitUploadDto,
-  ) {
+  ): Promise<InitUploadResponse> {
     return this.uploads.initDocument(principal.userId, idempotencyKey, dto);
   }
 
   @Get()
-  list(@CurrentUser() principal: AuthPrincipal, @Query() query: ListDocumentsQueryDto) {
+  list(@CurrentUser() principal: AuthPrincipal, @Query() query: ListDocumentsQueryDto): Promise<CursorPage<DocumentDto>> {
     return this.documents.list(principal.userId, query);
   }
 
   @Get(':id')
-  get(@CurrentUser() principal: AuthPrincipal, @Param('id') id: string) {
+  get(@CurrentUser() principal: AuthPrincipal, @Param('id') id: string): Promise<DocumentDto> {
     return this.documents.get(principal.userId, id);
   }
 
@@ -39,23 +40,27 @@ export class DocumentsController {
     @Param('id') id: string,
     @Body() dto: UpdateDocumentDto,
     @Req() request: RequestContext,
-  ) {
+  ): Promise<DocumentDto> {
     return this.documents.update(principal.userId, id, dto, request.requestId);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  delete(@CurrentUser() principal: AuthPrincipal, @Param('id') id: string, @Req() request: RequestContext) {
+  delete(@CurrentUser() principal: AuthPrincipal, @Param('id') id: string, @Req() request: RequestContext): Promise<void> {
     return this.documents.delete(principal.userId, id, request.requestId);
   }
 
   @Get(':id/versions')
-  versions(@CurrentUser() principal: AuthPrincipal, @Param('id') id: string, @Query() query: ListVersionsQueryDto) {
+  versions(
+    @CurrentUser() principal: AuthPrincipal,
+    @Param('id') id: string,
+    @Query() query: ListVersionsQueryDto,
+  ): Promise<CursorPage<VersionDto>> {
     return this.documents.listVersions(principal.userId, id, query);
   }
 
   @Get(':id/status')
-  status(@CurrentUser() principal: AuthPrincipal, @Param('id') id: string) {
+  status(@CurrentUser() principal: AuthPrincipal, @Param('id') id: string): Promise<DocumentStatusDto> {
     return this.documents.getStatus(principal.userId, id);
   }
 
@@ -65,7 +70,7 @@ export class DocumentsController {
     @Param('documentId') documentId: string,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() dto: NewVersionInitUploadDto,
-  ) {
+  ): Promise<InitUploadResponse> {
     return this.uploads.initNewVersion(principal.userId, documentId, idempotencyKey, dto);
   }
 
@@ -75,7 +80,7 @@ export class DocumentsController {
     @CurrentUser() principal: AuthPrincipal,
     @Param('documentId') documentId: string,
     @Param('versionId') versionId: string,
-  ) {
+  ): Promise<CompleteUploadResponse> {
     return this.uploads.complete(principal.userId, documentId, versionId);
   }
 
@@ -86,7 +91,7 @@ export class DocumentsController {
     @Param('id') id: string,
     @Param('tagId') tagId: string,
     @Req() request: RequestContext,
-  ) {
+  ): Promise<void> {
     return this.documents.linkTag(principal.userId, id, tagId, request.requestId);
   }
 
@@ -97,7 +102,7 @@ export class DocumentsController {
     @Param('id') id: string,
     @Param('tagId') tagId: string,
     @Req() request: RequestContext,
-  ) {
+  ): Promise<void> {
     return this.documents.unlinkTag(principal.userId, id, tagId, request.requestId);
   }
 }

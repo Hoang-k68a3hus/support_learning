@@ -40,7 +40,7 @@ export class MinioStorageService implements StoragePort {
         this.config.storageUploadTtlSeconds,
       );
       return { url, expiresAt, requiredHeaders: { 'Content-Type': expected.mediaType } };
-    } catch (error) {
+    } catch {
       throw this.storageUnavailable('Unable to create upload URL');
     }
   }
@@ -68,9 +68,7 @@ export class MinioStorageService implements StoragePort {
     expected: ExpectedObjectMetadata,
   ): Promise<StoredObjectMetadata> {
     const staging = await this.statObject(stagingObjectKey);
-    if (!staging) {
-      throw new DomainHttpException(409, 'UPLOAD_SOURCE_MISSING', 'Uploaded staging object does not exist');
-    }
+    if (!staging) throw new DomainHttpException(409, 'UPLOAD_SOURCE_MISSING', 'Uploaded staging object does not exist');
     this.assertExpected(staging, expected, 'Staging object metadata does not match the upload contract');
 
     const existingFinal = await this.statObject(finalObjectKey);

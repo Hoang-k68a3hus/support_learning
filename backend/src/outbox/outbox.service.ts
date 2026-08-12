@@ -19,7 +19,7 @@ export class OutboxService {
         aggregateType: input.aggregateType,
         aggregateId: input.aggregateId,
         eventType: input.eventType,
-        payload: { eventId: id, ...input.payload } as Prisma.InputJsonValue,
+        payload: { eventId: id, ...input.payload },
       },
     });
   }

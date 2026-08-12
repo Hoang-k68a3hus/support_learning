@@ -1,5 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { DocumentStatus, type Document, type DocumentSource, type DocumentVersion } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { DocumentStatus, type Document, type DocumentSource, type DocumentUploadState, type DocumentVersion } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import type { CursorPage } from '../common/types/pagination';
 import { PrismaService } from '../database/prisma.service';
@@ -28,6 +28,13 @@ export interface DocumentDto {
   currentVersion: VersionDto | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface DocumentStatusDto {
+  documentId: string;
+  status: DocumentStatus;
+  currentVersionId: string | null;
+  latestVersion: { id: string; versionNo: number; uploadState: DocumentUploadState } | null;
 }
 
 type VersionWithSource = DocumentVersion & { source: DocumentSource | null };
@@ -169,7 +176,7 @@ export class DocumentsService {
     return { items: page.map(versionDto), nextCursor: hasMore ? page.at(-1)?.id ?? null : null };
   }
 
-  async getStatus(ownerId: string, documentId: string) {
+  async getStatus(ownerId: string, documentId: string): Promise<DocumentStatusDto> {
     const document = await this.getOwnedActive(ownerId, documentId);
     const latest = await this.prisma.documentVersion.findFirst({
       where: { documentId },
@@ -227,9 +234,7 @@ export class DocumentsService {
   }
 
   private async getOwnedActive(ownerId: string, id: string): Promise<Document> {
-    const document = await this.prisma.document.findFirst({
-      where: { id, ownerId, status: DocumentStatus.ACTIVE, deletedAt: null },
-    });
+    const document = await this.prisma.document.findFirst({ where: { id, ownerId, status: DocumentStatus.ACTIVE, deletedAt: null } });
     if (!document) throw new NotFoundException('Document not found');
     return document;
   }

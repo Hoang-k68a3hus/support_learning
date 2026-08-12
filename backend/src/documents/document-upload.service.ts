@@ -15,11 +15,25 @@ interface UploadLogicalResponse {
   uploadState: DocumentUploadState;
 }
 
+export interface InitUploadResponse extends UploadLogicalResponse {
+  uploadUrl: string;
+  expiresAt: Date;
+  requiredHeaders: Record<string, string>;
+}
+
+export interface CompleteUploadResponse {
+  documentId: string;
+  versionId: string;
+  uploadState: DocumentUploadState;
+  currentVersionId: string | null;
+  statusUrl: string;
+}
+
 type VersionWithSource = DocumentVersion & { source: DocumentSource | null };
 
 function asLogicalResponse(value: Prisma.JsonValue): UploadLogicalResponse {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Corrupt idempotency response');
-  const object = value as Prisma.JsonObject;
+  const object = value;
   const documentId = object.documentId;
   const versionId = object.versionId;
   const uploadState = object.uploadState;
@@ -39,7 +53,7 @@ export class DocumentUploadService {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
   ) {}
 
-  async initDocument(ownerId: string, rawKey: string | undefined, dto: InitUploadDto) {
+  async initDocument(ownerId: string, rawKey: string | undefined, dto: InitUploadDto): Promise<InitUploadResponse> {
     this.assertUploadPolicy(dto.sizeBytes, dto.mediaType);
     const key = this.idempotency.validateKey(rawKey);
     const scope = 'documents:init-upload';
@@ -93,7 +107,12 @@ export class DocumentUploadService {
     return this.withUploadGrant(logical);
   }
 
-  async initNewVersion(ownerId: string, documentId: string, rawKey: string | undefined, dto: NewVersionInitUploadDto) {
+  async initNewVersion(
+    ownerId: string,
+    documentId: string,
+    rawKey: string | undefined,
+    dto: NewVersionInitUploadDto,
+  ): Promise<InitUploadResponse> {
     this.assertUploadPolicy(dto.sizeBytes, dto.mediaType);
     const key = this.idempotency.validateKey(rawKey);
     const scope = `documents:${documentId}:versions:init-upload`;
@@ -149,7 +168,7 @@ export class DocumentUploadService {
     return this.withUploadGrant(logical);
   }
 
-  async complete(ownerId: string, documentId: string, versionId: string) {
+  async complete(ownerId: string, documentId: string, versionId: string): Promise<CompleteUploadResponse> {
     const before = await this.getOwnedVersion(ownerId, documentId, versionId);
     if (!before.source) throw new Error('DocumentVersion is missing DocumentSource');
     if (before.uploadState === DocumentUploadState.ABORTED) throw new ConflictException('Aborted upload cannot be completed');
@@ -161,7 +180,13 @@ export class DocumentUploadService {
         select: { currentVersionId: true },
       });
       if (!document) throw new NotFoundException('Document not found');
-      return { documentId, versionId, uploadState: DocumentUploadState.RECEIVED, currentVersionId: document.currentVersionId, statusUrl: `/api/v1/documents/${documentId}/status` };
+      return {
+        documentId,
+        versionId,
+        uploadState: DocumentUploadState.RECEIVED,
+        currentVersionId: document.currentVersionId,
+        statusUrl: `/api/v1/documents/${documentId}/status`,
+      };
     }
 
     const finalized = await this.storage.finalizeObject(before.source.stagingObjectKey, before.source.objectKey, {
@@ -236,7 +261,7 @@ export class DocumentUploadService {
     });
   }
 
-  private async withUploadGrant(logical: UploadLogicalResponse) {
+  private async withUploadGrant(logical: UploadLogicalResponse): Promise<InitUploadResponse> {
     const source = await this.prisma.documentSource.findUnique({ where: { documentVersionId: logical.versionId } });
     if (!source) throw new Error('Upload source was not persisted');
     const grant = await this.storage.createUploadGrant(source.stagingObjectKey, {
