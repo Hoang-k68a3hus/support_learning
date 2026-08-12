@@ -1,16 +1,16 @@
 import { Injectable } from '@nestjs/common';
+import type { JobEnvelope } from '../async/contracts/async-contracts';
 import { UnrecoverableError } from 'bullmq';
 import { JsonLoggerService } from '../common/logging/json-logger.service';
 import { DeadLetterService } from '../dead-letter/dead-letter.service';
 import { InboxReceiptService } from '../inbox/inbox-receipt.service';
+import { ConsumerRegistryService } from './consumer-registry.service';
 import { classifyJobFailure, type ClassifiedJobFailure } from './job-failure-classifier';
 import { RetryableJobError, TerminalJobError } from './job-errors';
-import { ConsumerRegistryService } from './consumer-registry.service';
 import {
   type DeliveryIdentity,
   JobEnvelopeValidatorService,
 } from './job-envelope-validator.service';
-import type { JobEnvelope } from '../async/contracts/async-contracts';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STALE_SAVEPOINT = 'worker_stale_guard';
@@ -40,9 +40,10 @@ export class ConsumerDispatcherService {
   async dispatch(rawEnvelope: unknown, delivery: DeliveryIdentity): Promise<ConsumerDispatchResult> {
     let envelope: JobEnvelope | undefined;
     try {
-      envelope = this.validator.parse(rawEnvelope, delivery);
-      const handler = this.registry.resolve(envelope.jobName, envelope.contractVersion);
-      if (handler.queueName !== envelope.queueName) {
+      const parsedEnvelope = this.validator.parse(rawEnvelope, delivery);
+      envelope = parsedEnvelope;
+      const handler = this.registry.resolve(parsedEnvelope.jobName, parsedEnvelope.contractVersion);
+      if (handler.queueName !== parsedEnvelope.queueName) {
         throw new TerminalJobError(
           'WORKER_HANDLER_QUEUE_MISMATCH',
           'Worker handler queue does not match the validated job envelope',
@@ -53,17 +54,17 @@ export class ConsumerDispatcherService {
       const result = await this.inbox.executeOnce(
         {
           consumerName: handler.consumerName,
-          eventId: envelope.eventId,
-          eventType: envelope.eventType,
-          aggregateType: envelope.aggregateType,
-          aggregateId: envelope.aggregateId,
-          jobName: envelope.jobName,
-          contractVersion: envelope.contractVersion,
+          eventId: parsedEnvelope.eventId,
+          eventType: parsedEnvelope.eventType,
+          aggregateType: parsedEnvelope.aggregateType,
+          aggregateId: parsedEnvelope.aggregateId,
+          jobName: parsedEnvelope.jobName,
+          contractVersion: parsedEnvelope.contractVersion,
         },
         async (tx) => {
           await tx.$executeRawUnsafe(`SAVEPOINT ${STALE_SAVEPOINT}`);
           try {
-            const effectResult = await handler.apply(envelope as JobEnvelope, tx);
+            const effectResult = await handler.apply(parsedEnvelope, tx);
             await tx.$executeRawUnsafe(`RELEASE SAVEPOINT ${STALE_SAVEPOINT}`);
             return effectResult;
           } catch (error) {
@@ -83,14 +84,14 @@ export class ConsumerDispatcherService {
         },
       );
 
-      await this.resolveDeadLetterBestEffort(envelope, delivery);
+      await this.resolveDeadLetterBestEffort(parsedEnvelope, delivery);
       if (staleFailure && !result.deduplicated) {
         this.logger.log('worker_job_stale_noop', {
           consumerName: handler.consumerName,
-          eventId: envelope.eventId,
-          jobName: envelope.jobName,
-          queueName: envelope.queueName,
-          contractVersion: envelope.contractVersion,
+          eventId: parsedEnvelope.eventId,
+          jobName: parsedEnvelope.jobName,
+          queueName: parsedEnvelope.queueName,
+          contractVersion: parsedEnvelope.contractVersion,
           bullMqJobId: delivery.bullMqJobId,
           attempt: delivery.attempt,
           code: staleFailure.code,
@@ -99,10 +100,10 @@ export class ConsumerDispatcherService {
       } else {
         this.logger.log(result.deduplicated ? 'worker_job_deduplicated' : 'worker_job_committed', {
           consumerName: handler.consumerName,
-          eventId: envelope.eventId,
-          jobName: envelope.jobName,
-          queueName: envelope.queueName,
-          contractVersion: envelope.contractVersion,
+          eventId: parsedEnvelope.eventId,
+          jobName: parsedEnvelope.jobName,
+          queueName: parsedEnvelope.queueName,
+          contractVersion: parsedEnvelope.contractVersion,
           bullMqJobId: delivery.bullMqJobId,
           attempt: delivery.attempt,
           receiptId: result.receiptId,
@@ -112,13 +113,16 @@ export class ConsumerDispatcherService {
       return result;
     } catch (error) {
       const failure = classifyJobFailure(error);
-      if (failure.kind === 'STALE') {
-        throw new TerminalJobError(
-          'WORKER_STALE_OUTSIDE_HANDLER_BOUNDARY',
-          'StaleJobError escaped the transactional handler boundary',
-        );
-      }
-      return this.handleFailure(rawEnvelope, envelope, delivery, failure);
+      const normalizedFailure =
+        failure.kind === 'STALE'
+          ? classifyJobFailure(
+              new TerminalJobError(
+                'WORKER_STALE_OUTSIDE_HANDLER_BOUNDARY',
+                'Stale job failure escaped the transactional handler boundary',
+              ),
+            )
+          : failure;
+      return this.handleFailure(rawEnvelope, envelope, delivery, normalizedFailure);
     }
   }
 
