@@ -192,23 +192,41 @@ model DocumentTag {
 }
 
 model OutboxEvent {
-  id             String       @id @default(uuid()) @db.Uuid
-  aggregateType  String       @map("aggregate_type") @db.VarChar(80)
-  aggregateId    String       @map("aggregate_id") @db.Uuid
-  eventType      String       @map("event_type") @db.VarChar(120)
-  schemaVersion  Int          @default(1) @map("schema_version")
+  id             String         @id @default(uuid()) @db.Uuid
+  aggregateType  String         @map("aggregate_type") @db.VarChar(80)
+  aggregateId    String         @map("aggregate_id") @db.Uuid
+  eventType      String         @map("event_type") @db.VarChar(120)
+  schemaVersion  Int            @default(1) @map("schema_version")
   payload        Json
-  status         OutboxStatus @default(PENDING)
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  availableAt    DateTime     @default(now()) @map("available_at") @db.Timestamptz(6)
-  attempts       Int          @default(0)
-  claimOwner     String?      @map("claim_owner") @db.VarChar(160)
-  claimExpiresAt DateTime?    @map("claim_expires_at") @db.Timestamptz(6)
-  publishedAt    DateTime?    @map("published_at") @db.Timestamptz(6)
-  lastErrorCode  String?      @map("last_error_code") @db.VarChar(120)
-  lastErrorAt    DateTime?    @map("last_error_at") @db.Timestamptz(6)
+  status         OutboxStatus   @default(PENDING)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  availableAt    DateTime       @default(now()) @map("available_at") @db.Timestamptz(6)
+  attempts       Int            @default(0)
+  claimOwner     String?        @map("claim_owner") @db.VarChar(160)
+  claimExpiresAt DateTime?      @map("claim_expires_at") @db.Timestamptz(6)
+  publishedAt    DateTime?      @map("published_at") @db.Timestamptz(6)
+  lastErrorCode  String?        @map("last_error_code") @db.VarChar(120)
+  lastErrorAt    DateTime?      @map("last_error_at") @db.Timestamptz(6)
+  inboxReceipts  InboxReceipt[]
 
   @@map("outbox_events")
+}
+
+model InboxReceipt {
+  id              String      @id @default(uuid()) @db.Uuid
+  consumerName    String      @map("consumer_name") @db.VarChar(160)
+  eventId         String      @map("event_id") @db.Uuid
+  jobName         String      @map("job_name") @db.VarChar(120)
+  contractVersion Int         @map("contract_version")
+  processedAt     DateTime    @default(now()) @map("processed_at") @db.Timestamptz(6)
+  resultHash      String?     @map("result_hash") @db.Char(64)
+  metadata        Json?
+  event           OutboxEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+
+  @@unique([consumerName, eventId, jobName], map: "inbox_receipts_consumer_event_job_key")
+  @@index([eventId], map: "inbox_receipts_event_id_idx")
+  @@index([processedAt], map: "inbox_receipts_processed_at_idx")
+  @@map("inbox_receipts")
 }
 
 model IdempotencyRecord {
