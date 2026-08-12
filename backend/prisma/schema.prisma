@@ -17,17 +17,34 @@ enum UserStatus {
   SUSPENDED
 }
 
+enum DocumentStatus {
+  ACTIVE
+  DELETED
+}
+
+enum DocumentUploadState {
+  UPLOADING
+  RECEIVED
+  ABORTED
+}
+
 model User {
-  id              String     @id @default(uuid()) @db.Uuid
-  email           String     @db.VarChar(320)
-  normalizedEmail String     @unique @map("normalized_email") @db.VarChar(320)
-  passwordHash    String     @map("password_hash") @db.VarChar(255)
-  fullName        String?    @map("full_name") @db.VarChar(120)
-  role            Role       @default(STUDENT)
-  status          UserStatus @default(ACTIVE)
-  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
-  sessions        Session[]
+  id                 String              @id @default(uuid()) @db.Uuid
+  email              String              @db.VarChar(320)
+  normalizedEmail    String              @unique @map("normalized_email") @db.VarChar(320)
+  passwordHash       String              @map("password_hash") @db.VarChar(255)
+  fullName           String?             @map("full_name") @db.VarChar(120)
+  role               Role                @default(STUDENT)
+  status             UserStatus          @default(ACTIVE)
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  sessions           Session[]
+  workspaces         Workspace[]
+  folders            Folder[]
+  tags               Tag[]
+  documents          Document[]
+  idempotencyRecords IdempotencyRecord[]
+  auditLogs          AuditLog[]          @relation("AuditActor")
 
   @@map("users")
 }
@@ -46,4 +63,167 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+model Workspace {
+  id             String            @id @default(uuid()) @db.Uuid
+  ownerId        String            @map("owner_id") @db.Uuid
+  name           String            @db.VarChar(120)
+  normalizedName String            @map("normalized_name") @db.VarChar(120)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime?         @map("deleted_at") @db.Timestamptz(6)
+  owner          User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  sources        WorkspaceSource[]
+
+  @@unique([id, ownerId], map: "workspaces_id_owner_id_key")
+  @@map("workspaces")
+}
+
+model Folder {
+  id             String    @id @default(uuid()) @db.Uuid
+  ownerId        String    @map("owner_id") @db.Uuid
+  parentId       String?   @map("parent_id") @db.Uuid
+  name           String    @db.VarChar(120)
+  normalizedName String    @map("normalized_name") @db.VarChar(120)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+  owner          User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([id, ownerId], map: "folders_id_owner_id_key")
+  @@map("folders")
+}
+
+model Tag {
+  id             String        @id @default(uuid()) @db.Uuid
+  ownerId        String        @map("owner_id") @db.Uuid
+  name           String        @db.VarChar(80)
+  normalizedName String        @map("normalized_name") @db.VarChar(80)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner          User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  documentTags   DocumentTag[]
+
+  @@unique([id, ownerId], map: "tags_id_owner_id_key")
+  @@unique([ownerId, normalizedName], map: "tags_owner_normalized_name_key")
+  @@map("tags")
+}
+
+model Document {
+  id               String            @id @default(uuid()) @db.Uuid
+  ownerId          String            @map("owner_id") @db.Uuid
+  folderId         String?           @map("folder_id") @db.Uuid
+  title            String            @db.VarChar(240)
+  status           DocumentStatus    @default(ACTIVE)
+  currentVersionId String?           @map("current_version_id") @db.Uuid
+  deletedAt        DateTime?         @map("deleted_at") @db.Timestamptz(6)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner            User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  versions         DocumentVersion[]
+  workspaceSources WorkspaceSource[]
+  documentTags     DocumentTag[]
+
+  @@unique([id, ownerId], map: "documents_id_owner_id_key")
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id          String              @id @default(uuid()) @db.Uuid
+  documentId  String              @map("document_id") @db.Uuid
+  versionNo   Int                 @map("version_no")
+  uploadState DocumentUploadState @default(UPLOADING) @map("upload_state")
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  document    Document            @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  source      DocumentSource?
+
+  @@unique([documentId, versionNo], map: "document_versions_document_id_version_no_key")
+  @@unique([id, documentId], map: "document_versions_id_document_id_key")
+  @@map("document_versions")
+}
+
+model DocumentSource {
+  id                String          @id @default(uuid()) @db.Uuid
+  documentVersionId String          @unique @map("document_version_id") @db.Uuid
+  stagingObjectKey  String          @unique @map("staging_object_key") @db.VarChar(512)
+  objectKey         String          @unique @map("object_key") @db.VarChar(512)
+  originalFilename  String          @map("original_filename") @db.VarChar(255)
+  mediaType         String          @map("media_type") @db.VarChar(160)
+  sizeBytes         BigInt          @map("size_bytes")
+  etag              String?         @db.VarChar(160)
+  checksumSha256    String?         @map("checksum_sha256") @db.Char(64)
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  verifiedAt        DateTime?       @map("verified_at") @db.Timestamptz(6)
+  documentVersion   DocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Cascade)
+
+  @@map("document_sources")
+}
+
+model WorkspaceSource {
+  workspaceId String @map("workspace_id") @db.Uuid
+  documentId  String @map("document_id") @db.Uuid
+  ownerId     String @map("owner_id") @db.Uuid
+
+  workspace Workspace @relation(fields: [workspaceId, ownerId], references: [id, ownerId], onDelete: Cascade)
+  document  Document  @relation(fields: [documentId, ownerId], references: [id, ownerId], onDelete: Cascade)
+
+  @@id([workspaceId, documentId])
+  @@map("workspace_sources")
+}
+
+model DocumentTag {
+  documentId String @map("document_id") @db.Uuid
+  tagId      String @map("tag_id") @db.Uuid
+  ownerId    String @map("owner_id") @db.Uuid
+
+  document Document @relation(fields: [documentId, ownerId], references: [id, ownerId], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId, ownerId], references: [id, ownerId], onDelete: Cascade)
+
+  @@id([documentId, tagId])
+  @@map("document_tags")
+}
+
+model OutboxEvent {
+  id            String    @id @default(uuid()) @db.Uuid
+  aggregateType String    @map("aggregate_type") @db.VarChar(80)
+  aggregateId   String    @map("aggregate_id") @db.Uuid
+  eventType     String    @map("event_type") @db.VarChar(120)
+  payload       Json
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  availableAt   DateTime  @default(now()) @map("available_at") @db.Timestamptz(6)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+  attempts      Int       @default(0)
+
+  @@map("outbox_events")
+}
+
+model IdempotencyRecord {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  scope          String   @db.VarChar(160)
+  key            String   @db.VarChar(200)
+  requestHash    String   @map("request_hash") @db.VarChar(67)
+  responseStatus Int      @map("response_status")
+  responseBody   Json     @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(6)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scope, key], map: "idempotency_records_user_scope_key_key")
+  @@map("idempotency_records")
+}
+
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  actorUserId  String?  @map("actor_user_id") @db.Uuid
+  action       String   @db.VarChar(120)
+  resourceType String   @map("resource_type") @db.VarChar(80)
+  resourceId   String   @map("resource_id") @db.Uuid
+  requestId    String   @map("request_id") @db.VarChar(128)
+  metadata     Json
+  occurredAt   DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  actor        User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
 }

@@ -1,49 +1,32 @@
 # support_learning backend
 
-Production-oriented Node.js application backend foundation for `support_learning`.
+Production-oriented Node.js application backend for `support_learning`.
 
-## Architecture
+## Current milestone state
 
-- **Runtime:** Node.js 22 + TypeScript + NestJS 11.
-- **Database:** PostgreSQL, accessed through Prisma ORM 6.19.x.
-- **Schema authority:** committed Prisma schema + SQL migrations. Runtime schema synchronization is not used.
-- **Application boundary:** this service owns web users, authentication, server-side sessions, authorization and later web business modules. AI/RAG internals remain owned by the Python/FastAPI side.
-- **API prefix:** `/api/v1`.
-- **Public error contract:** RFC 9457 Problem Details with stable `code` and `requestId` extensions.
+- **M1 Backend Foundation:** implemented.
+- **M2 Identity & Access:** implemented.
+- **M3 Knowledge Library:** implemented in the application backend: ownership-aware Workspace/Folder/Tag/Document metadata, immutable DocumentVersion/DocumentSource registration, MinIO staging/final storage boundary, idempotency, audit and transactional outbox persistence.
+- **M4 Async Foundation:** not implemented yet; BullMQ/Redis relay and workers are intentionally absent from command handlers.
 
-## M1/M2 identity contract
+## Runtime
 
-`User` keeps the display email separately from `normalizedEmail`, which is the unique lookup identity (`trim + lowercase` for this product). New users are `STUDENT + ACTIVE`. `User.status` is `ACTIVE | SUSPENDED` and authentication paths re-read persisted account/session state instead of treating JWT claims as the revocation database.
+- Node.js 22 + TypeScript + NestJS 11.
+- PostgreSQL through Prisma ORM 6.19.x.
+- MinIO/S3-compatible object storage through `StoragePort`.
+- API prefix `/api/v1`.
+- RFC 9457 Problem Details for REST failures.
 
-`Session` is server-side state. It stores only a SHA-256 hash of the signed refresh token plus `rotationVersion`, expiry, revocation and last-used timestamps. Refresh rotation uses a compare-and-swap on both the current hash and rotation version; concurrent reuse has one winner.
-
-Access JWTs are short-lived Bearer tokens. Protected requests verify the JWT and then re-resolve the current Session, `User.status`, and persisted role. Logout therefore invalidates an existing access token immediately on the next protected request, and a suspended account is rejected by login, refresh, and access checks.
-
-Administrative suspension/unsuspension commands are deliberately not exposed by M2. When M10 adds those commands, suspension must atomically change status, revoke active sessions, and write the required audit record; unsuspension must never resurrect revoked sessions.
-
-## Requirements
-
-- Node.js `>=22.12.0`
-- npm `>=10`
-- PostgreSQL 17 recommended for local development.
-- Docker + Docker Compose are optional but recommended for the local database workflow.
+Node owns web users/auth/session, library metadata, upload/version source facts and durable web transactions. Python/FastAPI remains responsible for AI/RAG processing and consumes immutable RECEIVED `DocumentVersion` identities later; AI state does not overwrite web document/source state.
 
 ## Local development
 
-From the repository root:
-
-```bash
-cp .env.example .env
-# Replace POSTGRES_PASSWORD=REPLACE_ME with a local-only password.
-docker compose up -d postgres
-```
-
-Then:
+Requirements: Node.js `>=22.12.0`, npm `>=10`, PostgreSQL 17 recommended, and MinIO for upload flows.
 
 ```bash
 cd backend
 cp .env.example .env
-# Replace every JWT placeholder with independent random secrets.
+# Replace repository placeholders with local secrets and align DATABASE_URL/MinIO credentials.
 npm install
 npm run prisma:generate
 npm run db:migrate:deploy
@@ -51,35 +34,36 @@ npm run db:migrate:status
 npm run start:dev
 ```
 
-The application fails fast if critical configuration is absent, malformed, uses wildcard CORS, reuses a JWT secret, or leaves a known placeholder/example JWT secret in place.
+Root `docker-compose.yml` provides PostgreSQL and MinIO. The application validates required storage and idempotency settings at boot.
 
-## Environment variables
+## Security and identity
 
-| Variable | Required | Meaning |
-|---|---|---|
-| `NODE_ENV` | yes | `development`, `test`, or `production` |
-| `PORT` | yes | API listen port |
-| `DATABASE_URL` | yes | PostgreSQL connection URL |
-| `JWT_ACCESS_SECRET` | yes | random access-token signing secret, >= 32 chars |
-| `JWT_ACCESS_TTL` | yes | e.g. `15m`; must be shorter than refresh TTL |
-| `JWT_REFRESH_SECRET` | yes | distinct random refresh-token signing secret, >= 32 chars |
-| `JWT_REFRESH_TTL` | yes | e.g. `7d` |
-| `CORS_ORIGIN` | yes | comma-separated explicit origins; wildcard is rejected |
+Public registration creates `STUDENT + ACTIVE`. Access JWTs are short-lived Bearer tokens, but protected requests re-resolve server-side Session state, User status and persisted role. Refresh rotation uses the persisted refresh-token hash plus `rotationVersion` CAS.
 
-## Database commands
+M3 never accepts authoritative `ownerId`, current version, version number, upload state or storage object key from clients. Foreign resources resolve as `404`. PostgreSQL composite foreign keys backstop same-owner Folder/Document/WorkspaceSource/DocumentTag relationships.
 
-```bash
-npm run prisma:generate
-npm run db:migrate:dev
-npm run db:migrate:deploy
-npm run db:migrate:status
+## Knowledge library
+
+The M3 source lifecycle is:
+
+```text
+init-upload -> Document ACTIVE + DocumentVersion UPLOADING + staging source identity
+browser PUT -> staging object only
+complete -> server copy staging -> immutable final object -> verify final metadata
+          -> DB transaction: RECEIVED + monotonic currentVersionId + outbox event
+M4 later -> outbox relay -> BullMQ worker -> AI ProcessingRun
 ```
 
-Production must use committed migrations via `db:migrate:deploy`; do not use runtime schema synchronization.
+A WorkspaceSource is a study/RAG scope link and unlinking it never deletes the Document. Folder operations organize metadata only. Tag deletion removes joins only. Document deletion is soft and does not rewrite immutable version/source facts.
+
+See `docs/AUTH_API.md`, `docs/SECURITY.md`, and `docs/KNOWLEDGE_LIBRARY_API.md`.
 
 ## Checks
 
 ```bash
+npm run prisma:generate
+npm run db:migrate:deploy
+npm run db:migrate:status
 npm run typecheck
 npm run lint
 npm test
@@ -87,15 +71,4 @@ npm run test:e2e
 npm run build
 ```
 
-E2E tests require a disposable PostgreSQL database in `DATABASE_URL`. They delete `sessions` and `users`; never point them at shared or production data.
-
-## Health
-
-- `GET /api/v1/health/live` — process liveness only.
-- `GET /api/v1/health/ready` — verifies PostgreSQL with `SELECT 1`; returns 503 if the required DB dependency is unavailable.
-
-## Security boundaries
-
-Public registration accepts only email + password and always creates `STUDENT + ACTIVE`; client-supplied profile/role/status fields are rejected. Passwords use the centralized versioned Argon2id policy. Refresh tokens are HttpOnly cookies with `SameSite=Lax`, `Secure` in production, and a narrow auth path. Historical refresh-token-family reuse detection remains an explicit graduation-MVP residual risk; current-token replay is rejected by the Session CAS.
-
-See [`docs/AUTH_API.md`](docs/AUTH_API.md) and [`docs/SECURITY.md`](docs/SECURITY.md).
+E2E uses a disposable PostgreSQL database and validates DB constraints, ownership, concurrency and state transitions. Storage state-machine E2E injects a deterministic `StoragePort`; MinIO remains behind the same production adapter boundary.
