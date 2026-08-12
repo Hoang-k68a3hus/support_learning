@@ -32,6 +32,7 @@ export interface DeliveryIdentity {
   bullMqJobName: string;
   bullMqJobId?: string;
   attempt: number;
+  maxAttempts: number;
 }
 
 @Injectable()
