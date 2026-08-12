@@ -5,6 +5,8 @@ on:
     paths:
       - "source_understanding/adapters/pdf/**"
       - "benchmarks/pdf_tables_real_v0_1/**"
+      - "tests/test_pdf_m2_tables.py"
+      - "tests/test_pdf_m23_text_tables.py"
       - "tests/test_pdf_real_table_benchmark_contracts.py"
       - ".github/workflows/source-understanding-real-pdf.yml"
   push:
@@ -12,6 +14,8 @@ on:
     paths:
       - "source_understanding/adapters/pdf/**"
       - "benchmarks/pdf_tables_real_v0_1/**"
+      - "tests/test_pdf_m2_tables.py"
+      - "tests/test_pdf_m23_text_tables.py"
       - "tests/test_pdf_real_table_benchmark_contracts.py"
       - ".github/workflows/source-understanding-real-pdf.yml"
   workflow_dispatch:
@@ -30,50 +34,10 @@ jobs:
           python-version: "3.12"
       - name: Install pinned PDF benchmark dependencies
         run: python -m pip install --disable-pip-version-check "pydantic>=2,<3" "pymupdf==1.28.0"
-      - name: Probe M2.3 table recall strategies
-        run: |
-          python - <<'PY'
-          from collections import Counter
-          import pymupdf
-          from benchmarks.pdf_tables_real_v0_1._corpus import download_source, load_sources
-
-          for source in load_sources():
-              payload = download_source(source)
-              doc = pymupdf.open(stream=payload, filetype="pdf")
-              try:
-                  page = doc[0]
-                  drawings = page.get_drawings()
-                  kinds = Counter()
-                  for path in drawings:
-                      for item in path.get("items", ()):
-                          if item:
-                              kinds[str(item[0])] += 1
-                  print(f"PROBE source={source.id} drawings={len(drawings)} kinds={dict(kinds)}")
-                  for strategy in ("lines", "lines_strict", "text"):
-                      try:
-                          finder = page.find_tables(strategy=strategy)
-                          tables = tuple(finder.tables)
-                          print(
-                              f"PROBE source={source.id} strategy={strategy} "
-                              f"count={len(tables)} shapes="
-                              f"{[(t.row_count, t.col_count, tuple(round(v, 1) for v in t.bbox)) for t in tables]}"
-                          )
-                          for index, table in enumerate(tables[:3]):
-                              extracted = table.extract()
-                              print(
-                                  f"PROBE source={source.id} strategy={strategy} table={index} "
-                                  f"rows={extracted[:4]}"
-                              )
-                      except Exception as exc:
-                          print(
-                              f"PROBE source={source.id} strategy={strategy} "
-                              f"ERROR={type(exc).__name__}:{exc}"
-                          )
-              finally:
-                  doc.close()
-          PY
-      - name: Compile real PDF benchmark
-        run: python -m compileall -q source_understanding benchmarks/pdf_tables_real_v0_1 tests/test_pdf_real_table_benchmark_contracts.py
+      - name: Compile PDF source and benchmark
+        run: python -m compileall -q source_understanding benchmarks/pdf_tables_real_v0_1 tests/test_pdf_m2_tables.py tests/test_pdf_m23_text_tables.py tests/test_pdf_real_table_benchmark_contracts.py
+      - name: Run PDF table unit tests
+        run: python -m unittest tests.test_pdf_m2_tables tests.test_pdf_m23_text_tables -v
       - name: Run real PDF benchmark contract tests
         run: python -m unittest tests.test_pdf_real_table_benchmark_contracts -v
       - name: Run pinned real PDF table benchmark

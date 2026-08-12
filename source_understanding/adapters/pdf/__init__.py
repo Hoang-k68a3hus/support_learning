@@ -1,11 +1,12 @@
-"""Native PDF source adapter through M2 structural table extraction.
+"""Native PDF source adapter through M2.3 structural table recall.
 
 This package remains format-specific. It preserves source-near PDF observations,
 adds only high-confidence geometry-derived structure, and then hands control back
-to the format-agnostic understanding pipeline.
+to the format-agnostic understanding pipeline. OCR is intentionally deferred as
+an optional later extension and is not part of M2.3.
 """
 
-from .adapter import (
+from .adapter_m23 import (
     PDF_ADAPTER_VERSION,
     PDF_BLOCK_RECONSTRUCTION_VERSION,
     PDF_MEDIA_TYPE,
