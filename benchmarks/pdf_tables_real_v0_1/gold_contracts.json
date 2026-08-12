@@ -8,8 +8,8 @@
       "source_id": "camelot-foo",
       "page": 1,
       "source_truth_table_count": 1,
-      "capability_expectation": "MUST_PRESERVE_UNSTRUCTURED",
-      "oracle_evidence": "Camelot quickstart/fixture publishes one 7x7 ruled table. PDF M2.5 still cannot bind its source blocks without crossing the table boundary, so it must fail closed rather than emit partial structure.",
+      "capability_expectation": "SUPPORTED_REQUIRED",
+      "oracle_evidence": "Camelot quickstart/fixture publishes one 7x7 ruled table and exact benchmark content anchors. M2.6 must recover that published structure while preserving the following native text when the final table row and residual paragraph share one TextPage block. Capability promotion is based on the independent upstream table oracle plus a separate source-ownership audit; the parser may partition only between native lines and may not split or rewrite source spans.",
       "tables": [
         {
           "row_count": 7,

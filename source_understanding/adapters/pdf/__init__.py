@@ -1,19 +1,21 @@
-"""Native PDF source adapter through M2.5 structural table segmentation.
+"""Native PDF source adapter through M2.6 boundary-safe source ownership.
 
 This package remains format-specific. It preserves source-near PDF observations,
 adds only high-confidence geometry-derived structure, and then hands control back
 to the format-agnostic understanding pipeline. OCR is intentionally deferred as
-an optional later extension and is not part of M2.5.
+an optional later extension and is not part of M2.6.
 """
 
-from .adapter_m25 import (
+from .adapter_m26 import (
     PDF_ADAPTER_VERSION,
     PDF_BLOCK_RECONSTRUCTION_VERSION,
     PDF_MEDIA_TYPE,
     PDF_MERGED_TABLE_TOPOLOGY_VERSION,
     PDF_MULTI_TABLE_SEGMENTATION_VERSION,
+    PDF_PARTITIONED_TABLE_TEXT_NORMALIZATION_VERSION,
     PDF_POLICY_VERSION,
     PDF_READING_ORDER_VERSION,
+    PDF_SOURCE_BLOCK_PARTITION_VERSION,
     PDF_TABLE_STRUCTURE_VERSION,
     PDF_TABLE_TEXT_RECONSTRUCTION_VERSION,
     PdfAdapter,
@@ -26,8 +28,10 @@ __all__ = [
     "PDF_MEDIA_TYPE",
     "PDF_MERGED_TABLE_TOPOLOGY_VERSION",
     "PDF_MULTI_TABLE_SEGMENTATION_VERSION",
+    "PDF_PARTITIONED_TABLE_TEXT_NORMALIZATION_VERSION",
     "PDF_POLICY_VERSION",
     "PDF_READING_ORDER_VERSION",
+    "PDF_SOURCE_BLOCK_PARTITION_VERSION",
     "PDF_TABLE_STRUCTURE_VERSION",
     "PDF_TABLE_TEXT_RECONSTRUCTION_VERSION",
     "PdfAdapter",
