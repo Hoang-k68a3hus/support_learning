@@ -4,9 +4,9 @@ import { AsyncContractError } from './async-contract.error';
 import {
   AsyncEventType,
   JOB_CONTRACT_VERSION,
+  JOB_RETRY_POLICY_KEY,
   JobName,
   OUTBOX_EVENT_SCHEMA_VERSION,
-  OUTBOX_RETRY_POLICY_KEY,
   type ProcessDocumentVersionPayload,
   QueueName,
   type RoutedJob,
@@ -55,7 +55,7 @@ export class EventRouterService {
       {
         queueName: QueueName.PROCESSING,
         jobName: JobName.PROCESS_DOCUMENT_VERSION,
-        retryPolicyKey: OUTBOX_RETRY_POLICY_KEY,
+        retryPolicyKey: JOB_RETRY_POLICY_KEY,
         envelope: {
           contractVersion: JOB_CONTRACT_VERSION,
           eventId: event.id,
