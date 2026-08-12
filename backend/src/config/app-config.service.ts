@@ -115,6 +115,26 @@ export class AppConfigService {
     return this.config.get('WORKER_SHUTDOWN_GRACE_MS', { infer: true });
   }
 
+  get workerRetryMaxAttempts(): number {
+    return this.config.get('WORKER_RETRY_MAX_ATTEMPTS', { infer: true });
+  }
+
+  get workerRetryBackoffBaseMs(): number {
+    return this.config.get('WORKER_RETRY_BACKOFF_BASE_MS', { infer: true });
+  }
+
+  get workerRetryBackoffMaxMs(): number {
+    return this.config.get('WORKER_RETRY_BACKOFF_MAX_MS', { infer: true });
+  }
+
+  get workerRetryJitterRatio(): number {
+    return this.config.get('WORKER_RETRY_JITTER_RATIO', { infer: true });
+  }
+
+  get workerFailedJobRetentionCount(): number {
+    return this.config.get('WORKER_FAILED_JOB_RETENTION_COUNT', { infer: true });
+  }
+
   workerConcurrency(queueName: QueueName): number {
     if (queueName === QueueName.PROCESSING) {
       return this.config.get('WORKER_PROCESSING_CONCURRENCY', { infer: true });

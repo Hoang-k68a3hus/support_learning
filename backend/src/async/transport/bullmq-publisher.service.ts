@@ -9,6 +9,7 @@ import {
   type RoutedJob,
   QueueName,
 } from '../contracts/async-contracts';
+import { JobRetryPolicyService } from '../retry/job-retry-policy.service';
 
 export interface PublishedJobRef {
   logicalJobId: string;
@@ -22,6 +23,7 @@ export class BullMqPublisherService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly config: AppConfigService,
+    private readonly retryPolicies: JobRetryPolicyService,
     private readonly logger: JsonLoggerService,
   ) {}
 
@@ -64,7 +66,8 @@ export class BullMqPublisherService implements OnModuleInit, OnModuleDestroy {
 
     const logicalJobId = canonicalJobId(job.jobName, job.envelope.contractVersion, job.envelope.eventId);
     const bullMqJobId = bullMqTransportJobId(job.jobName, job.envelope.contractVersion, job.envelope.eventId);
-    await queue.add(job.jobName, job.envelope, { jobId: bullMqJobId });
+    const retryOptions = this.retryPolicies.bullMqJobOptions(job.retryPolicyKey);
+    await queue.add(job.jobName, job.envelope, { jobId: bullMqJobId, ...retryOptions });
     return { logicalJobId, bullMqJobId };
   }
 }

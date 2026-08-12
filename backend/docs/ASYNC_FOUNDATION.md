@@ -1,17 +1,17 @@
 # M4 Async Foundation
 
-This document describes the durable asynchronous boundary implemented through M4.2.
+This document describes the durable asynchronous boundary implemented through M4.3.
 
 ## M4 split
 
 M4 is intentionally implemented in small slices:
 
 1. **M4.1 — contracts, Redis/BullMQ topology, Outbox Relay** — implemented
-2. **M4.2 — worker runtime + consumer dispatch + InboxReceipt** — implemented in this change
-3. **M4.3 — retry classification, DeadLetterRecord and durable DLQ policy**
-4. **M4.4 — admin replay/requeue + operational observability and hardening**
+2. **M4.2 — worker runtime + consumer dispatch + InboxReceipt** — implemented
+3. **M4.3 — retry classification, bounded worker retries, DeadLetterRecord and durable DLQ policy** — implemented
+4. **M4.4 — admin replay/requeue + operational observability and hardening** — deferred
 
-M4.1 establishes durable at-least-once publication. M4.2 adds the PostgreSQL consumer-side duplicate-effect guard. Neither slice claims end-to-end exactly-once delivery.
+M4.1 establishes durable at-least-once publication. M4.2 adds the PostgreSQL consumer-side duplicate-effect guard. M4.3 adds bounded failure handling and durable dead-letter state. None of these slices claims end-to-end exactly-once delivery.
 
 ## Delivery semantics
 
@@ -33,9 +33,11 @@ Duplicate publication is therefore expected. Deterministic BullMQ job identity r
 - `PENDING` — eligible when `availableAt <= database now()`;
 - `PUBLISHING` — owned by `claimOwner` until `claimExpiresAt`;
 - `PUBLISHED` — BullMQ publication completed and `publishedAt` is durable;
-- `FAILED` — terminal contract failure or exhausted publication attempts.
+- `FAILED` — terminal relay contract failure or exhausted publication attempts.
 
 PostgreSQL CHECK constraints enforce state shape. Relay retries update `availableAt`; they never modify the originating business aggregate.
+
+Outbox publication retries and worker business-job retries are deliberately separate policies. A Redis/BullMQ publication failure is not the same failure domain as a handler processing failure.
 
 ## Queue topology
 
@@ -67,7 +69,7 @@ The architecture-level deterministic identity remains:
 
 `{jobName}:v{contractVersion}:{eventId}`
 
-BullMQ currently reserves `:` in custom job IDs. Therefore the transport derives a safe ID from the same fields:
+BullMQ currently reserves `:` inside custom job IDs. Therefore the transport derives a safe ID from the same fields:
 
 `{jobName}~v{contractVersion}~{eventId}`
 
@@ -75,7 +77,7 @@ The canonical logical identity is still logged and treated as the contract ident
 
 ## Worker contract validation
 
-Every consumed job is validated again at runtime before handler dispatch. M4.2 fails closed for:
+Every consumed job is validated again at runtime before handler dispatch. The worker fails closed for:
 
 - unsupported `contractVersion`;
 - unexpected top-level or payload fields;
@@ -95,7 +97,7 @@ Handlers register a stable logical `consumerName` plus:
 - `jobName`;
 - `contractVersion`.
 
-The registry rejects invalid consumer names, non-positive contract versions and duplicate `(jobName, contractVersion)` registrations at startup. `consumerName` must describe the logical consumer contract; it must not contain a pod, host or replica identifier.
+The registry rejects invalid consumer names, non-positive contract versions and duplicate `(jobName, contractVersion)` registrations at startup. `consumerName` describes the logical consumer contract; it must not contain a pod, host or replica identifier.
 
 The foundation module intentionally registers no production business handler yet. Concrete processing/learning handlers are added by the milestone that owns their authoritative state transitions rather than inventing placeholder business behavior in M4.
 
@@ -130,11 +132,99 @@ For PostgreSQL-only handlers, `InboxReceiptService.executeOnce()` provides the c
 
 This gives the intended crash behavior:
 
-- crash/throw before commit → effect and receipt both roll back; BullMQ may retry safely;
+- crash/throw before commit → effect and receipt both roll back; BullMQ may redeliver safely;
 - commit succeeds but process crashes before acknowledging BullMQ → redelivery finds the receipt and performs no second effect;
 - concurrent duplicate deliveries → PostgreSQL row locking serializes the decision and only one effect is committed.
 
 Redis locks are not part of the correctness model.
+
+## M4.3 failure taxonomy
+
+Worker failures are classified by type rather than message matching:
+
+- `RetryableJobError` — transient failure that may recover on a later bounded attempt;
+- `TerminalJobError` — deterministic failure that should not consume the remaining retry budget;
+- `StaleJobError` — work that is intentionally obsolete and should complete as a durable no-op when raised inside the transactional handler boundary.
+
+Known transient Prisma failures such as connection initialization failures, connection-pool timeout `P2024`, and transaction conflict/deadlock `P2034` are retryable. Async contract violations are terminal. Unclassified errors fail closed as terminal `WORKER_UNCLASSIFIED_ERROR` rather than being retried indefinitely.
+
+Failure classification is explicit application behavior. New dependencies must map their transient/terminal semantics intentionally instead of relying on error-message substrings.
+
+## Bounded worker retry policy
+
+The current `PROCESS_DOCUMENT_VERSION` job maps to the named policy:
+
+`PROCESSING_JOB_EXPONENTIAL_V1`
+
+The relay attaches the following BullMQ options when publishing the job:
+
+- a finite `attempts` count;
+- the named custom backoff strategy;
+- bounded failed-job retention.
+
+The worker calculates capped exponential delay with configurable downward jitter. It also caps the effective retry budget to the smaller of the code-configured policy and the transport job's `attempts` value, so a manually injected transport job cannot increase the worker retry budget above policy.
+
+Retry timing is controlled by:
+
+- `WORKER_RETRY_MAX_ATTEMPTS`;
+- `WORKER_RETRY_BACKOFF_BASE_MS`;
+- `WORKER_RETRY_BACKOFF_MAX_MS`;
+- `WORKER_RETRY_JITTER_RATIO`;
+- `WORKER_FAILED_JOB_RETENTION_COUNT`.
+
+A retryable failure is rethrown while attempts remain. On the final allowed attempt it is converted to durable dead-letter state and the BullMQ job becomes terminally failed.
+
+A terminal failure persists dead-letter state immediately and then uses BullMQ unrecoverable failure semantics so unused attempts are not consumed.
+
+## Stale work is a real no-op
+
+A handler can discover that its target became obsolete only after entering the Inbox transaction. Simply catching `StaleJobError` would be unsafe because the handler may already have made PostgreSQL writes before discovering staleness.
+
+M4.3 therefore wraps the handler body in a PostgreSQL SAVEPOINT inside the existing Inbox transaction:
+
+1. create the savepoint;
+2. run the handler;
+3. if the handler raises `StaleJobError`, roll back to the savepoint;
+4. release the savepoint;
+5. insert the normal InboxReceipt with metadata such as `outcome=STALE_NOOP` and the stable stale code;
+6. commit the receipt without any partial handler effect.
+
+The stale delivery completes successfully and future duplicates deduplicate against the receipt. A `StaleJobError` that escapes outside this expected transactional boundary is treated as terminal because its rollback guarantee cannot be established.
+
+## Durable DeadLetterRecord
+
+Terminal failures and exhausted retryable failures are represented durably in PostgreSQL by `DeadLetterRecord`.
+
+The record contains:
+
+- `id`;
+- `eventId` with FK to the original `OutboxEvent`;
+- `jobName`;
+- `queueName`;
+- `contractVersion`;
+- stable `errorCode`;
+- `errorMessageRedacted`;
+- optional SHA-256 `stackFingerprint`;
+- optional SHA-256 `payloadHash`;
+- `attempts`;
+- `failedAt`;
+- `replayCount`;
+- `lastReplayAt`;
+- `resolvedAt`.
+
+PostgreSQL permits only one unresolved record for `(eventId, jobName)` using a partial unique index. Repeated terminal delivery before resolution updates that active record instead of creating parallel unresolved records. Historical resolved rows are retained, so a later failure may create a new active record.
+
+Dead-letter rows do not copy raw source bytes, authorization snapshots, full job payloads, or stack traces. The job envelope is represented only by a deterministic hash and the error stack only by a fingerprint. Persisted error text is a controlled redacted message.
+
+When a later delivery of the same event/job succeeds, the worker best-effort marks an existing active dead letter `resolvedAt`. Administrative replay counters and explicit replay orchestration remain M4.4 responsibilities.
+
+## DLQ persistence failure boundary
+
+A terminal/exhausted job is not considered durably dead-lettered until its PostgreSQL `DeadLetterRecord` write succeeds.
+
+If that write fails while retry budget remains, the worker returns a typed retryable `DEAD_LETTER_PERSIST_FAILED` failure so a later attempt can preserve durable failure state. If persistence still fails on the final attempt, the BullMQ job remains failed and the worker emits structured error logs; it does not create an unbounded retry loop.
+
+A malformed job with no trustworthy `eventId` cannot create an FK-backed dead letter. In that case the worker fails the transport job terminally and logs `worker_dead_letter_identity_unavailable` rather than inventing an event locator.
 
 ## External I/O boundary
 
@@ -157,7 +247,9 @@ The worker:
 - verifies Redis connectivity at startup;
 - creates a BullMQ `Worker` only for queues with registered handlers;
 - uses configured per-queue concurrency;
-- logs committed, deduplicated and failed deliveries with stable event/job identity;
+- validates every job envelope before dispatch;
+- enforces bounded named retry policies;
+- records stale no-ops, durable dead letters, successful commits and duplicate deliveries with stable event/job identity;
 - on SIGTERM/SIGINT stops accepting new work through BullMQ close semantics, waits up to the configured grace period, then force-closes remaining workers if necessary.
 
 The HTTP API does not import either runtime and its health/readiness checks remain independent of Redis.
@@ -176,7 +268,7 @@ M4.1 relay configuration:
 - `OUTBOX_RELAY_BACKOFF_BASE_MS`
 - `OUTBOX_RELAY_BACKOFF_MAX_MS`
 
-M4.2 worker configuration:
+M4.2 worker runtime configuration:
 
 - `WORKER_INSTANCE_ID`
 - `WORKER_PROCESSING_CONCURRENCY`
@@ -184,21 +276,37 @@ M4.2 worker configuration:
 - `WORKER_MAINTENANCE_CONCURRENCY`
 - `WORKER_SHUTDOWN_GRACE_MS`
 
+M4.3 worker retry/DLQ configuration:
+
+- `WORKER_RETRY_MAX_ATTEMPTS`
+- `WORKER_RETRY_BACKOFF_BASE_MS`
+- `WORKER_RETRY_BACKOFF_MAX_MS`
+- `WORKER_RETRY_JITTER_RATIO`
+- `WORKER_FAILED_JOB_RETENTION_COUNT`
+
 All values are validated at startup. Replica instance IDs are operational identities only and are never used as InboxReceipt `consumerName` values.
 
-## M4.2 test invariant
+## Test invariants
 
-The M4.2 E2E suite uses a test-only PostgreSQL projection table and deliberately submits concurrent jobs with different BullMQ transport IDs but the same durable event identity. This bypasses transport dedupe on purpose and proves that the PostgreSQL receipt boundary, rather than BullMQ job-ID behavior, prevents duplicate durable effects.
+M4.2 E2E deliberately submits concurrent jobs with different BullMQ transport IDs but the same durable event identity. This bypasses transport dedupe and proves PostgreSQL InboxReceipt prevents duplicate durable effects.
 
-The test-only projection does not exist in production migrations.
+M4.3 E2E uses real PostgreSQL + Redis/BullMQ and proves:
 
-## Deferred after M4.2
+- retryable failure can fail multiple attempts and commit exactly one PostgreSQL effect after recovery;
+- retryable failure exhausts exactly the configured finite budget and creates one active DeadLetterRecord;
+- terminal failure bypasses remaining attempts and creates durable dead-letter state immediately;
+- unsupported contract versions are terminal before handler execution;
+- stale work rolls back writes made before `StaleJobError`, commits a stale InboxReceipt, and creates no dead letter;
+- repeated terminal delivery has one unresolved `(eventId, jobName)` record;
+- after resolution, a later failure can create a new historical dead-letter row.
+
+Test-only PostgreSQL projection tables used by E2E do not exist in production migrations.
+
+## Deferred after M4.3
 
 Not implemented yet:
 
-- retryable versus stale versus terminal handler classification;
-- durable `DeadLetterRecord` and DLQ policy;
-- admin replay/requeue and replay revisions;
-- M4 operational lag/DLQ metrics;
+- M4.4 admin replay/requeue endpoints and replay revision semantics;
+- M4.4 operational queue lag, retry and DLQ metrics/hardening;
 - concrete document-processing, quiz, flashcard or analytics business handlers;
 - external AI/MinIO processing state machines.

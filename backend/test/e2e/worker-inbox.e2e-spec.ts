@@ -9,11 +9,13 @@ import {
   JobName,
   QueueName,
 } from '../../src/async/contracts/async-contracts';
+import { JobRetryPolicyService } from '../../src/async/retry/job-retry-policy.service';
 import { JsonLoggerService } from '../../src/common/logging/json-logger.service';
 import { AppConfigService } from '../../src/config/app-config.service';
 import { ConfigModule } from '../../src/config/config.module';
 import { PrismaModule } from '../../src/database/prisma.module';
 import { PrismaService } from '../../src/database/prisma.service';
+import { DeadLetterService } from '../../src/dead-letter/dead-letter.service';
 import { InboxReceiptService } from '../../src/inbox/inbox-receipt.service';
 import { ConsumerDispatcherService } from '../../src/worker/consumer-dispatcher.service';
 import { ConsumerRegistryService } from '../../src/worker/consumer-registry.service';
@@ -96,6 +98,8 @@ describe('M4.2 worker runtime and InboxReceipt', () => {
       providers: [
         JsonLoggerService,
         InboxReceiptService,
+        DeadLetterService,
+        JobRetryPolicyService,
         JobEnvelopeValidatorService,
         { provide: WORKER_JOB_HANDLERS, useValue: [probeHandler] },
         ConsumerRegistryService,
@@ -112,6 +116,7 @@ describe('M4.2 worker runtime and InboxReceipt', () => {
     redis = new IORedis(config.redisUrl, { maxRetriesPerRequest: 1 });
     processingQueue = new Queue(QueueName.PROCESSING, { connection: redis, prefix: config.bullMqPrefix });
 
+    await prisma.deadLetterRecord.deleteMany();
     await prisma.inboxReceipt.deleteMany();
     await prisma.outboxEvent.deleteMany();
     await redis.flushdb();
@@ -129,6 +134,7 @@ describe('M4.2 worker runtime and InboxReceipt', () => {
     await runtime.stop();
     await processingQueue.close();
     await redis.quit();
+    await prisma.deadLetterRecord.deleteMany();
     await prisma.inboxReceipt.deleteMany();
     await prisma.outboxEvent.deleteMany();
     await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS "m4_worker_probe_effects"');
@@ -198,7 +204,7 @@ describe('M4.2 worker runtime and InboxReceipt', () => {
     expect(await effectCount(input.eventId)).toBe(1);
   });
 
-  it('rolls back the business effect when the handler crashes before receipt commit, then retries safely', async () => {
+  it('rolls back the business effect when the handler crashes before receipt commit, then allows a later safe delivery', async () => {
     const input = await createDurableEvent(2);
     failBeforeReceipt.add(input.eventId);
     const failedId = `crash-before-receipt-${input.eventId}`;
@@ -215,6 +221,7 @@ describe('M4.2 worker runtime and InboxReceipt', () => {
 
     expect(await effectCount(input.eventId)).toBe(1);
     expect(await prisma.inboxReceipt.count({ where: { eventId: input.eventId } })).toBe(1);
+    expect(await prisma.deadLetterRecord.count({ where: { eventId: input.eventId, resolvedAt: null } })).toBe(0);
   });
 
   it('fails malformed transport payloads before any durable receipt and detects receipt contract conflicts', async () => {
@@ -227,6 +234,7 @@ describe('M4.2 worker runtime and InboxReceipt', () => {
     );
     await waitForState(processingQueue, invalidId, 'failed');
     expect(await prisma.inboxReceipt.count({ where: { eventId: input.eventId } })).toBe(0);
+    expect(await prisma.deadLetterRecord.count({ where: { eventId: input.eventId, resolvedAt: null } })).toBe(1);
 
     await inbox.executeOnce(
       {

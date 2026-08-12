@@ -31,6 +31,11 @@ export interface ValidatedEnvironment {
   WORKER_LEARNING_CONCURRENCY: number;
   WORKER_MAINTENANCE_CONCURRENCY: number;
   WORKER_SHUTDOWN_GRACE_MS: number;
+  WORKER_RETRY_MAX_ATTEMPTS: number;
+  WORKER_RETRY_BACKOFF_BASE_MS: number;
+  WORKER_RETRY_BACKOFF_MAX_MS: number;
+  WORKER_RETRY_JITTER_RATIO: number;
+  WORKER_FAILED_JOB_RETENTION_COUNT: number;
 }
 
 const SECRET_MIN_LENGTH = 32;
@@ -96,6 +101,14 @@ function parseBoundedPositiveInteger(value: string, key: string, min: number, ma
   const parsed = parsePositiveInteger(value, key);
   if (parsed < min || parsed > max) {
     throw new Error(`${key} must be between ${min} and ${max}`);
+  }
+  return parsed;
+}
+
+function parseRatio(value: string, key: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error(`${key} must be a number between 0 and 1`);
   }
   return parsed;
 }
@@ -251,6 +264,22 @@ export function validateEnvironment(env: Record<string, unknown>): ValidatedEnvi
     throw new Error('OUTBOX_RELAY_BACKOFF_MAX_MS must be >= OUTBOX_RELAY_BACKOFF_BASE_MS');
   }
 
+  const workerRetryBackoffBaseMs = parseBoundedPositiveInteger(
+    requireString(env, 'WORKER_RETRY_BACKOFF_BASE_MS'),
+    'WORKER_RETRY_BACKOFF_BASE_MS',
+    10,
+    600000,
+  );
+  const workerRetryBackoffMaxMs = parseBoundedPositiveInteger(
+    requireString(env, 'WORKER_RETRY_BACKOFF_MAX_MS'),
+    'WORKER_RETRY_BACKOFF_MAX_MS',
+    10,
+    86400000,
+  );
+  if (workerRetryBackoffMaxMs < workerRetryBackoffBaseMs) {
+    throw new Error('WORKER_RETRY_BACKOFF_MAX_MS must be >= WORKER_RETRY_BACKOFF_BASE_MS');
+  }
+
   return {
     NODE_ENV: nodeEnv,
     PORT: port,
@@ -315,6 +344,21 @@ export function validateEnvironment(env: Record<string, unknown>): ValidatedEnvi
       'WORKER_SHUTDOWN_GRACE_MS',
       1000,
       300000,
+    ),
+    WORKER_RETRY_MAX_ATTEMPTS: parseBoundedPositiveInteger(
+      requireString(env, 'WORKER_RETRY_MAX_ATTEMPTS'),
+      'WORKER_RETRY_MAX_ATTEMPTS',
+      1,
+      100,
+    ),
+    WORKER_RETRY_BACKOFF_BASE_MS: workerRetryBackoffBaseMs,
+    WORKER_RETRY_BACKOFF_MAX_MS: workerRetryBackoffMaxMs,
+    WORKER_RETRY_JITTER_RATIO: parseRatio(requireString(env, 'WORKER_RETRY_JITTER_RATIO'), 'WORKER_RETRY_JITTER_RATIO'),
+    WORKER_FAILED_JOB_RETENTION_COUNT: parseBoundedPositiveInteger(
+      requireString(env, 'WORKER_FAILED_JOB_RETENTION_COUNT'),
+      'WORKER_FAILED_JOB_RETENTION_COUNT',
+      1,
+      1000000,
     ),
   };
 }

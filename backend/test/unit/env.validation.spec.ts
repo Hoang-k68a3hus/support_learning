@@ -31,10 +31,15 @@ const validEnv = (): Record<string, unknown> => ({
   WORKER_LEARNING_CONCURRENCY: '2',
   WORKER_MAINTENANCE_CONCURRENCY: '1',
   WORKER_SHUTDOWN_GRACE_MS: '5000',
+  WORKER_RETRY_MAX_ATTEMPTS: '3',
+  WORKER_RETRY_BACKOFF_BASE_MS: '10',
+  WORKER_RETRY_BACKOFF_MAX_MS: '50',
+  WORKER_RETRY_JITTER_RATIO: '0.2',
+  WORKER_FAILED_JOB_RETENTION_COUNT: '100',
 });
 
 describe('validateEnvironment', () => {
-  it('accepts valid configuration and parses TTLs, storage, Redis, relay and worker settings', () => {
+  it('accepts valid configuration and parses TTLs, storage, Redis, relay, worker and retry settings', () => {
     const result = validateEnvironment(validEnv());
     expect(result.PORT).toBe(3001);
     expect(result.JWT_ACCESS_TTL_SECONDS).toBe(900);
@@ -49,6 +54,11 @@ describe('validateEnvironment', () => {
     expect(result.WORKER_INSTANCE_ID).toBe('test-worker-1');
     expect(result.WORKER_PROCESSING_CONCURRENCY).toBe(4);
     expect(result.WORKER_SHUTDOWN_GRACE_MS).toBe(5000);
+    expect(result.WORKER_RETRY_MAX_ATTEMPTS).toBe(3);
+    expect(result.WORKER_RETRY_BACKOFF_BASE_MS).toBe(10);
+    expect(result.WORKER_RETRY_BACKOFF_MAX_MS).toBe(50);
+    expect(result.WORKER_RETRY_JITTER_RATIO).toBe(0.2);
+    expect(result.WORKER_FAILED_JOB_RETENTION_COUNT).toBe(100);
   });
 
   it('rejects an invalid port', () => {
@@ -135,5 +145,24 @@ describe('validateEnvironment', () => {
     const grace = validEnv();
     grace.WORKER_SHUTDOWN_GRACE_MS = '500';
     expect(() => validateEnvironment(grace)).toThrow('WORKER_SHUTDOWN_GRACE_MS');
+  });
+
+  it('rejects unbounded or malformed worker retry settings', () => {
+    const attempts = validEnv();
+    attempts.WORKER_RETRY_MAX_ATTEMPTS = '0';
+    expect(() => validateEnvironment(attempts)).toThrow('WORKER_RETRY_MAX_ATTEMPTS');
+
+    const backoff = validEnv();
+    backoff.WORKER_RETRY_BACKOFF_BASE_MS = '100';
+    backoff.WORKER_RETRY_BACKOFF_MAX_MS = '50';
+    expect(() => validateEnvironment(backoff)).toThrow('WORKER_RETRY_BACKOFF_MAX_MS');
+
+    const jitter = validEnv();
+    jitter.WORKER_RETRY_JITTER_RATIO = '1.1';
+    expect(() => validateEnvironment(jitter)).toThrow('WORKER_RETRY_JITTER_RATIO');
+
+    const retention = validEnv();
+    retention.WORKER_FAILED_JOB_RETENTION_COUNT = '0';
+    expect(() => validateEnvironment(retention)).toThrow('WORKER_FAILED_JOB_RETENTION_COUNT');
   });
 });

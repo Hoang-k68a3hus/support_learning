@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import {
   AsyncEventType,
   bullMqTransportJobId,
+  JOB_RETRY_POLICY_KEY,
   JobName,
   QueueName,
 } from '../../src/async/contracts/async-contracts';
@@ -51,6 +52,8 @@ describe('M4.1 outbox relay', () => {
   });
 
   beforeEach(async () => {
+    await prisma.deadLetterRecord.deleteMany();
+    await prisma.inboxReceipt.deleteMany();
     await prisma.outboxEvent.deleteMany();
     await redis.flushdb();
   });
@@ -61,7 +64,7 @@ describe('M4.1 outbox relay', () => {
     await app.close();
   });
 
-  it('publishes a validated deterministic BullMQ job then marks the durable event PUBLISHED', async () => {
+  it('publishes a validated deterministic BullMQ job with bounded retry policy then marks the durable event PUBLISHED', async () => {
     const documentId = randomUUID();
     const versionId = randomUUID();
     const event = await prisma.outboxEvent.create({
@@ -92,6 +95,9 @@ describe('M4.1 outbox relay', () => {
       payload: { documentId, documentVersionId: versionId, versionNo: 1 },
     });
     expect(job?.data.payload).not.toHaveProperty('ownerId');
+    expect(job?.opts.attempts).toBe(config.workerRetryMaxAttempts);
+    expect(job?.opts.backoff).toMatchObject({ type: JOB_RETRY_POLICY_KEY });
+    expect(job?.opts.removeOnFail).toEqual({ count: config.workerFailedJobRetentionCount });
   });
 
   it('recovers an expired claim after publish-before-mark crash without duplicating the BullMQ job', async () => {
