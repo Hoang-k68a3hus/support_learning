@@ -13,8 +13,16 @@ interface Identity {
   token: string;
 }
 
+interface InitUploadBody {
+  title: string;
+  folderId?: string;
+  originalFilename: string;
+  mediaType: string;
+  sizeBytes: number;
+}
+
 const password = 'correct horse battery staple';
-const textUpload = (title = 'Lecture notes') => ({
+const textUpload = (title = 'Lecture notes'): InitUploadBody => ({
   title,
   originalFilename: 'notes.txt',
   mediaType: 'text/plain',
@@ -66,7 +74,7 @@ describe('M3 Knowledge Library E2E', () => {
     return { userId: registered.body.user.id as string, token: loggedIn.body.accessToken as string };
   }
 
-  async function initUpload(user: Identity, key: string, body = textUpload()): Promise<SupertestResponse> {
+  async function initUpload(user: Identity, key: string, body: InitUploadBody = textUpload()): Promise<SupertestResponse> {
     return request(app.getHttpServer())
       .post('/api/v1/documents/init-upload')
       .set(bearer(user.token))
