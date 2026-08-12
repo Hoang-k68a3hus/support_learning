@@ -23,14 +23,25 @@ const claimed = (attempts: number): ClaimedOutboxEvent => ({
   claimExpiresAt: new Date('2026-08-12T08:01:00.000Z'),
 });
 
-function harness(attempts: number) {
+interface Harness {
+  runner: OutboxRelayRunner;
+  mocks: {
+    claimBatch: jest.Mock;
+    markPublished: jest.Mock;
+    rescheduleFailure: jest.Mock;
+    markFailed: jest.Mock;
+  };
+}
+
+function harness(attempts: number): Harness {
   const event = claimed(attempts);
-  const repository = {
+  const mocks = {
     claimBatch: jest.fn().mockResolvedValue([event]),
     markPublished: jest.fn().mockResolvedValue(true),
     rescheduleFailure: jest.fn().mockResolvedValue(true),
     markFailed: jest.fn().mockResolvedValue(true),
-  } as unknown as OutboxRelayRepository;
+  };
+  const repository = mocks as unknown as OutboxRelayRepository;
   const publisher = {
     publish: jest.fn().mockRejectedValue(new Error('redis unavailable')),
   } as unknown as BullMqPublisherService;
@@ -53,31 +64,31 @@ function harness(attempts: number) {
 
   return {
     runner: new OutboxRelayRunner(config, repository, new EventRouterService(), publisher, logger),
-    repository,
+    mocks,
   };
 }
 
 describe('OutboxRelayRunner transport failure policy', () => {
   it('reschedules a retryable BullMQ failure using configured exponential backoff', async () => {
-    const { runner, repository } = harness(1);
+    const { runner, mocks } = harness(1);
     await expect(runner.runOnce()).resolves.toBe(1);
-    expect(repository.rescheduleFailure).toHaveBeenCalledWith({
+    expect(mocks.rescheduleFailure).toHaveBeenCalledWith({
       eventId: '11111111-1111-4111-8111-111111111111',
       instanceId: 'relay-1',
       errorCode: 'OUTBOX_PUBLISH_TRANSPORT_ERROR',
       delayMs: 100,
     });
-    expect(repository.markFailed).not.toHaveBeenCalled();
+    expect(mocks.markFailed).not.toHaveBeenCalled();
   });
 
   it('moves an exhausted BullMQ publish attempt to terminal FAILED', async () => {
-    const { runner, repository } = harness(4);
+    const { runner, mocks } = harness(4);
     await expect(runner.runOnce()).resolves.toBe(1);
-    expect(repository.markFailed).toHaveBeenCalledWith({
+    expect(mocks.markFailed).toHaveBeenCalledWith({
       eventId: '11111111-1111-4111-8111-111111111111',
       instanceId: 'relay-1',
       errorCode: 'OUTBOX_PUBLISH_ATTEMPTS_EXHAUSTED',
     });
-    expect(repository.rescheduleFailure).not.toHaveBeenCalled();
+    expect(mocks.rescheduleFailure).not.toHaveBeenCalled();
   });
 });
