@@ -8,6 +8,8 @@ import { AppConfigService } from '../config/app-config.service';
 import { ConsumerDispatcherService } from './consumer-dispatcher.service';
 import { ConsumerRegistryService } from './consumer-registry.service';
 
+const PROCESS_DOCUMENT_VERSION_JOB_NAME: string = JobName.PROCESS_DOCUMENT_VERSION;
+
 interface WorkerBinding {
   queueName: QueueName;
   worker: Worker;
@@ -57,7 +59,7 @@ export class WorkerRuntimeService implements OnModuleDestroy {
         queueName,
         async (job: Job) => {
           const policyMaxAttempts =
-            job.name === JobName.PROCESS_DOCUMENT_VERSION
+            job.name === PROCESS_DOCUMENT_VERSION_JOB_NAME
               ? this.retryPolicies.forJob(JobName.PROCESS_DOCUMENT_VERSION).maxAttempts
               : 1;
           const transportAttempts =
