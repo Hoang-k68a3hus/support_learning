@@ -48,7 +48,7 @@ jobs:
           python -m benchmarks.pdf_tables_real_v0_1.run_benchmark \
             --output reports/pdf-table-benchmark.json \
             --enforce-capability-gate
-      - name: Require M2.3 failure classification for known-count misses
+      - name: Require failure classification for remaining known-count misses
         run: |
           python - <<'PY'
           import json
@@ -60,9 +60,9 @@ jobs:
           if unclassified:
               raise SystemExit(f"unclassified known-count PDF table misses: {unclassified}")
           if audit["classified_missed_case_count"] != audit["missed_case_count"]:
-              raise SystemExit("M2.3 missed-case failure classification count drift")
+              raise SystemExit("PDF table missed-case failure classification count drift")
           print(
-              "M2.3 failure taxonomy coverage:",
+              "Remaining failure taxonomy coverage:",
               f"{audit['classified_missed_case_count']}/{audit['missed_case_count']}",
               audit["failure_class_case_counts"],
           )

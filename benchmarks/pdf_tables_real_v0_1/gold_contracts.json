@@ -2,14 +2,14 @@
   "schema_version": 1,
   "benchmark": "pdf_tables_real_v0_1",
   "coverage": "PARTIAL_PILOT",
-  "oracle_policy": "Source truth is frozen from upstream published fixture expectations, not from support_learning detector output. Unknown page-level counts remain null. Capability expectation is separate and may never change source truth.",
+  "oracle_policy": "Source truth is frozen from upstream published fixture expectations, not from support_learning detector output. Unknown page-level counts remain null. Capability expectation and topology requirements are separate and may never change source truth.",
   "cases": [
     {
       "source_id": "camelot-foo",
       "page": 1,
       "source_truth_table_count": 1,
       "capability_expectation": "MUST_PRESERVE_UNSTRUCTURED",
-      "oracle_evidence": "Camelot quickstart/fixture publishes one 7x7 ruled table. PDF M2 v1 currently classifies its topology as complex/merged and must not emit a partial table.",
+      "oracle_evidence": "Camelot quickstart/fixture publishes one 7x7 ruled table. PDF M2.4 still cannot bind its source blocks without crossing the table boundary, so it must fail closed rather than emit partial structure.",
       "tables": [
         {
           "row_count": 7,
@@ -27,31 +27,45 @@
       "page": 1,
       "source_truth_table_count": 2,
       "capability_expectation": "OBSERVE",
-      "oracle_evidence": "Camelot lattice regression explicitly asserts two tables for twotables_2.pdf. M2 v1 does not yet expose a defensible candidate for this page, so this remains a recall observation rather than a fail-closed prohibition.",
+      "oracle_evidence": "Camelot lattice regression explicitly asserts two tables for twotables_2.pdf. M2.4 still does not expose a defensible lines_strict candidate for this page, so this remains a recall observation.",
       "tables": []
     },
     {
       "source_id": "camelot-row-span",
       "page": 1,
       "source_truth_table_count": 1,
-      "capability_expectation": "MUST_PRESERVE_UNSTRUCTURED",
-      "oracle_evidence": "Camelot lattice regression uses row_span_1.pdf as a row-spanning table fixture. Row spans are explicitly outside PDF M2 v1 capability.",
-      "tables": []
+      "capability_expectation": "SUPPORTED_REQUIRED",
+      "oracle_evidence": "Camelot lattice regression uses row_span_1.pdf as a row-spanning table fixture, and the pinned published Camelot benchmark CSV establishes one 40x4 table. M2.4 must recover that shape and demonstrate at least one rectangular row span; exact span coordinates are intentionally not invented as gold.",
+      "tables": [
+        {
+          "row_count": 40,
+          "column_count": 4,
+          "required_span_kinds": ["ROW_SPAN"],
+          "anchors": []
+        }
+      ]
     },
     {
       "source_id": "camelot-column-span",
       "page": 1,
       "source_truth_table_count": 1,
-      "capability_expectation": "MUST_PRESERVE_UNSTRUCTURED",
-      "oracle_evidence": "Camelot lattice regression uses column_span_2.pdf as a column-spanning table fixture. Column spans are explicitly outside PDF M2 v1 capability.",
-      "tables": []
+      "capability_expectation": "SUPPORTED_REQUIRED",
+      "oracle_evidence": "Camelot lattice regression uses column_span_2.pdf as a column-spanning table fixture, and the pinned published Camelot benchmark CSV establishes one 11x7 table. M2.4 must recover that shape and demonstrate at least one rectangular column span; exact span coordinates are intentionally not invented as gold.",
+      "tables": [
+        {
+          "row_count": 11,
+          "column_count": 7,
+          "required_span_kinds": ["COLUMN_SPAN"],
+          "anchors": []
+        }
+      ]
     },
     {
       "source_id": "camelot-image-only",
       "page": 1,
       "source_truth_table_count": 0,
       "capability_expectation": "MUST_PRESERVE_UNSTRUCTURED",
-      "oracle_evidence": "Image-only fixture is a hard negative for native-text M2 table structure.",
+      "oracle_evidence": "Image-only fixture is a hard negative for the native-text PDF table pipeline. OCR is intentionally deferred as an optional later extension.",
       "tables": []
     },
     {

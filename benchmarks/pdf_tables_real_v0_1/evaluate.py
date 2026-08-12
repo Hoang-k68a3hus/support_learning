@@ -11,6 +11,7 @@ _ALLOWED_CAPABILITIES = {
     "SUPPORTED_REQUIRED",
     "MUST_PRESERVE_UNSTRUCTURED",
 }
+_ALLOWED_SPAN_KINDS = {"ROW_SPAN", "COLUMN_SPAN"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,10 +22,19 @@ class CellAnchor:
 
 
 @dataclass(frozen=True, slots=True)
+class CellSpanPrediction:
+    row: int
+    column: int
+    row_span: int
+    column_span: int
+
+
+@dataclass(frozen=True, slots=True)
 class TableContract:
     row_count: int
     column_count: int
     anchors: tuple[CellAnchor, ...] = ()
+    required_span_kinds: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +52,7 @@ class TablePrediction:
     row_count: int
     column_count: int
     cells: tuple[tuple[str, ...], ...]
+    spans: tuple[CellSpanPrediction, ...] = ()
 
     def cell(self, row: int, column: int) -> str | None:
         if row < 0 or column < 0 or row >= len(self.cells):
@@ -235,10 +246,17 @@ def _parse_table(value: dict[str, object]) -> TableContract:
         CellAnchor(row=int(item["row"]), column=int(item["column"]), text=str(item["text"]))
         for item in value.get("anchors", [])
     )
+    raw_span_kinds = tuple(str(item) for item in value.get("required_span_kinds", []))
+    if len(raw_span_kinds) != len(set(raw_span_kinds)):
+        raise ValueError("duplicate required table span kind")
+    unsupported = sorted(set(raw_span_kinds) - _ALLOWED_SPAN_KINDS)
+    if unsupported:
+        raise ValueError(f"unsupported required table span kinds: {unsupported}")
     contract = TableContract(
         row_count=int(value["row_count"]),
         column_count=int(value["column_count"]),
         anchors=anchors,
+        required_span_kinds=tuple(sorted(raw_span_kinds)),
     )
     if contract.row_count <= 0 or contract.column_count <= 0:
         raise ValueError("table shape must be positive")
@@ -276,7 +294,38 @@ def _table_matches(contract: TableContract, prediction: TablePrediction) -> bool
         prediction.column_count,
     ):
         return False
-    return all(
+    if any(not _valid_prediction_span(prediction, item) for item in prediction.spans):
+        return False
+    if not all(
         prediction.cell(anchor.row, anchor.column) == anchor.text
         for anchor in contract.anchors
+    ):
+        return False
+    return all(
+        _prediction_has_span_kind(prediction, kind)
+        for kind in contract.required_span_kinds
     )
+
+
+def _valid_prediction_span(
+    prediction: TablePrediction,
+    span: CellSpanPrediction,
+) -> bool:
+    values = (span.row, span.column, span.row_span, span.column_span)
+    if any(isinstance(item, bool) or not isinstance(item, int) for item in values):
+        return False
+    if span.row < 0 or span.column < 0 or span.row_span <= 0 or span.column_span <= 0:
+        return False
+    return (
+        span.row + span.row_span <= prediction.row_count
+        and span.column + span.column_span <= prediction.column_count
+        and (span.row_span > 1 or span.column_span > 1)
+    )
+
+
+def _prediction_has_span_kind(prediction: TablePrediction, kind: str) -> bool:
+    if kind == "ROW_SPAN":
+        return any(item.row_span > 1 for item in prediction.spans)
+    if kind == "COLUMN_SPAN":
+        return any(item.column_span > 1 for item in prediction.spans)
+    return False

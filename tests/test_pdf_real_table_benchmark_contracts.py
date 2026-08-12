@@ -6,6 +6,7 @@ import unittest
 from benchmarks.pdf_tables_real_v0_1._corpus import git_blob_sha, load_sources
 from benchmarks.pdf_tables_real_v0_1.audit import audit_missed_table_failures
 from benchmarks.pdf_tables_real_v0_1.evaluate import (
+    CellSpanPrediction,
     PagePrediction,
     TablePrediction,
     evaluate,
@@ -24,6 +25,25 @@ def strict_table_prediction() -> TablePrediction:
             ("Col14", "Col24", "Col36"),
             ("Col15", "Col25\nCol26", ""),
         ),
+    )
+
+
+def span_table_prediction(
+    row_count: int,
+    column_count: int,
+    span_kind: str,
+) -> TablePrediction:
+    if span_kind == "ROW_SPAN":
+        span = CellSpanPrediction(row=0, column=0, row_span=2, column_span=1)
+    elif span_kind == "COLUMN_SPAN":
+        span = CellSpanPrediction(row=0, column=0, row_span=1, column_span=2)
+    else:
+        raise ValueError(f"unsupported test span kind: {span_kind}")
+    return TablePrediction(
+        row_count=row_count,
+        column_count=column_count,
+        cells=tuple(tuple("" for _ in range(column_count)) for _ in range(row_count)),
+        spans=(span,),
     )
 
 
@@ -46,7 +66,7 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
         )
         self.assertNotEqual(git_blob_sha(b"hello\n"), git_blob_sha(b"hello"))
 
-    def test_gold_keeps_source_truth_separate_from_capability(self) -> None:
+    def test_gold_keeps_source_truth_capability_and_span_oracle_separate(self) -> None:
         cases = load_gold_cases()
         strict = next(item for item in cases if item.source_id == "pymupdf-strict-yes-no")
         self.assertIsNone(strict.source_truth_table_count)
@@ -58,8 +78,15 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
         column_span = next(item for item in cases if item.source_id == "camelot-column-span")
         image = next(item for item in cases if item.source_id == "camelot-image-only")
         self.assertEqual(row_span.source_truth_table_count, 1)
-        self.assertEqual(row_span.capability_expectation, "MUST_PRESERVE_UNSTRUCTURED")
-        self.assertEqual(column_span.capability_expectation, "MUST_PRESERVE_UNSTRUCTURED")
+        self.assertEqual(row_span.capability_expectation, "SUPPORTED_REQUIRED")
+        self.assertEqual((row_span.tables[0].row_count, row_span.tables[0].column_count), (40, 4))
+        self.assertEqual(row_span.tables[0].required_span_kinds, ("ROW_SPAN",))
+        self.assertEqual(column_span.capability_expectation, "SUPPORTED_REQUIRED")
+        self.assertEqual(
+            (column_span.tables[0].row_count, column_span.tables[0].column_count),
+            (11, 7),
+        )
+        self.assertEqual(column_span.tables[0].required_span_kinds, ("COLUMN_SPAN",))
         self.assertEqual(image.capability_expectation, "MUST_PRESERVE_UNSTRUCTURED")
         self.assertTrue(any(item.capability_expectation == "OBSERVE" for item in cases))
 
@@ -68,21 +95,25 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
         predictions = []
         for case in cases:
             if case.source_id == "pymupdf-strict-yes-no":
-                predictions.append(
-                    PagePrediction(case.source_id, case.page, (strict_table_prediction(),))
-                )
+                tables = (strict_table_prediction(),)
+            elif case.source_id == "camelot-row-span":
+                tables = (span_table_prediction(40, 4, "ROW_SPAN"),)
+            elif case.source_id == "camelot-column-span":
+                tables = (span_table_prediction(11, 7, "COLUMN_SPAN"),)
             else:
-                predictions.append(PagePrediction(case.source_id, case.page, ()))
+                tables = ()
+            predictions.append(PagePrediction(case.source_id, case.page, tables))
         result = evaluate(cases, predictions)
         self.assertTrue(result.quality_gate_passed)
         self.assertEqual(result.capability_checked_cases, 5)
         self.assertEqual(result.capability_passed_cases, 5)
         self.assertEqual(result.known_count_expected_tables, 5)
-        self.assertEqual(result.known_count_predicted_tables, 0)
-        self.assertEqual(result.known_count_missed_source_truth_tables, 5)
-        self.assertEqual(result.known_count_source_truth_recall, 0.0)
-        self.assertEqual(result.structural_contracts, 2)
-        self.assertEqual(result.structural_matches, 1)
+        self.assertEqual(result.known_count_predicted_tables, 2)
+        self.assertEqual(result.known_count_missed_source_truth_tables, 3)
+        self.assertEqual(result.known_count_source_truth_precision, 1.0)
+        self.assertEqual(result.known_count_source_truth_recall, 0.4)
+        self.assertEqual(result.structural_contracts, 4)
+        self.assertEqual(result.structural_matches, 3)
 
     def test_supported_structural_contract_fails_on_wrong_cell_content(self) -> None:
         strict = next(
@@ -104,6 +135,40 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
         self.assertFalse(result.quality_gate_passed)
         self.assertEqual(result.structural_matches, 0)
         self.assertEqual(result.known_count_cases, 0)
+
+    def test_supported_span_contract_requires_topology_not_only_shape(self) -> None:
+        row_span = next(
+            item for item in load_gold_cases() if item.source_id == "camelot-row-span"
+        )
+        same_shape_without_span = TablePrediction(
+            row_count=40,
+            column_count=4,
+            cells=tuple(tuple("" for _ in range(4)) for _ in range(40)),
+        )
+        result = evaluate(
+            (row_span,),
+            (PagePrediction(row_span.source_id, row_span.page, (same_shape_without_span,)),),
+        )
+        self.assertFalse(result.quality_gate_passed)
+        self.assertEqual(result.structural_matches, 0)
+        self.assertEqual(result.known_count_predicted_tables, 1)
+
+    def test_invalid_span_geometry_cannot_satisfy_topology_contract(self) -> None:
+        column_span = next(
+            item for item in load_gold_cases() if item.source_id == "camelot-column-span"
+        )
+        malformed = TablePrediction(
+            row_count=11,
+            column_count=7,
+            cells=tuple(tuple("" for _ in range(7)) for _ in range(11)),
+            spans=(CellSpanPrediction(row=0, column=6, row_span=1, column_span=2),),
+        )
+        result = evaluate(
+            (column_span,),
+            (PagePrediction(column_span.source_id, column_span.page, (malformed,)),),
+        )
+        self.assertFalse(result.quality_gate_passed)
+        self.assertEqual(result.structural_matches, 0)
 
     def test_evaluator_rejects_false_structure_for_fail_closed_case(self) -> None:
         image = next(

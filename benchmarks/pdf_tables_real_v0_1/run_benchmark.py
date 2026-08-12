@@ -12,6 +12,7 @@ from benchmarks.pdf_tables_real_v0_1._corpus import (
 )
 from benchmarks.pdf_tables_real_v0_1.audit import audit_missed_table_failures
 from benchmarks.pdf_tables_real_v0_1.evaluate import (
+    CellSpanPrediction,
     PagePrediction,
     TablePrediction,
     evaluate,
@@ -109,10 +110,19 @@ def _prediction_from_raw(source_id: str, page: int, raw_elements) -> PagePredict
             continue
         bucket = tables_by_group.setdefault(group_id, {"table": None, "cells": {}})
         if element.type_hint == "TABLE":
+            if bucket["table"] is not None:
+                raise ValueError(f"duplicate TABLE container in integrity group: {group_id}")
             bucket["table"] = element
         elif element.type_hint == "TABLE_CELL":
             key = (int(element.attributes["row_index"]), int(element.attributes["cell_index"]))
-            bucket["cells"][key] = element.text or ""
+            cells = bucket["cells"]
+            if key in cells:
+                raise ValueError(f"duplicate TABLE_CELL position in integrity group: {group_id} {key}")
+            cells[key] = (
+                element.text or "",
+                _positive_span_attribute(element.attributes.get("row_span"), default=1),
+                _positive_span_attribute(element.attributes.get("column_span"), default=1),
+            )
 
     tables: list[TablePrediction] = []
     for group_id in sorted(tables_by_group, key=_group_sort_key):
@@ -124,17 +134,39 @@ def _prediction_from_raw(source_id: str, page: int, raw_elements) -> PagePredict
         column_count = int(table.attributes["column_count"])
         cells = bucket["cells"]
         matrix = tuple(
-            tuple(str(cells.get((row, column), "")) for column in range(column_count))
+            tuple(
+                str(cells.get((row, column), ("", 1, 1))[0])
+                for column in range(column_count)
+            )
             for row in range(row_count)
+        )
+        spans = tuple(
+            CellSpanPrediction(
+                row=row,
+                column=column,
+                row_span=value[1],
+                column_span=value[2],
+            )
+            for (row, column), value in sorted(cells.items())
+            if value[1] > 1 or value[2] > 1
         )
         tables.append(
             TablePrediction(
                 row_count=row_count,
                 column_count=column_count,
                 cells=matrix,
+                spans=spans,
             )
         )
     return PagePrediction(source_id=source_id, page=page, tables=tuple(tables))
+
+
+def _positive_span_attribute(value, *, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"invalid emitted PDF table span: {value!r}")
+    return value
 
 
 def _group_sort_key(group_id: str) -> tuple[int, int, str]:
