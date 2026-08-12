@@ -127,7 +127,7 @@ class PdfAdapter(_M2PdfAdapter):
             observation,
             diagnostics=diagnostics,
         )
-        if line_result.tables or line_result.rejected:
+        if line_result.tables:
             return line_result
         if not self.policy.enable_table_structure:
             return line_result
@@ -159,6 +159,8 @@ class PdfAdapter(_M2PdfAdapter):
             return line_result
 
         if PdfTextAlignedTableDetector.has_rectilinear_vector_evidence(paths):
+            if line_result.rejected:
+                return line_result
             return PdfTableDetectionResult(
                 rejected=(
                     PdfRejectedTableObservation(
@@ -173,7 +175,7 @@ class PdfAdapter(_M2PdfAdapter):
             )
 
         try:
-            return self._text_table_detector.detect(
+            text_result = self._text_table_detector.detect(
                 page,
                 native_text_blocks,
             )
@@ -194,6 +196,12 @@ class PdfAdapter(_M2PdfAdapter):
                 )
             )
             return line_result
+        if not line_result.rejected:
+            return text_result
+        return PdfTableDetectionResult(
+            tables=text_result.tables,
+            rejected=tuple(line_result.rejected) + tuple(text_result.rejected),
+        )
 
     @staticmethod
     def _upgrade_table_element(element: RawElement) -> RawElement:
