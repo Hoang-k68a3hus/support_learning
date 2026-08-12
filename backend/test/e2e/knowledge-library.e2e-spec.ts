@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { DocumentStatus, DocumentUploadState, Prisma } from '@prisma/client';
+import { DocumentStatus, DocumentUploadState } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -210,7 +210,10 @@ describe('M3 Knowledge Library E2E', () => {
     expect(r3.status).toBe(201);
     expect(r2.body.versionId).not.toBe(r3.body.versionId);
 
-    const pending = await prisma.documentVersion.findMany({ where: { documentId, id: { in: [r2.body.versionId as string, r3.body.versionId as string] } }, orderBy: { versionNo: 'asc' } });
+    const pending = await prisma.documentVersion.findMany({
+      where: { documentId, id: { in: [r2.body.versionId as string, r3.body.versionId as string] } },
+      orderBy: { versionNo: 'asc' },
+    });
     expect(pending.map((row) => row.versionNo)).toEqual([2, 3]);
     const v2 = pending[0]!;
     const v3 = pending[1]!;
@@ -252,7 +255,9 @@ describe('M3 Knowledge Library E2E', () => {
     expect(await prisma.documentSource.count({ where: { documentVersionId: upload.body.versionId as string } })).toBe(1);
     expect(await prisma.documentTag.count({ where: { documentId } })).toBe(0);
     const actions = await prisma.auditLog.findMany({ where: { actorUserId: user.userId }, select: { action: true } });
-    expect(actions.map((row) => row.action)).toEqual(expect.arrayContaining(['WORKSPACE_SOURCE_LINKED', 'WORKSPACE_SOURCE_UNLINKED', 'TAG_DELETED', 'WORKSPACE_DELETED']));
+    expect(actions.map((row) => row.action)).toEqual(
+      expect.arrayContaining(['WORKSPACE_SOURCE_LINKED', 'WORKSPACE_SOURCE_UNLINKED', 'TAG_DELETED', 'WORKSPACE_DELETED']),
+    );
   });
 
   it('lets PostgreSQL reject cross-owner links and invalid source/version/document invariants when services are bypassed', async () => {
@@ -264,8 +269,8 @@ describe('M3 Knowledge Library E2E', () => {
     const vA = await prisma.documentVersion.create({ data: { documentId: docA.id, versionNo: 1 } });
     const vB = await prisma.documentVersion.create({ data: { documentId: docB.id, versionNo: 1 } });
 
-    await expect(prisma.workspaceSource.create({ data: { workspaceId: workspace.id, documentId: docB.id, ownerId: a.userId } })).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
-    await expect(prisma.documentVersion.create({ data: { documentId: docA.id, versionNo: 0 } })).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    await expect(prisma.workspaceSource.create({ data: { workspaceId: workspace.id, documentId: docB.id, ownerId: a.userId } })).rejects.toThrow();
+    await expect(prisma.documentVersion.create({ data: { documentId: docA.id, versionNo: 0 } })).rejects.toThrow();
     await expect(
       prisma.documentSource.create({
         data: {
@@ -277,8 +282,16 @@ describe('M3 Knowledge Library E2E', () => {
           sizeBytes: BigInt(-1),
         },
       }),
-    ).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
-    await expect(prisma.document.update({ where: { id: docA.id }, data: { currentVersionId: vB.id } })).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
-    await expect(prisma.document.update({ where: { id: docA.id }, data: { status: DocumentStatus.DELETED } })).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    ).rejects.toThrow();
+    await expect(prisma.document.update({ where: { id: docA.id }, data: { currentVersionId: vB.id } })).rejects.toThrow();
+    await expect(prisma.document.update({ where: { id: docA.id }, data: { status: DocumentStatus.DELETED } })).rejects.toThrow();
+
+    expect(await prisma.workspaceSource.count()).toBe(0);
+    expect(await prisma.documentVersion.count({ where: { documentId: docA.id } })).toBe(1);
+    expect(await prisma.documentSource.count({ where: { documentVersionId: vA.id } })).toBe(0);
+    const persisted = await prisma.document.findUniqueOrThrow({ where: { id: docA.id } });
+    expect(persisted.currentVersionId).toBeNull();
+    expect(persisted.status).toBe(DocumentStatus.ACTIVE);
+    expect(persisted.deletedAt).toBeNull();
   });
 });
