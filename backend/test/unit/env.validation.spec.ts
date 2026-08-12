@@ -17,10 +17,19 @@ const validEnv = (): Record<string, unknown> => ({
   STORAGE_MAX_UPLOAD_BYTES: '104857600',
   STORAGE_ALLOWED_MEDIA_TYPES: 'application/pdf,text/plain',
   IDEMPOTENCY_TTL: '24h',
+  REDIS_URL: 'redis://localhost:6379/0',
+  BULLMQ_PREFIX: 'support-learning:test',
+  OUTBOX_RELAY_INSTANCE_ID: 'test-relay-1',
+  OUTBOX_RELAY_POLL_INTERVAL_MS: '100',
+  OUTBOX_RELAY_BATCH_SIZE: '20',
+  OUTBOX_RELAY_CLAIM_LEASE_MS: '5000',
+  OUTBOX_RELAY_MAX_PUBLISH_ATTEMPTS: '4',
+  OUTBOX_RELAY_BACKOFF_BASE_MS: '100',
+  OUTBOX_RELAY_BACKOFF_MAX_MS: '1000',
 });
 
 describe('validateEnvironment', () => {
-  it('accepts valid configuration and parses TTLs and storage policy', () => {
+  it('accepts valid configuration and parses TTLs, storage policy, Redis and relay settings', () => {
     const result = validateEnvironment(validEnv());
     expect(result.PORT).toBe(3001);
     expect(result.JWT_ACCESS_TTL_SECONDS).toBe(900);
@@ -29,6 +38,9 @@ describe('validateEnvironment', () => {
     expect(result.STORAGE_MAX_UPLOAD_BYTES).toBe(104857600);
     expect(result.STORAGE_ALLOWED_MEDIA_TYPES).toEqual(['application/pdf', 'text/plain']);
     expect(result.IDEMPOTENCY_TTL_SECONDS).toBe(86400);
+    expect(result.REDIS_URL).toBe('redis://localhost:6379/0');
+    expect(result.OUTBOX_RELAY_BATCH_SIZE).toBe(20);
+    expect(result.OUTBOX_RELAY_CLAIM_LEASE_MS).toBe(5000);
   });
 
   it('rejects an invalid port', () => {
@@ -92,5 +104,20 @@ describe('validateEnvironment', () => {
     const size = validEnv();
     size.STORAGE_MAX_UPLOAD_BYTES = '0';
     expect(() => validateEnvironment(size)).toThrow('STORAGE_MAX_UPLOAD_BYTES');
+  });
+
+  it('rejects malformed Redis and relay settings', () => {
+    const redis = validEnv();
+    redis.REDIS_URL = 'https://localhost:6379';
+    expect(() => validateEnvironment(redis)).toThrow('REDIS_URL');
+
+    const lease = validEnv();
+    lease.OUTBOX_RELAY_CLAIM_LEASE_MS = '50';
+    expect(() => validateEnvironment(lease)).toThrow('OUTBOX_RELAY_CLAIM_LEASE_MS');
+
+    const backoff = validEnv();
+    backoff.OUTBOX_RELAY_BACKOFF_BASE_MS = '2000';
+    backoff.OUTBOX_RELAY_BACKOFF_MAX_MS = '1000';
+    expect(() => validateEnvironment(backoff)).toThrow('BACKOFF_MAX');
   });
 });

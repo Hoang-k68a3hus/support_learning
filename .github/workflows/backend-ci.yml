@@ -34,6 +34,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:8.8.1-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       NODE_ENV: test
       PORT: '3001'
@@ -51,6 +60,15 @@ jobs:
       STORAGE_MAX_UPLOAD_BYTES: '104857600'
       STORAGE_ALLOWED_MEDIA_TYPES: application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document
       IDEMPOTENCY_TTL: 24h
+      REDIS_URL: redis://localhost:6379/0
+      BULLMQ_PREFIX: support-learning:ci
+      OUTBOX_RELAY_INSTANCE_ID: ci-relay-1
+      OUTBOX_RELAY_POLL_INTERVAL_MS: '100'
+      OUTBOX_RELAY_BATCH_SIZE: '20'
+      OUTBOX_RELAY_CLAIM_LEASE_MS: '5000'
+      OUTBOX_RELAY_MAX_PUBLISH_ATTEMPTS: '4'
+      OUTBOX_RELAY_BACKOFF_BASE_MS: '100'
+      OUTBOX_RELAY_BACKOFF_MAX_MS: '1000'
 
     steps:
       - uses: actions/checkout@v4
