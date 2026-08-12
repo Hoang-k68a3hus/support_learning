@@ -20,7 +20,14 @@ exact PDF bytes
             -> bounded regional lines candidate
             -> source-vector logical-grid normalization
             -> existing simple/merged verifier
-       -> rejected/ambiguous: preserve M1 native blocks + diagnostic
+       -> boundary-safe source ownership retry (M2.6)
+            -> retry only a crossing-block rejection
+            -> partition at complete native-line boundaries only
+            -> private table-prefix detection view
+            -> existing merged topology/source-span verifier
+            -> exact residual suffix projection
+            -> span conservation invariant
+       -> rejected/ambiguous: preserve native text + diagnostic
   -> deterministic fail-closed reading order for non-table content
   -> RawElement[]
   -> SourceAdapterRunner
@@ -33,7 +40,7 @@ OCR is **not** part of this pipeline. It is deferred as an optional later extens
 
 PDF normally does not expose paragraph, heading, or table semantics as authoritative tags. Visible text blocks therefore remain `PARAGRAPH` hints with `DERIVED` provenance. M2 table elements are also explicitly `DERIVED`: they represent a high-confidence structural projection from PDF geometry/text alignment plus exact native text-span ownership, not an explicit source tag.
 
-The adapter never converts weak layout evidence into a source fact. Unsupported or ambiguous candidates remain their original M1 text blocks.
+The adapter never converts weak layout evidence into a source fact. Unsupported or ambiguous candidates remain native PDF text observations.
 
 ## Simple ruled tables
 
@@ -93,45 +100,126 @@ The fallback is deliberately narrower than a generic permissive `strategy="lines
 
 This prevents permissive candidate geometry from becoming source truth. M2.5 production behavior contains no fixture-specific coordinates, row/column counts, or text rules.
 
-The versioned policy controls are:
+The segmentation contract version is `drawing-clusters-v1`.
+
+## M2.6 boundary-safe source ownership
+
+M2.6 addresses a narrower source-preservation problem: PyMuPDF may place the final table row and the paragraph immediately after it in the **same native TextPage block**. Earlier M2 versions correctly failed closed because consuming the whole block would lose non-table text, while accepting only table spans without an explicit residual contract would break provenance.
+
+M2.6 does **not** introduce arbitrary source-block splitting. It supports only a strict shape:
 
 ```text
-enable_segmented_multi_table_structure = true
-minimum_segmented_table_regions = 2
-maximum_segmented_table_regions = 16
-segmented_table_cluster_tolerance_points = 3.0
-segmented_table_boundary_support_ratio = 0.75
-segmented_table_vector_alignment_tolerance_points = 0.75
-segmented_table_active_vertical_boundary_fraction = 0.40
-segmented_table_minimum_active_vertical_boundaries = 3
+one original native block
+  ├─ complete native lines belonging to the table     # contiguous prefix
+  └─ complete native lines belonging to residual text # suffix
 ```
 
-The segmentation contract version is `drawing-clusters-v1`; table structure is `multi-strategy-v4`.
+The partitioner requires:
+
+- every nonblank span to be wholly inside or wholly outside the candidate table;
+- no span partially crossing the candidate boundary;
+- no native line mixing inside and outside nonblank spans;
+- the first nonblank portion of the crossing block to belong to the table;
+- table-owned lines to form one contiguous prefix;
+- once residual content begins, table content may not reappear;
+- visual order may not overlap beyond the configured geometry tolerance;
+- table and residual line references must exactly cover the original native-line sequence without overlap.
+
+If any condition is ambiguous, M2.6 rejects the retry and keeps the original source blocks authoritative.
+
+### Private detection view, immutable source
+
+The original `PdfBlockObservation` is never mutated. M2.6 builds a private detection-only block containing the table-owned prefix lines and reuses the existing M2.4 merged-table verifier. Accepted table fragments still reference the original `PdfSpanObservation` objects.
+
+The following residual suffix is emitted separately as a `PARAGRAPH` with:
+
+- `source_anchor.kind = "pdf_native_block_fragment"`;
+- an anchor id scoped to the exact original page/block and native-line range;
+- `pdf_native_bbox_scope = "source_line_fragment_union"`;
+- the original whole-block native/displayed bbox retained in separate audit attributes;
+- exact table-owned and residual native-line orders;
+- the original native block number/order retained.
+
+The residual is therefore explicit about being a projection of part of a TextPage block; it never masquerades as the original whole block.
+
+### Conservation invariant
+
+Before emitting a partitioned page, M2.6 verifies:
+
+```text
+table_source_spans ∩ residual_source_spans == ∅
+table_source_spans ∪ residual_source_spans == original_crossing_block_source_spans
+```
+
+A missing, duplicated, or unexpected source span raises an adapter error instead of silently producing partial structure. A verified residual that unexpectedly becomes empty during emission also fails rather than being dropped.
+
+### Derived cell text vs source-span text
+
+Some TextPage spans contain layout whitespace such as trailing spaces. M2.6 applies `outer-whitespace-strip-v1` **only to the derived `TABLE_CELL.text` field for partitioned tables**. The exact source span text stored under `pdf_source_spans` is unchanged.
+
+This distinction is intentional:
+
+```text
+SOURCE FACT
+  pdf_source_spans[*].text = exact extracted span text
+
+DERIVED STRUCTURE
+  TABLE_CELL.text = structurally reconstructed text with outer whitespace removed
+```
+
+It allows a structural oracle such as `"2012_2"` to match without falsifying the extracted source text `"2012_2 "`.
+
+### M2.6 versioned policy
+
+```text
+enable_boundary_safe_source_partitioning = true
+boundary_partition_geometry_tolerance_points = 0.75
+maximum_boundary_partitioned_blocks_per_table = 2
+```
+
+Current versions are:
+
+```text
+adapter                         7
+policy                          8
+table structure                 multi-strategy-v5
+source block partition          native-line-prefix-v1
+partitioned cell normalization  outer-whitespace-strip-v1
+merged topology                 rectangular-spans-v1
+multi-table segmentation        drawing-clusters-v1
+```
 
 ## Cell text and provenance
 
 Cell text is rebuilt from the exact TextPage spans owned by that cell; it is not trusted from a second semantic transcription. `source-spans-v1` preserves source block, line, and span native orders plus span text, native/displayed bboxes, fonts, flags, colors, alpha, and origins in cell audit metadata. Every table projection remains traceable to original PDF observations.
 
+M2.6 adds source ownership metadata but does not promote inferred table structure into a source fact.
+
 ## Real-PDF measurement
 
 The pinned benchmark keeps source truth separate from current parser capability. Current required positives are:
 
+- Camelot `foo.pdf`: one published 7x7 table with content anchors and a separately audited residual paragraph sharing its final TextPage block;
 - PyMuPDF `strict-yes-no.pdf`: exact published 5x3 simple table;
 - Camelot `row_span_1.pdf`: one published 40x4 table with row-span topology;
 - Camelot `column_span_2.pdf`: one published 11x7 table with column-span topology;
 - Camelot `twotables_2.pdf`: two independently published 13x8 tables with content anchors.
 
-For the small known-count pilot after M2.5:
+For the small known-count pilot after M2.6:
 
 ```text
 expected tables        5
-predicted tables       4
+predicted tables       5
 false positives        0
+missed tables          0
 precision            1.0
-recall               0.8
+recall               1.0
+structural matches    6/6
 ```
 
-The one remaining known-count miss is `foo.pdf`, where a native source block crosses the table boundary. That case still fails closed rather than splitting source text without a separately designed provenance contract. These pilot metrics are not a claim about arbitrary PDFs.
+For `foo.pdf`, the source-ownership audit also proves that residual native lines `81–83` / span orders `92–94` survive once with fragment-scoped provenance. Those exact line numbers are benchmark evidence only and are **not** encoded in production behavior.
+
+These pilot metrics are not a claim about arbitrary PDFs.
 
 ## Diagnostics
 
@@ -139,24 +227,29 @@ M2 uses:
 
 - `PDF_TABLE_STRUCTURE_EXTRACTED_M2` — high-confidence table structure was emitted;
 - `PDF_TABLE_CANDIDATE_UNSUPPORTED_M2` — table-like evidence exists but topology or source ownership is not defensible;
-- `PDF_TABLE_DETECTION_FAILED_M2` — table inspection failed safely and M1 text was retained;
+- `PDF_TABLE_DETECTION_FAILED_M2` — table inspection failed safely and native text was retained;
 - `PDF_TABLE_MERGED_DETECTION_FAILED_M2_4` — merged-topology retry failed safely;
 - `PDF_TABLE_SEGMENTATION_FAILED_M2_5` — segmented multi-table inspection failed safely;
+- `PDF_TABLE_SOURCE_PARTITION_FAILED_M2_6` — boundary-safe native-line ownership retry failed safely;
 - `PDF_ALIGNED_LAYOUT_REMAINS_UNSTRUCTURED_M2` — additional aligned content outside accepted tables remains intentionally unstructured.
 
 Existing M1 diagnostics remain valid for visibility, suspicious native mappings, image content, no-native-text pages, and unresolved aligned layouts.
 
 ## M1 invariants retained
 
-Every emitted source unit still retains exact input-byte SHA-256, 1-based page identity, normalized displayed-page bbox, original unrotated point geometry, native order/provenance, and pinned backend/policy versions. Occluded text is excluded only with high-confidence paint-order evidence. Ambiguous reading order falls back to the native sequence.
+Every emitted source unit still retains exact input-byte SHA-256, 1-based page identity, normalized displayed-page bbox, original point geometry, native order/provenance, and pinned backend/policy versions. Occluded text is excluded only with high-confidence paint-order evidence. Ambiguous reading order falls back to the native sequence.
 
-## Explicit limitations after M2.5
+## Explicit limitations after M2.6
 
-M2.5 intentionally does **not** claim support for:
+M2.6 intentionally does **not** claim support for:
 
+- arbitrary character, word, span, or native-line splitting across table boundaries;
+- a table embedded in the middle of one native source block;
+- outside-prefix followed by table-suffix ownership inside one source block;
+- mixed inside/outside spans on one native line;
+- partially crossing spans;
 - arbitrary irregular or L-shaped merged cells;
 - overlapping/non-rectangular table topology;
-- arbitrary splitting of native source blocks that cross a table boundary;
 - cross-page table continuation;
 - semantic header inference;
 - OCR / scanned-page recovery;

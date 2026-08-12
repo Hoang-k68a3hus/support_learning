@@ -47,6 +47,25 @@ class PdfBlockObservation:
 
 
 @dataclass(frozen=True, slots=True)
+class PdfBlockLinePartition:
+    """Source-near line partition of one native PDF text block.
+
+    M2.6 never splits inside a native line or span. The table-owned prefix and
+    residual suffix are exact line-order references into the original block; the
+    original block geometry remains available so a residual projection never
+    masquerades as an unsplit TextPage block.
+    """
+
+    page_number: int
+    native_block_number: int
+    native_order: int
+    original_bbox: PdfRect
+    original_displayed_bbox: PdfRect
+    table_line_native_orders: tuple[int, ...]
+    residual_line_native_orders: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class PdfOccludedTextObservation:
     native_block_number: int
     native_order: int

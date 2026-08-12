@@ -28,6 +28,18 @@ def strict_table_prediction() -> TablePrediction:
     )
 
 
+def foo_table_prediction() -> TablePrediction:
+    cells = [["" for _ in range(7)] for _ in range(7)]
+    cells[2][0] = "2012_2"
+    cells[2][1] = "3.30"
+    cells[6][6] = "0.5%"
+    return TablePrediction(
+        row_count=7,
+        column_count=7,
+        cells=tuple(tuple(row) for row in cells),
+    )
+
+
 def span_table_prediction(
     row_count: int,
     column_count: int,
@@ -91,6 +103,15 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
         self.assertEqual((strict.tables[0].row_count, strict.tables[0].column_count), (5, 3))
         self.assertEqual(len(strict.tables[0].anchors), 15)
 
+        foo = next(item for item in cases if item.source_id == "camelot-foo")
+        self.assertEqual(foo.source_truth_table_count, 1)
+        self.assertEqual(foo.capability_expectation, "SUPPORTED_REQUIRED")
+        self.assertEqual((foo.tables[0].row_count, foo.tables[0].column_count), (7, 7))
+        self.assertEqual(
+            {(anchor.row, anchor.column, anchor.text) for anchor in foo.tables[0].anchors},
+            {(2, 0, "2012_2"), (2, 1, "3.30"), (6, 6, "0.5%")},
+        )
+
         two_tables = next(item for item in cases if item.source_id == "camelot-two-tables")
         self.assertEqual(two_tables.source_truth_table_count, 2)
         self.assertEqual(two_tables.capability_expectation, "SUPPORTED_REQUIRED")
@@ -127,7 +148,9 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
         cases = load_gold_cases()
         predictions = []
         for case in cases:
-            if case.source_id == "pymupdf-strict-yes-no":
+            if case.source_id == "camelot-foo":
+                tables = (foo_table_prediction(),)
+            elif case.source_id == "pymupdf-strict-yes-no":
                 tables = (strict_table_prediction(),)
             elif case.source_id == "camelot-two-tables":
                 tables = two_table_predictions()
@@ -143,12 +166,12 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
         self.assertEqual(result.capability_checked_cases, 6)
         self.assertEqual(result.capability_passed_cases, 6)
         self.assertEqual(result.known_count_expected_tables, 5)
-        self.assertEqual(result.known_count_predicted_tables, 4)
-        self.assertEqual(result.known_count_missed_source_truth_tables, 1)
+        self.assertEqual(result.known_count_predicted_tables, 5)
+        self.assertEqual(result.known_count_missed_source_truth_tables, 0)
         self.assertEqual(result.known_count_source_truth_precision, 1.0)
-        self.assertEqual(result.known_count_source_truth_recall, 0.8)
+        self.assertEqual(result.known_count_source_truth_recall, 1.0)
         self.assertEqual(result.structural_contracts, 6)
-        self.assertEqual(result.structural_matches, 5)
+        self.assertEqual(result.structural_matches, 6)
 
     def test_two_table_contract_requires_both_independent_structures(self) -> None:
         case = next(
@@ -183,6 +206,31 @@ class RealPdfTableBenchmarkContractTests(unittest.TestCase):
         self.assertFalse(result.quality_gate_passed)
         self.assertEqual(result.structural_matches, 0)
         self.assertEqual(result.known_count_cases, 0)
+
+    def test_supported_boundary_partition_contract_requires_published_content(self) -> None:
+        foo = next(item for item in load_gold_cases() if item.source_id == "camelot-foo")
+        wrong = foo_table_prediction()
+        wrong_cells = [list(row) for row in wrong.cells]
+        wrong_cells[6][6] = "WRONG"
+        result = evaluate(
+            (foo,),
+            (
+                PagePrediction(
+                    foo.source_id,
+                    foo.page,
+                    (
+                        TablePrediction(
+                            row_count=7,
+                            column_count=7,
+                            cells=tuple(tuple(row) for row in wrong_cells),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        self.assertFalse(result.quality_gate_passed)
+        self.assertEqual(result.structural_matches, 0)
+        self.assertEqual(result.known_count_predicted_tables, 1)
 
     def test_supported_span_contract_requires_topology_not_only_shape(self) -> None:
         row_span = next(
