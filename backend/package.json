@@ -12,6 +12,7 @@
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "start:relay": "node dist/async/relay.main.js",
+    "start:worker": "node dist/worker/worker.main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "test": "jest --config jest.config.cjs --runInBand",

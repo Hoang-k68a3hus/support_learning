@@ -26,10 +26,15 @@ const validEnv = (): Record<string, unknown> => ({
   OUTBOX_RELAY_MAX_PUBLISH_ATTEMPTS: '4',
   OUTBOX_RELAY_BACKOFF_BASE_MS: '100',
   OUTBOX_RELAY_BACKOFF_MAX_MS: '1000',
+  WORKER_INSTANCE_ID: 'test-worker-1',
+  WORKER_PROCESSING_CONCURRENCY: '4',
+  WORKER_LEARNING_CONCURRENCY: '2',
+  WORKER_MAINTENANCE_CONCURRENCY: '1',
+  WORKER_SHUTDOWN_GRACE_MS: '5000',
 });
 
 describe('validateEnvironment', () => {
-  it('accepts valid configuration and parses TTLs, storage policy, Redis and relay settings', () => {
+  it('accepts valid configuration and parses TTLs, storage, Redis, relay and worker settings', () => {
     const result = validateEnvironment(validEnv());
     expect(result.PORT).toBe(3001);
     expect(result.JWT_ACCESS_TTL_SECONDS).toBe(900);
@@ -41,6 +46,9 @@ describe('validateEnvironment', () => {
     expect(result.REDIS_URL).toBe('redis://localhost:6379/0');
     expect(result.OUTBOX_RELAY_BATCH_SIZE).toBe(20);
     expect(result.OUTBOX_RELAY_CLAIM_LEASE_MS).toBe(5000);
+    expect(result.WORKER_INSTANCE_ID).toBe('test-worker-1');
+    expect(result.WORKER_PROCESSING_CONCURRENCY).toBe(4);
+    expect(result.WORKER_SHUTDOWN_GRACE_MS).toBe(5000);
   });
 
   it('rejects an invalid port', () => {
@@ -106,7 +114,7 @@ describe('validateEnvironment', () => {
     expect(() => validateEnvironment(size)).toThrow('STORAGE_MAX_UPLOAD_BYTES');
   });
 
-  it('rejects malformed Redis and relay settings', () => {
+  it('rejects malformed Redis, relay and worker settings', () => {
     const redis = validEnv();
     redis.REDIS_URL = 'https://localhost:6379';
     expect(() => validateEnvironment(redis)).toThrow('REDIS_URL');
@@ -119,5 +127,13 @@ describe('validateEnvironment', () => {
     backoff.OUTBOX_RELAY_BACKOFF_BASE_MS = '2000';
     backoff.OUTBOX_RELAY_BACKOFF_MAX_MS = '1000';
     expect(() => validateEnvironment(backoff)).toThrow('BACKOFF_MAX');
+
+    const concurrency = validEnv();
+    concurrency.WORKER_PROCESSING_CONCURRENCY = '0';
+    expect(() => validateEnvironment(concurrency)).toThrow('WORKER_PROCESSING_CONCURRENCY');
+
+    const grace = validEnv();
+    grace.WORKER_SHUTDOWN_GRACE_MS = '500';
+    expect(() => validateEnvironment(grace)).toThrow('WORKER_SHUTDOWN_GRACE_MS');
   });
 });
