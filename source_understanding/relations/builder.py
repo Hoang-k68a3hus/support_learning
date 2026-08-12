@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from collections.abc import Sequence
+from enum import StrEnum
 
 from pydantic import Field, model_validator
 
-from source_understanding.schemas.context import Confidence, Identifier, SchemaModel, StructureSource
+from source_understanding.schemas.context import (
+    Confidence,
+    Identifier,
+    JsonObject,
+    SchemaModel,
+    StructureSource,
+)
 from source_understanding.schemas.document import SubDocument
-from source_understanding.schemas.element import Element
+from source_understanding.schemas.element import Element, ElementType
 from source_understanding.schemas.logical_unit import LogicalUnit, LogicalUnitType
 from source_understanding.schemas.relation import Relation, RelationLayer, RelationType
 from source_understanding.source_attributes import (
@@ -17,9 +25,15 @@ from source_understanding.source_attributes import (
     source_anchor,
     source_references,
 )
+from .table_continuation import (
+    TABLE_CONTINUATION_CONTRACT_VERSION,
+    TABLE_CONTINUATION_EVIDENCE_COMPARISON_TOLERANCE,
+    TABLE_CONTINUATION_EVIDENCE_ATTRIBUTE,
+    TableContinuationEvidence,
+)
 
 
-RELATION_BUILDER_VERSION = "2"
+RELATION_BUILDER_VERSION = "3"
 
 
 class RelationBuildError(ValueError):
@@ -34,7 +48,50 @@ class RelationBuildPolicy(SchemaModel):
     include_subdocument_membership: bool = True
     include_integrity_nesting: bool = True
     include_explicit_source_references: bool = True
+    enable_table_continuation: bool = True
+    table_continuation_version: str = TABLE_CONTINUATION_CONTRACT_VERSION
+    table_continuation_max_edge_distance: float = Field(default=0.12, ge=0.0, le=0.5)
+    table_continuation_max_width_delta: float = Field(default=0.08, ge=0.0, le=1.0)
+    table_continuation_max_column_boundary_delta: float = Field(
+        default=0.04,
+        ge=0.0,
+        le=1.0,
+    )
+    table_continuation_min_evidence_signals: int = Field(default=4, ge=2, le=8)
+    table_continuation_confidence: Confidence = 0.92
+    table_continuation_evidence_comparison_tolerance: float = Field(
+        default=TABLE_CONTINUATION_EVIDENCE_COMPARISON_TOLERANCE,
+        ge=0.0,
+        le=0.001,
+    )
     deterministic_confidence: Confidence = 1.0
+
+
+class RelationDiagnosticOutcome(StrEnum):
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+    INSPECTION_FAILED = "INSPECTION_FAILED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class RelationBuildDiagnostic(SchemaModel):
+    code: str = Field(min_length=1, max_length=128)
+    outcome: RelationDiagnosticOutcome
+    reason: str = Field(min_length=1, max_length=256)
+    source_id: Identifier | None = None
+    target_id: Identifier | None = None
+    metadata: JsonObject = Field(default_factory=dict)
+
+
+class _NoContinuationEvidence(ValueError):
+    """A table belongs to another source adapter or predates M2.7 evidence."""
+
+
+@dataclass(frozen=True, slots=True)
+class _TableFragment:
+    unit: LogicalUnit
+    evidence: TableContinuationEvidence
+    anchor: tuple[str, str]
 
 
 class RelationBuildResult(SchemaModel):
@@ -44,6 +101,7 @@ class RelationBuildResult(SchemaModel):
     subdocument_count: int = Field(ge=0)
     policy: RelationBuildPolicy
     relations: tuple[Relation, ...] = Field(default_factory=tuple)
+    diagnostics: tuple[RelationBuildDiagnostic, ...] = Field(default_factory=tuple)
 
     @model_validator(mode="after")
     def validate_unique_relations(self) -> "RelationBuildResult":
@@ -78,6 +136,7 @@ class StructuralRelationBuilder:
         subdoc_snapshot = tuple(subdocuments)
         self._validate_inputs(element_snapshot, unit_snapshot, subdoc_snapshot)
         relations: list[Relation] = []
+        diagnostics: list[RelationBuildDiagnostic] = []
 
         if self._policy.include_element_next:
             for left, right in zip(element_snapshot, element_snapshot[1:]):
@@ -251,13 +310,253 @@ class StructuralRelationBuilder:
                     )
                 )
 
+        if self._policy.enable_table_continuation:
+            relations.extend(
+                self._build_table_continuations(
+                    element_snapshot,
+                    unit_snapshot,
+                    diagnostics,
+                )
+            )
+
         return RelationBuildResult(
             element_count=len(element_snapshot),
             logical_unit_count=len(unit_snapshot),
             subdocument_count=len(subdoc_snapshot),
             policy=self._policy,
             relations=tuple(relations),
+            diagnostics=tuple(diagnostics),
         )
+
+    def _build_table_continuations(
+        self,
+        elements: tuple[Element, ...],
+        logical_units: tuple[LogicalUnit, ...],
+        diagnostics: list[RelationBuildDiagnostic],
+    ) -> list[Relation]:
+        fragments_by_page: dict[int, list[_TableFragment]] = {}
+        for unit in logical_units:
+            table_elements = [
+                element
+                for element in elements
+                if element.id in unit.element_ids and element.type == ElementType.TABLE
+            ]
+            if not table_elements:
+                continue
+            try:
+                fragment = self._table_fragment(unit, table_elements)
+            except _NoContinuationEvidence:
+                continue
+            except Exception as exc:
+                diagnostics.append(
+                    RelationBuildDiagnostic(
+                        code="TABLE_CONTINUATION_INSPECTION_FAILED",
+                        outcome=RelationDiagnosticOutcome.INSPECTION_FAILED,
+                        reason="source_ownership_invalid",
+                        source_id=unit.id,
+                        metadata={
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                            "contract_version": self._policy.table_continuation_version,
+                        },
+                    )
+                )
+                continue
+            fragments_by_page.setdefault(fragment.evidence.page, []).append(fragment)
+
+        relations: list[Relation] = []
+        for page in sorted(fragments_by_page):
+            next_page = fragments_by_page.get(page + 1)
+            if not next_page:
+                continue
+            current_page = tuple(sorted(fragments_by_page[page], key=lambda item: item.unit.id))
+            following_page = tuple(sorted(next_page, key=lambda item: item.unit.id))
+            accepted: list[tuple[_TableFragment, _TableFragment, tuple[str, ...]]] = []
+            for left in current_page:
+                for right in following_page:
+                    passed, reason, signals = self._evaluate_table_pair(left, right)
+                    if passed:
+                        accepted.append((left, right, signals))
+                    else:
+                        diagnostics.append(
+                            RelationBuildDiagnostic(
+                                code="TABLE_CONTINUATION_CANDIDATE_REJECTED",
+                                outcome=RelationDiagnosticOutcome.REJECTED,
+                                reason=reason,
+                                source_id=left.unit.id,
+                                target_id=right.unit.id,
+                                metadata={
+                                    "page_pair": [page, page + 1],
+                                    "contract_version": self._policy.table_continuation_version,
+                                },
+                            )
+                        )
+            if len(accepted) != 1:
+                if len(accepted) > 1:
+                    diagnostics.append(
+                        RelationBuildDiagnostic(
+                            code="TABLE_CONTINUATION_AMBIGUOUS",
+                            outcome=RelationDiagnosticOutcome.AMBIGUOUS,
+                            reason="multiple_candidate_pairs",
+                            metadata={
+                                "page_pair": [page, page + 1],
+                                "candidate_pairs": [
+                                    [left.unit.id, right.unit.id]
+                                    for left, right, _signals in accepted
+                                ],
+                                "contract_version": self._policy.table_continuation_version,
+                            },
+                        )
+                    )
+                continue
+
+            left, right, signals = accepted[0]
+            relation = self._make_relation(
+                RelationType.CONTINUES,
+                left.unit.id,
+                right.unit.id,
+                source=StructureSource.INFERRED,
+                confidence=min(
+                    self._policy.table_continuation_confidence,
+                    left.unit.confidence,
+                    right.unit.confidence,
+                ),
+                metadata={
+                    "basis": "adjacent_page_table_geometry",
+                    "contract_version": self._policy.table_continuation_version,
+                    "page_pair": [page, page + 1],
+                    "evidence_signals": list(signals),
+                    "source_table_anchor": {
+                        "kind": left.anchor[0],
+                        "id": left.anchor[1],
+                    },
+                    "target_table_anchor": {
+                        "kind": right.anchor[0],
+                        "id": right.anchor[1],
+                    },
+                },
+            )
+            relations.append(relation)
+            diagnostics.append(
+                RelationBuildDiagnostic(
+                    code="TABLE_CONTINUATION_ACCEPTED",
+                    outcome=RelationDiagnosticOutcome.ACCEPTED,
+                    reason="compatible_adjacent_table_fragments",
+                    source_id=left.unit.id,
+                    target_id=right.unit.id,
+                    metadata={
+                        "page_pair": [page, page + 1],
+                        "evidence_signals": list(signals),
+                        "contract_version": self._policy.table_continuation_version,
+                    },
+                )
+            )
+        return relations
+
+    def _table_fragment(
+        self,
+        unit: LogicalUnit,
+        table_elements: list[Element],
+    ) -> "_TableFragment":
+        if len(table_elements) != 1:
+            raise RelationBuildError(
+                f"logical unit {unit.id!r} must contain exactly one TABLE element"
+            )
+        table = table_elements[0]
+        evidence_value = table.attributes.get(TABLE_CONTINUATION_EVIDENCE_ATTRIBUTE)
+        if evidence_value is None:
+            raise _NoContinuationEvidence
+        evidence = TableContinuationEvidence.model_validate(evidence_value)
+        if evidence.version != self._policy.table_continuation_version:
+            raise RelationBuildError(
+                f"table continuation evidence version {evidence.version!r} does not "
+                f"match policy {self._policy.table_continuation_version!r}"
+            )
+        if table.location is None or table.location.page is None:
+            raise RelationBuildError("table continuation table element has no page location")
+        if table.location.page != evidence.page:
+            raise RelationBuildError("table continuation evidence page disagrees with element")
+        if table.location.bbox is None:
+            raise RelationBuildError("table continuation table element has no bbox")
+        location_bbox = (
+            table.location.bbox.x0,
+            table.location.bbox.y0,
+            table.location.bbox.x1,
+            table.location.bbox.y1,
+        )
+        if any(
+            abs(left - right)
+            > self._policy.table_continuation_evidence_comparison_tolerance
+            for left, right in zip(location_bbox, evidence.bbox)
+        ):
+            raise RelationBuildError("table continuation evidence bbox disagrees with element")
+        for attribute, expected in (
+            ("row_count", evidence.row_count),
+            ("column_count", evidence.column_count),
+        ):
+            observed = table.attributes.get(attribute)
+            if observed is not None and observed != expected:
+                raise RelationBuildError(
+                    f"table continuation evidence {attribute} disagrees with element"
+                )
+        anchor = source_anchor(table)
+        if anchor is None:
+            raise RelationBuildError("table continuation table element has no source anchor")
+        return _TableFragment(unit=unit, evidence=evidence, anchor=anchor)
+
+    def _evaluate_table_pair(
+        self,
+        left: "_TableFragment",
+        right: "_TableFragment",
+    ) -> tuple[bool, str, tuple[str, ...]]:
+        if right.evidence.page != left.evidence.page + 1:
+            return False, "non_adjacent_pages", ()
+        signals = ["adjacent_pages"]
+        left_bottom_distance = 1.0 - left.evidence.bbox[3]
+        right_top_distance = right.evidence.bbox[1]
+        if (
+            left_bottom_distance > self._policy.table_continuation_max_edge_distance
+            or right_top_distance > self._policy.table_continuation_max_edge_distance
+        ):
+            return False, "page_edge_evidence_insufficient", ()
+        signals.append("page_edge_proximity")
+        if left.evidence.column_count != right.evidence.column_count:
+            return False, "column_count_mismatch", ()
+        signals.append("column_count")
+        if len(left.evidence.column_boundaries) != len(right.evidence.column_boundaries):
+            return False, "column_geometry_mismatch", ()
+        max_lane_delta = max(
+            abs(a - b)
+            for a, b in zip(left.evidence.column_boundaries, right.evidence.column_boundaries)
+        )
+        if max_lane_delta > self._policy.table_continuation_max_column_boundary_delta:
+            return False, "column_geometry_mismatch", ()
+        signals.append("column_geometry")
+        left_width = left.evidence.bbox[2] - left.evidence.bbox[0]
+        right_width = right.evidence.bbox[2] - right.evidence.bbox[0]
+        if abs(left_width - right_width) > self._policy.table_continuation_max_width_delta:
+            return False, "table_width_mismatch", ()
+        signals.append("table_width")
+        if left.evidence.topology != right.evidence.topology:
+            return False, "table_topology_incompatible", ()
+        signals.append("table_topology")
+        if (
+            left.evidence.orientation is not None
+            and right.evidence.orientation is not None
+            and left.evidence.orientation != right.evidence.orientation
+        ):
+            return False, "page_orientation_mismatch", ()
+        if left.evidence.orientation is not None and right.evidence.orientation is not None:
+            signals.append("page_orientation")
+        if (
+            left.evidence.leading_row_fingerprint is not None
+            and left.evidence.leading_row_fingerprint
+            == right.evidence.leading_row_fingerprint
+        ):
+            signals.append("leading_row_match")
+        if len(signals) < self._policy.table_continuation_min_evidence_signals:
+            return False, "evidence_insufficient", tuple(signals)
+        return True, "compatible_adjacent_table_fragments", tuple(signals)
 
     @staticmethod
     def _relation_id(

@@ -37,6 +37,7 @@ from .pdf import (
     PDF_MEDIA_TYPE,
     PDF_POLICY_VERSION,
     PDF_READING_ORDER_VERSION,
+    PDF_TABLE_CONTINUATION_VERSION,
     PdfAdapter,
     PdfAdapterPolicy,
 )
@@ -78,6 +79,7 @@ __all__ = [
     "PDF_MEDIA_TYPE",
     "PDF_POLICY_VERSION",
     "PDF_READING_ORDER_VERSION",
+    "PDF_TABLE_CONTINUATION_VERSION",
     "PdfAdapter",
     "PdfAdapterPolicy",
     "PLAIN_TEXT_ADAPTER_VERSION",

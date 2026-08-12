@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from pydantic import Field
 
+from source_understanding.relations.table_continuation import (
+    TABLE_CONTINUATION_CONTRACT_VERSION,
+    TABLE_CONTINUATION_EVIDENCE_ATTRIBUTE,
+)
 from source_understanding.schemas.document import DocumentMetadata
 from source_understanding.schemas.element import RawElement
 from source_understanding.source_attributes import SOURCE_ANCHOR_ATTRIBUTE
@@ -27,8 +31,8 @@ from .table_boundary import (
 from .tables import PdfTableDetectionResult
 
 
-PDF_ADAPTER_VERSION = "7"
-PDF_POLICY_VERSION = "8"
+PDF_ADAPTER_VERSION = "8"
+PDF_POLICY_VERSION = "9"
 PDF_MEDIA_TYPE = _M25_MEDIA_TYPE
 PDF_READING_ORDER_VERSION = _M25_READING_ORDER_VERSION
 PDF_BLOCK_RECONSTRUCTION_VERSION = _M25_BLOCK_RECONSTRUCTION_VERSION
@@ -38,12 +42,13 @@ PDF_MERGED_TABLE_TOPOLOGY_VERSION = _M25_MERGED_TABLE_TOPOLOGY_VERSION
 PDF_MULTI_TABLE_SEGMENTATION_VERSION = _M25_MULTI_TABLE_SEGMENTATION_VERSION
 PDF_SOURCE_BLOCK_PARTITION_VERSION = PDF_SOURCE_LINE_PARTITION_VERSION
 PDF_PARTITIONED_TABLE_TEXT_NORMALIZATION_VERSION = "outer-whitespace-strip-v1"
+PDF_TABLE_CONTINUATION_VERSION = TABLE_CONTINUATION_CONTRACT_VERSION
 
 _BOUNDARY_RETRY_REASON = "merged_source_block_crosses_table_boundary"
 
 
 class PdfAdapterPolicy(_M25PdfAdapterPolicy):
-    """PDF M2.6 policy: exact native-line prefix partition for crossing blocks."""
+    """PDF M2.7 policy: M2.6 ownership plus optional continuation evidence."""
 
     version: str = PDF_POLICY_VERSION
     enable_boundary_safe_source_partitioning: bool = True
@@ -57,16 +62,17 @@ class PdfAdapterPolicy(_M25PdfAdapterPolicy):
         ge=1,
         le=8,
     )
+    enable_table_continuation: bool = True
 
 
 class PdfAdapter(_M25PdfAdapter):
-    """PDF adapter through M2.6 boundary-safe native source ownership.
+    """PDF adapter through M2.7 provenance-safe table continuation evidence.
 
     M2.6 never splits characters, words, spans, or native lines. It retries only
     merged ruled-table candidates whose crossing source block has a contiguous
-    table-line prefix followed by a residual suffix. The original source block
-    remains immutable; a private table-only detection view is used and the exact
-    untouched residual suffix is emitted after the verified table.
+    table-line prefix followed by a residual suffix. M2.7 adds only evidence on
+    accepted TABLE fragments; relation ownership remains downstream. The
+    original source block remains immutable.
     """
 
     version = PDF_ADAPTER_VERSION
@@ -476,13 +482,32 @@ class PdfAdapter(_M25PdfAdapter):
         payload["provenance"] = provenance
         return RawElement.model_validate(payload)
 
-    @staticmethod
-    def _upgrade_m26_element(element: RawElement) -> RawElement:
+    def _upgrade_m26_element(self, element: RawElement) -> RawElement:
         if element.type_hint not in {"TABLE", "TABLE_ROW", "TABLE_CELL"}:
             return element
         payload = element.model_dump(mode="python")
         attributes = dict(payload["attributes"])
         attributes["pdf_table_structure_version"] = PDF_TABLE_STRUCTURE_VERSION
+        if element.type_hint == "TABLE" and self.policy.enable_table_continuation:
+            location = element.location
+            bbox = (
+                [location.bbox.x0, location.bbox.y0, location.bbox.x1, location.bbox.y1]
+                if location is not None and location.bbox is not None
+                else None
+            )
+            attributes[TABLE_CONTINUATION_EVIDENCE_ATTRIBUTE] = {
+                "version": PDF_TABLE_CONTINUATION_VERSION,
+                "page": location.page if location is not None else None,
+                "bbox": bbox,
+                "column_boundaries": attributes.get("pdf_table_column_boundaries"),
+                "row_count": attributes.get("row_count"),
+                "column_count": attributes.get("column_count"),
+                "topology": attributes.get("pdf_table_topology", "rectangular"),
+                "orientation": attributes.get("pdf_page_orientation"),
+                "leading_row_fingerprint": attributes.get(
+                    "pdf_table_leading_row_fingerprint"
+                ),
+            }
         payload["attributes"] = attributes
         provenance = dict(payload["provenance"])
         metadata = dict(provenance.get("metadata", {}))
@@ -491,13 +516,14 @@ class PdfAdapter(_M25PdfAdapter):
         payload["provenance"] = provenance
         return RawElement.model_validate(payload)
 
-    @staticmethod
-    def _upgrade_m26_metadata(metadata: DocumentMetadata) -> DocumentMetadata:
+    def _upgrade_m26_metadata(self, metadata: DocumentMetadata) -> DocumentMetadata:
         payload = metadata.model_dump(mode="python")
         attributes = dict(payload["attributes"])
         pdf = dict(attributes.get("pdf", {}))
         pdf["table_structure_version"] = PDF_TABLE_STRUCTURE_VERSION
         pdf["source_block_partition_version"] = PDF_SOURCE_BLOCK_PARTITION_VERSION
+        pdf["table_continuation_version"] = PDF_TABLE_CONTINUATION_VERSION
+        pdf["table_continuation_enabled"] = self.policy.enable_table_continuation
         pdf["source_block_partition_capability"] = (
             "table_prefix_residual_suffix_only"
         )

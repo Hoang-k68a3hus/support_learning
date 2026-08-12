@@ -192,7 +192,7 @@ class SourceUnderstandingPipelineTests(unittest.TestCase):
         self.assertEqual(manifest["structure_signal_version"], "3")
         self.assertEqual(manifest["boundary_version"], "2")
         self.assertEqual(manifest["hierarchy_version"], "5")
-        self.assertEqual(manifest["relation_builder_version"], "2")
+        self.assertEqual(manifest["relation_builder_version"], "3")
         self.assertEqual(manifest["source_attribute_contract_version"], "3")
         self.assertIn("integrity_consolidation", manifest)
         self.assertIn("structure_quality_policy", manifest)

@@ -110,3 +110,9 @@ CI uploads the JSON report so rejected-candidate diagnostics, source hashes, tab
 OCR is **not part of M2.6**. Image-only PDFs remain native-text misses and are preserved as such. OCR/VLM/rendered-text recovery is deferred to a later optional extension with its own provenance and evaluation.
 
 M2.6 also does not claim support for arbitrary irregular/L-shaped merges, overlapping cells, character/span splitting across table boundaries, table-in-the-middle source-block partitioning, outside-prefix/table-suffix partitioning, cross-page table continuation, semantic header inference, or visual-only tables. Those remain later milestones and require independent evidence before parser behavior expands.
+
+M2.7 continuation evidence is versioned separately from this M2.6 table-shape
+pilot. This benchmark has no pinned cross-page continuation source truth and
+must not be used to promote `CONTINUES` capability. The M2.7 structural tests
+therefore keep synthetic observations separate from this real-PDF gold until an
+independently adjudicated adjacent-page corpus is pinned.

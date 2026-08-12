@@ -27,6 +27,8 @@ exact PDF bytes
             -> existing merged topology/source-span verifier
             -> exact residual suffix projection
             -> span conservation invariant
+       -> adjacent-page table continuation evidence (M2.7)
+            -> evidence only; no cross-page table merge
        -> rejected/ambiguous: preserve native text + diagnostic
   -> deterministic fail-closed reading order for non-table content
   -> RawElement[]
@@ -180,13 +182,24 @@ maximum_boundary_partitioned_blocks_per_table = 2
 Current versions are:
 
 ```text
-adapter                         7
-policy                          8
-table structure                 multi-strategy-v5
-source block partition          native-line-prefix-v1
-partitioned cell normalization  outer-whitespace-strip-v1
-merged topology                 rectangular-spans-v1
-multi-table segmentation        drawing-clusters-v1
+adapter                          8
+policy                           9
+table structure                  multi-strategy-v5
+source block partition           native-line-prefix-v1
+partitioned cell normalization   outer-whitespace-strip-v1
+merged topology                  rectangular-spans-v1
+multi-table segmentation         drawing-clusters-v1
+table continuation evidence      adjacent-page-table-continuation-v1
+
+M2.7 continuation is owned by the format-agnostic structural relation stage.
+The PDF adapter emits normalized page-edge, table-width, column-lane, row/column
+count, and topology evidence on each accepted TABLE fragment. The relation
+builder may infer a directional `TABLE_BLOCK CONTINUES TABLE_BLOCK` relation
+only for adjacent pages when the configured precision-first gates pass. A
+repeated leading-row fingerprint is supporting evidence only; it is never
+promoted to a semantic header fact. The
+fragments, rows, cells, source spans, page identities, and bounding boxes remain
+independent source-near objects.
 ```
 
 ## Cell text and provenance
@@ -250,7 +263,8 @@ M2.6 intentionally does **not** claim support for:
 - partially crossing spans;
 - arbitrary irregular or L-shaped merged cells;
 - overlapping/non-rectangular table topology;
-- cross-page table continuation;
+- continuation inference beyond adjacent pages, blank-page jumps, or merged
+  cross-page source tables;
 - semantic header inference;
 - OCR / scanned-page recovery;
 - image or vector-only text understanding;

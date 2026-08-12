@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections import Counter
 
 from source_understanding.schemas.context import StructureSource
@@ -63,6 +64,12 @@ class PdfTableRawElementEmitter:
             "pdf_table_index": table.table_index,
             "pdf_source_block_numbers": list(table.source_block_numbers),
             "pdf_source_native_orders": list(table.source_native_orders),
+            "pdf_table_column_boundaries_version": "normalized-cell-lanes-v1",
+            "pdf_table_column_boundaries": self._column_boundaries(table, page=page),
+            "pdf_page_orientation": (
+                "LANDSCAPE" if page.width_points > page.height_points else "PORTRAIT"
+            ),
+            "pdf_table_leading_row_fingerprint": self._leading_row_fingerprint(table),
         }
         backend_name = str(getattr(backend, "name"))
         backend_version = str(getattr(backend, "version"))
@@ -190,6 +197,42 @@ class PdfTableRawElementEmitter:
                     )
                 )
         return tuple(output)
+
+    def _column_boundaries(
+        self,
+        table: PdfTableObservation,
+        *,
+        page: PdfPageObservation,
+    ) -> list[float]:
+        """Emit normalized x-lanes as evidence without changing source geometry."""
+
+        table_bbox, _ = self.base_emitter.normalized_bbox(
+            table.displayed_bbox,
+            width=page.width_points,
+            height=page.height_points,
+        )
+        values = [table_bbox.x0, table_bbox.x1]
+        for row in table.rows:
+            for cell in row.cells:
+                cell_bbox, _ = self.base_emitter.normalized_bbox(
+                    cell.displayed_bbox,
+                    width=page.width_points,
+                    height=page.height_points,
+                )
+                values.extend((cell_bbox.x0, cell_bbox.x1))
+        ordered = sorted(values)
+        unique: list[float] = []
+        for value in ordered:
+            if not unique or abs(value - unique[-1]) > 1e-6:
+                unique.append(value)
+        return unique
+
+    @staticmethod
+    def _leading_row_fingerprint(table: PdfTableObservation) -> str | None:
+        if not table.rows:
+            return None
+        value = "\x1f".join(cell.text for cell in table.rows[0].cells)
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
 
     def _source_spans(
         self,
