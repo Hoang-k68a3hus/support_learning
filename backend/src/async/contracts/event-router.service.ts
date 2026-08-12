@@ -12,6 +12,7 @@ import {
   type RoutedJob,
 } from './async-contracts';
 
+const SUPPORTED_EVENT_TYPE: string = AsyncEventType.DOCUMENT_VERSION_RECEIVED;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface RoutableOutboxEvent {
@@ -27,7 +28,7 @@ export interface RoutableOutboxEvent {
 @Injectable()
 export class EventRouterService {
   route(event: RoutableOutboxEvent): RoutedJob[] {
-    if (event.eventType !== AsyncEventType.DOCUMENT_VERSION_RECEIVED) {
+    if (event.eventType !== SUPPORTED_EVENT_TYPE) {
       throw new AsyncContractError('ASYNC_EVENT_TYPE_UNSUPPORTED', `Unsupported event type: ${event.eventType}`);
     }
     if (event.schemaVersion !== OUTBOX_EVENT_SCHEMA_VERSION) {
