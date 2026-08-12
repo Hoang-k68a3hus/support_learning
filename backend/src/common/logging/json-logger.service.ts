@@ -13,6 +13,10 @@ const REDACTED_KEYS = new Set([
   'set-cookie',
   'database_url',
   'databaseurl',
+  'redis_url',
+  'redisurl',
+  'storage_access_key',
+  'storage_secret_key',
   'jwt_access_secret',
   'jwt_refresh_secret',
 ]);
@@ -20,7 +24,8 @@ const REDACTED_KEYS = new Set([
 const REDACTIONS: RegExp[] = [
   /Bearer\s+[A-Za-z0-9._~-]+/gi,
   /postgres(?:ql)?:\/\/[^\s@]+@/gi,
-  /\b(password|password_hash|refresh_token|access_token|authorization)\b\s*[:=]\s*[^\s,}]+/gi,
+  /rediss?:\/\/[^\s@]+@/gi,
+  /\b(password|password_hash|refresh_token|access_token|authorization|storage_secret_key)\b\s*[:=]\s*[^\s,}]+/gi,
 ];
 
 function sanitizeString(value: string): string {

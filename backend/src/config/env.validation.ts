@@ -17,11 +17,21 @@ export interface ValidatedEnvironment {
   STORAGE_MAX_UPLOAD_BYTES: number;
   STORAGE_ALLOWED_MEDIA_TYPES: string[];
   IDEMPOTENCY_TTL_SECONDS: number;
+  REDIS_URL: string;
+  BULLMQ_PREFIX: string;
+  OUTBOX_RELAY_INSTANCE_ID: string;
+  OUTBOX_RELAY_POLL_INTERVAL_MS: number;
+  OUTBOX_RELAY_BATCH_SIZE: number;
+  OUTBOX_RELAY_CLAIM_LEASE_MS: number;
+  OUTBOX_RELAY_MAX_PUBLISH_ATTEMPTS: number;
+  OUTBOX_RELAY_BACKOFF_BASE_MS: number;
+  OUTBOX_RELAY_BACKOFF_MAX_MS: number;
 }
 
 const SECRET_MIN_LENGTH = 32;
 const TTL_PATTERN = /^(\d+)(s|m|h|d)?$/;
 const BUCKET_PATTERN = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/;
+const CONTROLLED_NAME_PATTERN = /^[A-Za-z0-9._:-]+$/;
 const UNSAFE_SECRET_PATTERNS = [
   /REPLACE[_\s-]*ME/i,
   /REPLACE[_\s-]*WITH/i,
@@ -77,6 +87,14 @@ function parsePositiveInteger(value: string, key: string): number {
   return parsed;
 }
 
+function parseBoundedPositiveInteger(value: string, key: string, min: number, max: number): number {
+  const parsed = parsePositiveInteger(value, key);
+  if (parsed < min || parsed > max) {
+    throw new Error(`${key} must be between ${min} and ${max}`);
+  }
+  return parsed;
+}
+
 function parseCorsOrigins(value: string): string[] {
   const origins = value
     .split(',')
@@ -113,6 +131,30 @@ function parseStorageEndpoint(value: string): string {
     throw new Error('STORAGE_ENDPOINT must be an HTTP(S) origin without path, query, or fragment');
   }
   return parsed.origin;
+}
+
+function parseRedisUrl(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error('REDIS_URL must be a valid Redis URL');
+  }
+  if (!['redis:', 'rediss:'].includes(parsed.protocol) || parsed.hash) {
+    throw new Error('REDIS_URL must use redis:// or rediss:// and cannot contain a fragment');
+  }
+  if (!parsed.hostname) throw new Error('REDIS_URL must include a host');
+  if (parsed.pathname !== '/' && !/^\/\d+$/.test(parsed.pathname)) {
+    throw new Error('REDIS_URL path may only select a numeric Redis database');
+  }
+  return value;
+}
+
+function parseControlledName(value: string, key: string, maxLength: number): string {
+  if (value.length > maxLength || !CONTROLLED_NAME_PATTERN.test(value)) {
+    throw new Error(`${key} must be at most ${maxLength} characters using letters, numbers, dot, underscore, colon, or dash`);
+  }
+  return value;
 }
 
 function parseAllowedMediaTypes(value: string): string[] {
@@ -172,6 +214,38 @@ export function validateEnvironment(env: Record<string, unknown>): ValidatedEnvi
     throw new Error('STORAGE_BUCKET must be a valid 3-63 character S3 bucket name');
   }
 
+  const outboxRelayPollIntervalMs = parseBoundedPositiveInteger(
+    requireString(env, 'OUTBOX_RELAY_POLL_INTERVAL_MS'),
+    'OUTBOX_RELAY_POLL_INTERVAL_MS',
+    50,
+    60000,
+  );
+  const outboxRelayClaimLeaseMs = parseBoundedPositiveInteger(
+    requireString(env, 'OUTBOX_RELAY_CLAIM_LEASE_MS'),
+    'OUTBOX_RELAY_CLAIM_LEASE_MS',
+    1000,
+    600000,
+  );
+  if (outboxRelayClaimLeaseMs <= outboxRelayPollIntervalMs) {
+    throw new Error('OUTBOX_RELAY_CLAIM_LEASE_MS must be greater than OUTBOX_RELAY_POLL_INTERVAL_MS');
+  }
+
+  const outboxRelayBackoffBaseMs = parseBoundedPositiveInteger(
+    requireString(env, 'OUTBOX_RELAY_BACKOFF_BASE_MS'),
+    'OUTBOX_RELAY_BACKOFF_BASE_MS',
+    100,
+    600000,
+  );
+  const outboxRelayBackoffMaxMs = parseBoundedPositiveInteger(
+    requireString(env, 'OUTBOX_RELAY_BACKOFF_MAX_MS'),
+    'OUTBOX_RELAY_BACKOFF_MAX_MS',
+    100,
+    86400000,
+  );
+  if (outboxRelayBackoffMaxMs < outboxRelayBackoffBaseMs) {
+    throw new Error('OUTBOX_RELAY_BACKOFF_MAX_MS must be >= OUTBOX_RELAY_BACKOFF_BASE_MS');
+  }
+
   return {
     NODE_ENV: nodeEnv,
     PORT: port,
@@ -189,5 +263,28 @@ export function validateEnvironment(env: Record<string, unknown>): ValidatedEnvi
     STORAGE_MAX_UPLOAD_BYTES: parsePositiveInteger(requireString(env, 'STORAGE_MAX_UPLOAD_BYTES'), 'STORAGE_MAX_UPLOAD_BYTES'),
     STORAGE_ALLOWED_MEDIA_TYPES: parseAllowedMediaTypes(requireString(env, 'STORAGE_ALLOWED_MEDIA_TYPES')),
     IDEMPOTENCY_TTL_SECONDS: parseDurationSeconds(requireString(env, 'IDEMPOTENCY_TTL'), 'IDEMPOTENCY_TTL'),
+    REDIS_URL: parseRedisUrl(requireString(env, 'REDIS_URL')),
+    BULLMQ_PREFIX: parseControlledName(requireString(env, 'BULLMQ_PREFIX'), 'BULLMQ_PREFIX', 120),
+    OUTBOX_RELAY_INSTANCE_ID: parseControlledName(
+      requireString(env, 'OUTBOX_RELAY_INSTANCE_ID'),
+      'OUTBOX_RELAY_INSTANCE_ID',
+      160,
+    ),
+    OUTBOX_RELAY_POLL_INTERVAL_MS: outboxRelayPollIntervalMs,
+    OUTBOX_RELAY_BATCH_SIZE: parseBoundedPositiveInteger(
+      requireString(env, 'OUTBOX_RELAY_BATCH_SIZE'),
+      'OUTBOX_RELAY_BATCH_SIZE',
+      1,
+      1000,
+    ),
+    OUTBOX_RELAY_CLAIM_LEASE_MS: outboxRelayClaimLeaseMs,
+    OUTBOX_RELAY_MAX_PUBLISH_ATTEMPTS: parseBoundedPositiveInteger(
+      requireString(env, 'OUTBOX_RELAY_MAX_PUBLISH_ATTEMPTS'),
+      'OUTBOX_RELAY_MAX_PUBLISH_ATTEMPTS',
+      1,
+      100,
+    ),
+    OUTBOX_RELAY_BACKOFF_BASE_MS: outboxRelayBackoffBaseMs,
+    OUTBOX_RELAY_BACKOFF_MAX_MS: outboxRelayBackoffMaxMs,
   };
 }
