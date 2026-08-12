@@ -3,6 +3,7 @@ import {
   AsyncEventType,
   bullMqTransportJobId,
   canonicalJobId,
+  JOB_RETRY_POLICY_KEY,
   JobName,
   QueueName,
 } from '../../src/async/contracts/async-contracts';
@@ -39,6 +40,7 @@ describe('EventRouterService', () => {
     expect(job).toBeDefined();
     expect(job?.queueName).toBe(QueueName.PROCESSING);
     expect(job?.jobName).toBe(JobName.PROCESS_DOCUMENT_VERSION);
+    expect(job?.retryPolicyKey).toBe(JOB_RETRY_POLICY_KEY);
     expect(job?.envelope).toMatchObject({
       contractVersion: 1,
       eventId: EVENT_ID,
