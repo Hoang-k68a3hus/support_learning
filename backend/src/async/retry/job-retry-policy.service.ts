@@ -48,11 +48,8 @@ export class JobRetryPolicyService {
   }
 
   resolve(key: JobRetryPolicyKey): JobRetryPolicy {
-    if (key !== JOB_RETRY_POLICY_KEY) {
-      throw new AsyncContractError('WORKER_RETRY_POLICY_NOT_FOUND', `Unknown retry policy: ${String(key)}`);
-    }
     return {
-      key: JOB_RETRY_POLICY_KEY,
+      key,
       maxAttempts: this.config.workerRetryMaxAttempts,
       backoffBaseMs: this.config.workerRetryBackoffBaseMs,
       backoffMaxMs: this.config.workerRetryBackoffMaxMs,
