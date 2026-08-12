@@ -70,6 +70,42 @@ export class AppConfigService {
     return this.config.get('IDEMPOTENCY_TTL_SECONDS', { infer: true });
   }
 
+  get redisUrl(): string {
+    return this.config.get('REDIS_URL', { infer: true });
+  }
+
+  get bullMqPrefix(): string {
+    return this.config.get('BULLMQ_PREFIX', { infer: true });
+  }
+
+  get outboxRelayInstanceId(): string {
+    return this.config.get('OUTBOX_RELAY_INSTANCE_ID', { infer: true });
+  }
+
+  get outboxRelayPollIntervalMs(): number {
+    return this.config.get('OUTBOX_RELAY_POLL_INTERVAL_MS', { infer: true });
+  }
+
+  get outboxRelayBatchSize(): number {
+    return this.config.get('OUTBOX_RELAY_BATCH_SIZE', { infer: true });
+  }
+
+  get outboxRelayClaimLeaseMs(): number {
+    return this.config.get('OUTBOX_RELAY_CLAIM_LEASE_MS', { infer: true });
+  }
+
+  get outboxRelayMaxPublishAttempts(): number {
+    return this.config.get('OUTBOX_RELAY_MAX_PUBLISH_ATTEMPTS', { infer: true });
+  }
+
+  get outboxRelayBackoffBaseMs(): number {
+    return this.config.get('OUTBOX_RELAY_BACKOFF_BASE_MS', { infer: true });
+  }
+
+  get outboxRelayBackoffMaxMs(): number {
+    return this.config.get('OUTBOX_RELAY_BACKOFF_MAX_MS', { infer: true });
+  }
+
   get isProduction(): boolean {
     return this.nodeEnv === 'production';
   }
