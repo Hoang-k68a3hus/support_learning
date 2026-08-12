@@ -7,6 +7,7 @@ on:
       - "benchmarks/pdf_tables_real_v0_1/**"
       - "tests/test_pdf_m2_tables.py"
       - "tests/test_pdf_m23_text_tables.py"
+      - "tests/test_pdf_m24_merged_tables.py"
       - "tests/test_pdf_real_table_benchmark_contracts.py"
       - ".github/workflows/source-understanding-real-pdf.yml"
   push:
@@ -16,6 +17,7 @@ on:
       - "benchmarks/pdf_tables_real_v0_1/**"
       - "tests/test_pdf_m2_tables.py"
       - "tests/test_pdf_m23_text_tables.py"
+      - "tests/test_pdf_m24_merged_tables.py"
       - "tests/test_pdf_real_table_benchmark_contracts.py"
       - ".github/workflows/source-understanding-real-pdf.yml"
   workflow_dispatch:
@@ -35,9 +37,9 @@ jobs:
       - name: Install pinned PDF benchmark dependencies
         run: python -m pip install --disable-pip-version-check "pydantic>=2,<3" "pymupdf==1.28.0"
       - name: Compile PDF source and benchmark
-        run: python -m compileall -q source_understanding benchmarks/pdf_tables_real_v0_1 tests/test_pdf_m2_tables.py tests/test_pdf_m23_text_tables.py tests/test_pdf_real_table_benchmark_contracts.py
+        run: python -m compileall -q source_understanding benchmarks/pdf_tables_real_v0_1 tests/test_pdf_m2_tables.py tests/test_pdf_m23_text_tables.py tests/test_pdf_m24_merged_tables.py tests/test_pdf_real_table_benchmark_contracts.py
       - name: Run PDF table unit tests
-        run: python -m unittest tests.test_pdf_m2_tables tests.test_pdf_m23_text_tables -v
+        run: python -m unittest tests.test_pdf_m2_tables tests.test_pdf_m23_text_tables tests.test_pdf_m24_merged_tables -v
       - name: Run real PDF benchmark contract tests
         run: python -m unittest tests.test_pdf_real_table_benchmark_contracts -v
       - name: Run pinned real PDF table benchmark
