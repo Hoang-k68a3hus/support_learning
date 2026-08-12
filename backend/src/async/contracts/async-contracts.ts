@@ -14,7 +14,8 @@ export enum AsyncEventType {
 
 export const JOB_CONTRACT_VERSION = 1 as const;
 export const OUTBOX_EVENT_SCHEMA_VERSION = 1 as const;
-export const OUTBOX_RETRY_POLICY_KEY = 'OUTBOX_PUBLISH_EXPONENTIAL_V1' as const;
+export const JOB_RETRY_POLICY_KEY = 'PROCESSING_JOB_EXPONENTIAL_V1' as const;
+export type JobRetryPolicyKey = typeof JOB_RETRY_POLICY_KEY;
 
 export interface ProcessDocumentVersionPayload {
   documentId: string;
@@ -43,7 +44,7 @@ export interface JobEnvelope<TPayload extends AsyncJobPayload = AsyncJobPayload>
 export interface RoutedJob<TPayload extends AsyncJobPayload = AsyncJobPayload> {
   queueName: QueueName;
   jobName: JobName;
-  retryPolicyKey: typeof OUTBOX_RETRY_POLICY_KEY;
+  retryPolicyKey: JobRetryPolicyKey;
   envelope: JobEnvelope<TPayload>;
 }
 
