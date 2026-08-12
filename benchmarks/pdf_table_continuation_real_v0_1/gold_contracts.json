@@ -1,0 +1,36 @@
+{
+  "benchmark": "pdf_table_continuation_real_v0_1",
+  "schema_version": "0.1",
+  "gold_provenance": "INDEPENDENT_VISUAL_LAYOUT_ADJUDICATION",
+  "review_policy": "Each pair is adjudicated from rendered adjacent pages and source text/layout only; production relation output is not used as gold evidence.",
+  "chain_requirements": [
+    {
+      "chain_id": "hien-vocabulary-1-to-6",
+      "source_id": "hien-990-vocabulary-2026",
+      "pages": [1, 2, 3, 4, 5, 6],
+      "required_positive_edge_count": 5,
+      "contains_three_page_chain": true
+    }
+  ],
+  "cases": [
+    {"id":"hien-p01-p02-positive","source_id":"hien-990-vocabulary-2026","page_a":1,"page_b":2,"truth":"CONTINUES","family":"VOCABULARY_TABLE_CHAIN","chain_id":"hien-vocabulary-1-to-6","rationale":"Same fixed seven-column vocabulary grid; row numbering continues 18-41 to 42-65."},
+    {"id":"hien-p02-p03-positive","source_id":"hien-990-vocabulary-2026","page_a":2,"page_b":3,"truth":"CONTINUES","family":"VOCABULARY_TABLE_CHAIN","chain_id":"hien-vocabulary-1-to-6","rationale":"Same fixed seven-column vocabulary grid; row numbering continues 42-65 to 66-89."},
+    {"id":"hien-p03-p04-positive","source_id":"hien-990-vocabulary-2026","page_a":3,"page_b":4,"truth":"CONTINUES","family":"VOCABULARY_TABLE_CHAIN","chain_id":"hien-vocabulary-1-to-6","rationale":"Same fixed seven-column vocabulary grid; row numbering continues 66-89 to 90-114."},
+    {"id":"hien-p04-p05-positive","source_id":"hien-990-vocabulary-2026","page_a":4,"page_b":5,"truth":"CONTINUES","family":"VOCABULARY_TABLE_CHAIN","chain_id":"hien-vocabulary-1-to-6","rationale":"Same fixed seven-column vocabulary grid; row numbering continues 90-114 to 115-143."},
+    {"id":"hien-p05-p06-positive","source_id":"hien-990-vocabulary-2026","page_a":5,"page_b":6,"truth":"CONTINUES","family":"VOCABULARY_TABLE_CHAIN","chain_id":"hien-vocabulary-1-to-6","rationale":"Same fixed seven-column vocabulary grid; row numbering continues through the next page."},
+    {"id":"fpts-p59-p60-positive","source_id":"fpts-maritime-port-report-2025","page_a":59,"page_b":60,"truth":"CONTINUES","family":"REPEATED_HEADER_TABLE","rationale":"Rendered pages continue Bảng 13; page 60 repeats the same Yếu tố/Mức độ/Nhận định header and starts the next rows."},
+    {"id":"fpts-p74-p75-positive","source_id":"fpts-maritime-port-report-2025","page_a":74,"page_b":75,"truth":"CONTINUES","family":"REPEATED_HEADER_TABLE","rationale":"Rendered pages continue Bảng 17; page 75 repeats the same header and continues row numbers 20-44 after page 74 rows 1-19."},
+    {"id":"fpts-p54-p55-negative","source_id":"fpts-maritime-port-report-2025","page_a":54,"page_b":55,"truth":"NOT_CONTINUES","family":"ADJACENT_DIFFERENT_TABLE","rationale":"Page 54 is Bảng 11 port-capacity data; page 55 is a map and a separate logistics-capability matrix."},
+    {"id":"fpts-p55-p56-negative","source_id":"fpts-maritime-port-report-2025","page_a":55,"page_b":56,"truth":"NOT_CONTINUES","family":"TABLE_TO_NARRATIVE","rationale":"Page 55 logistics matrix is followed by narrative/other content, not its continuation."},
+    {"id":"fpts-p60-p61-negative","source_id":"fpts-maritime-port-report-2025","page_a":60,"page_b":61,"truth":"NOT_CONTINUES","family":"TABLE_TO_SECTION_BREAK","rationale":"Page 60 finishes Bảng 13; page 61 begins the next section and does not continue that table."},
+    {"id":"fpts-p63-p64-negative","source_id":"fpts-maritime-port-report-2025","page_a":63,"page_b":64,"truth":"NOT_CONTINUES","family":"TABLE_TO_NARRATIVE","rationale":"Page 63 contains Bảng 14; page 64 is narrative and maps with no continuation of that table."},
+    {"id":"fpts-p64-p65-negative","source_id":"fpts-maritime-port-report-2025","page_a":64,"page_b":65,"truth":"NOT_CONTINUES","family":"NARRATIVE_TO_DIFFERENT_TABLE","rationale":"Page 65 starts Bảng 15 and Bảng 16, unrelated to the page-64 narrative/map material."},
+    {"id":"fpts-p65-p66-negative","source_id":"fpts-maritime-port-report-2025","page_a":65,"page_b":66,"truth":"NOT_CONTINUES","family":"TABLE_TO_NARRATIVE","rationale":"Page 65 finishes Bảng 15/16; page 66 is narrative without a continuation table."},
+    {"id":"fpts-p75-p76-negative","source_id":"fpts-maritime-port-report-2025","page_a":75,"page_b":76,"truth":"NOT_CONTINUES","family":"TABLE_TO_SECTION_BREAK","rationale":"Page 75 finishes Bảng 17 and starts a new section; page 76 has a different chart/content block."},
+    {"id":"fpts-p77-p78-negative","source_id":"fpts-maritime-port-report-2025","page_a":77,"page_b":78,"truth":"NOT_CONTINUES","family":"TABLE_TO_CHART","rationale":"Page 77 contains a standalone summary table and page 78 contains charts/narrative, not its continuation."},
+    {"id":"fpts-p78-p79-negative","source_id":"fpts-maritime-port-report-2025","page_a":78,"page_b":79,"truth":"NOT_CONTINUES","family":"CHART_TO_NARRATIVE","rationale":"Both pages are chart/narrative pages without a shared table fragment."},
+    {"id":"fpts-p80-p81-negative","source_id":"fpts-maritime-port-report-2025","page_a":80,"page_b":81,"truth":"NOT_CONTINUES","family":"ADJACENT_DIFFERENT_ENTITY_TABLE","rationale":"Page 80 is GMD company information; page 81 starts VSC company information with a different entity."},
+    {"id":"fpts-p83-p84-negative","source_id":"fpts-maritime-port-report-2025","page_a":83,"page_b":84,"truth":"NOT_CONTINUES","family":"ADJACENT_DIFFERENT_ENTITY_TABLE","rationale":"Page 83 is PHP company information; page 84 starts SGP company information with a different entity."},
+    {"id":"fpts-p85-p86-negative","source_id":"fpts-maritime-port-report-2025","page_a":85,"page_b":86,"truth":"NOT_CONTINUES","family":"NARRATIVE_TO_DISCLAIMER","rationale":"Page 85 closes SGP narrative; page 86 is a legal disclaimer/contact page."}
+  ]
+}

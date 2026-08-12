@@ -1,0 +1,18 @@
+{
+  "benchmark": "pdf_table_continuation_real_v0_1",
+  "source_root_contract": "user-supplied-root-relative-v1",
+  "sources": [
+    {
+      "id": "fpts-maritime-port-report-2025",
+      "relative_path": "Apr2025FPTSMaritimePortIndustryReport_d44f733d.pdf",
+      "sha256": "sha256:b5fd6612e46ef76bc34fa8db1f433688261b1b84830d57530ff3350680223edd",
+      "page_count": 86
+    },
+    {
+      "id": "hien-990-vocabulary-2026",
+      "relative_path": "Hien/[ Cô Vũ Mai Phương ] 990 Từ vựng trọng điểm, dễ xuất hiện trong đề thi THPT & ĐGNL 2026.pdf",
+      "sha256": "sha256:b1b971e2ec7b5323a1cbb699f359bf9596c07ef1aab6332d520392a3f4ae016c",
+      "page_count": 38
+    }
+  ]
+}
