@@ -1,5 +1,4 @@
-import type { Prisma } from '@prisma/client';
-import { JobName, QueueName, type JobEnvelope } from '../../src/async/contracts/async-contracts';
+import { JobName, QueueName } from '../../src/async/contracts/async-contracts';
 import { ConsumerRegistryService } from '../../src/worker/consumer-registry.service';
 import type { WorkerJobHandler } from '../../src/worker/worker-job-handler';
 
@@ -9,7 +8,7 @@ function handler(overrides: Partial<WorkerJobHandler> = {}): WorkerJobHandler {
     queueName: QueueName.PROCESSING,
     jobName: JobName.PROCESS_DOCUMENT_VERSION,
     contractVersion: 1,
-    apply: async (_envelope: JobEnvelope, _tx: Prisma.TransactionClient) => undefined,
+    apply: () => Promise.resolve(undefined),
     ...overrides,
   };
 }
