@@ -5,6 +5,7 @@ import { PrismaModule } from '../database/prisma.module';
 import { EventRouterService } from './contracts/event-router.service';
 import { OutboxRelayRepository } from './outbox/outbox-relay.repository';
 import { OutboxRelayRunner } from './outbox/outbox-relay.runner';
+import { JobRetryPolicyService } from './retry/job-retry-policy.service';
 import { BullMqPublisherService } from './transport/bullmq-publisher.service';
 
 @Module({
@@ -12,6 +13,7 @@ import { BullMqPublisherService } from './transport/bullmq-publisher.service';
   providers: [
     JsonLoggerService,
     EventRouterService,
+    JobRetryPolicyService,
     OutboxRelayRepository,
     BullMqPublisherService,
     OutboxRelayRunner,
