@@ -8,6 +8,10 @@ import {
 } from '../contracts/async-contracts';
 import { AppConfigService } from '../../config/app-config.service';
 
+const RETRY_POLICY_BY_JOB: Record<JobName, JobRetryPolicyKey> = {
+  [JobName.PROCESS_DOCUMENT_VERSION]: JOB_RETRY_POLICY_KEY,
+};
+
 export interface JobRetryPolicy {
   key: JobRetryPolicyKey;
   maxAttempts: number;
@@ -41,10 +45,7 @@ export class JobRetryPolicyService {
   constructor(private readonly config: AppConfigService) {}
 
   forJob(jobName: JobName): JobRetryPolicy {
-    if (jobName !== JobName.PROCESS_DOCUMENT_VERSION) {
-      throw new AsyncContractError('WORKER_RETRY_POLICY_NOT_FOUND', `No retry policy registered for job ${jobName}`);
-    }
-    return this.resolve(JOB_RETRY_POLICY_KEY);
+    return this.resolve(RETRY_POLICY_BY_JOB[jobName]);
   }
 
   resolve(key: JobRetryPolicyKey): JobRetryPolicy {
