@@ -18,7 +18,7 @@ import { BullMqPublisherService } from '../../src/async/transport/bullmq-publish
 import { AppConfigService } from '../../src/config/app-config.service';
 import { PrismaService } from '../../src/database/prisma.service';
 
-function relayClaim(instanceId: string) {
+function relayClaim(instanceId: string): Parameters<OutboxRelayRepository['claimBatch']>[0] {
   return {
     instanceId,
     batchSize: 2,
