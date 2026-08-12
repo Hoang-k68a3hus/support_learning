@@ -238,7 +238,7 @@ describe('M4.2 worker runtime and InboxReceipt', () => {
         jobName: JobName.PROCESS_DOCUMENT_VERSION,
         contractVersion: 1,
       },
-      async () => undefined,
+      () => Promise.resolve(undefined),
     );
 
     await expect(
@@ -252,7 +252,7 @@ describe('M4.2 worker runtime and InboxReceipt', () => {
           jobName: JobName.PROCESS_DOCUMENT_VERSION,
           contractVersion: 2,
         },
-        async () => undefined,
+        () => Promise.resolve(undefined),
       ),
     ).rejects.toThrow('contract version');
   });
